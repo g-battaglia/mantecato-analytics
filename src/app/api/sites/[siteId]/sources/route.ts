@@ -3,7 +3,12 @@ import { getSession, canAccessWebsite } from "@/lib/auth";
 import { resolveDateRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
 import { parseFiltersFromParams } from "@/lib/queries";
-import { getReferrerMetrics, getUTMMetrics } from "@/queries/sources";
+import {
+  getReferrerMetrics,
+  getUTMMetrics,
+  getUTMDetailMetrics,
+  getChannelMetrics,
+} from "@/queries/sources";
 
 export async function GET(
   request: NextRequest,
@@ -31,28 +36,37 @@ export async function GET(
   const filters = parseFiltersFromParams(sp);
 
   try {
+    if (view === "channels") {
+      const channels = await getChannelMetrics(siteId, startDate, endDate, filters);
+      return NextResponse.json(channels);
+    }
+
+    if (view === "utm-detail") {
+      const dimension = (sp.get("dimension") || "utm_source") as
+        | "utm_source"
+        | "utm_medium"
+        | "utm_campaign"
+        | "utm_content"
+        | "utm_term";
+      const detail = await getUTMDetailMetrics(
+        siteId, startDate, endDate, dimension, 50, filters
+      );
+      return NextResponse.json(detail);
+    }
+
     if (view === "utm") {
       const groupBy = (sp.get("groupBy") || "utm_source") as
         | "utm_source"
         | "utm_medium"
         | "utm_campaign";
       const utm = await getUTMMetrics(
-        siteId,
-        startDate,
-        endDate,
-        groupBy,
-        50,
-        filters
+        siteId, startDate, endDate, groupBy, 50, filters
       );
       return NextResponse.json(utm);
     }
 
     const referrers = await getReferrerMetrics(
-      siteId,
-      startDate,
-      endDate,
-      50,
-      filters
+      siteId, startDate, endDate, 50, filters
     );
     return NextResponse.json(referrers);
   } catch (error) {

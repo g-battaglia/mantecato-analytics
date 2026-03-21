@@ -10,6 +10,7 @@ import {
 } from "./DateRangePicker";
 import { AddFilterDialog } from "./AddFilterDialog";
 import { SavedViewsMenu } from "./SavedViewsMenu";
+import { AnnotationsManager } from "@/components/annotations/AnnotationsManager";
 import { useFiltersStore } from "@/stores/filters";
 import { useUrlState } from "@/hooks/use-url-state";
 import { FILTER_COLUMNS, FILTER_OPERATORS } from "@/lib/constants";
@@ -32,6 +33,7 @@ export function FilterBar() {
       <div className="h-4 w-px bg-border" />
       <AddFilterDialog />
       <SavedViewsMenu />
+      <AnnotationsManager />
 
       {filters.length > 0 && (
         <>

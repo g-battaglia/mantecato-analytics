@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable } from "@/components/data/DataTable";
+import { BarChart } from "@/components/charts/BarChart";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { formatDuration, formatPercent } from "@/lib/format";
+
+// --- Types ---
 
 interface ReferrerRow {
   referrerDomain: string;
@@ -16,13 +19,23 @@ interface ReferrerRow {
   avgDuration: number;
 }
 
-interface UTMRow {
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
+interface ChannelRow {
+  channel: string;
   visitors: number;
   pageviews: number;
+  bounceRate: number;
+  avgDuration: number;
 }
+
+interface UTMDetailRow {
+  value: string;
+  visitors: number;
+  pageviews: number;
+  bounceRate: number;
+  avgDuration: number;
+}
+
+// --- Column definitions ---
 
 const referrerColumns: ColumnDef<ReferrerRow>[] = [
   { accessorKey: "referrerDomain", header: "Source", enableSorting: false },
@@ -64,25 +77,8 @@ const referrerColumns: ColumnDef<ReferrerRow>[] = [
   },
 ];
 
-const utmColumns: ColumnDef<UTMRow>[] = [
-  {
-    accessorKey: "utmSource",
-    header: "Source",
-    cell: ({ getValue }) => (getValue() as string) ?? "--",
-    enableSorting: false,
-  },
-  {
-    accessorKey: "utmMedium",
-    header: "Medium",
-    cell: ({ getValue }) => (getValue() as string) ?? "--",
-    enableSorting: false,
-  },
-  {
-    accessorKey: "utmCampaign",
-    header: "Campaign",
-    cell: ({ getValue }) => (getValue() as string) ?? "--",
-    enableSorting: false,
-  },
+const channelColumns: ColumnDef<ChannelRow>[] = [
+  { accessorKey: "channel", header: "Channel", enableSorting: false },
   {
     accessorKey: "visitors",
     header: () => <span className="flex justify-end">Visitors</span>,
@@ -101,21 +97,152 @@ const utmColumns: ColumnDef<UTMRow>[] = [
       </span>
     ),
   },
+  {
+    accessorKey: "bounceRate",
+    header: () => <span className="flex justify-end">Bounce Rate</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatPercent(getValue() as number)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "avgDuration",
+    header: () => <span className="flex justify-end">Avg Duration</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatDuration(getValue() as number)}
+      </span>
+    ),
+  },
 ];
+
+function makeUtmColumns(dimensionLabel: string): ColumnDef<UTMDetailRow>[] {
+  return [
+    {
+      accessorKey: "value",
+      header: dimensionLabel,
+      enableSorting: false,
+      cell: ({ getValue }) => (
+        <span className="font-mono text-xs">{getValue() as string}</span>
+      ),
+    },
+    {
+      accessorKey: "visitors",
+      header: () => <span className="flex justify-end">Visitors</span>,
+      cell: ({ getValue }) => (
+        <span className="flex justify-end tabular-nums">
+          {(getValue() as number).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "pageviews",
+      header: () => <span className="flex justify-end">Pageviews</span>,
+      cell: ({ getValue }) => (
+        <span className="flex justify-end tabular-nums">
+          {(getValue() as number).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "bounceRate",
+      header: () => <span className="flex justify-end">Bounce Rate</span>,
+      cell: ({ getValue }) => (
+        <span className="flex justify-end tabular-nums">
+          {formatPercent(getValue() as number)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "avgDuration",
+      header: () => <span className="flex justify-end">Avg Duration</span>,
+      cell: ({ getValue }) => (
+        <span className="flex justify-end tabular-nums">
+          {formatDuration(getValue() as number)}
+        </span>
+      ),
+    },
+  ];
+}
+
+// --- UTM Dimension Panel ---
+
+const UTM_DIMENSIONS = [
+  { key: "utm_source", label: "Source" },
+  { key: "utm_medium", label: "Medium" },
+  { key: "utm_campaign", label: "Campaign" },
+  { key: "utm_content", label: "Content" },
+  { key: "utm_term", label: "Term" },
+] as const;
+
+function UTMDimensionPanel({ dimension }: { dimension: string }) {
+  const extraParams = useMemo(
+    () => ({ view: "utm-detail", dimension }),
+    [dimension]
+  );
+  const { data, isLoading } = useSiteQuery<UTMDetailRow[]>(
+    "sources",
+    ["sources-utm-detail", dimension],
+    extraParams
+  );
+
+  const dimInfo = UTM_DIMENSIONS.find((d) => d.key === dimension);
+  const columns = useMemo(
+    () => makeUtmColumns(dimInfo?.label ?? "Value"),
+    [dimInfo]
+  );
+
+  const chartData = (data ?? []).slice(0, 8).map((row) => ({
+    name: row.value.length > 20 ? row.value.slice(0, 20) + "..." : row.value,
+    visitors: row.visitors,
+  }));
+
+  return (
+    <div className="space-y-4">
+      {chartData.length > 0 && (
+        <BarChart
+          data={chartData}
+          xKey="name"
+          yKeys={["visitors"]}
+          labels={{ visitors: "Visitors" }}
+          height={200}
+          horizontal
+        />
+      )}
+      <DataTable
+        columns={columns}
+        data={data ?? []}
+        loading={isLoading}
+        searchColumn="value"
+        searchPlaceholder={`Search ${dimInfo?.label.toLowerCase()}...`}
+        emptyMessage={`No ${dimInfo?.label.toLowerCase()} data`}
+        exportFilename={`utm-${dimension}`}
+      />
+    </div>
+  );
+}
+
+// --- Main page ---
 
 export default function SourcesPage() {
   const [tab, setTab] = useState("referrers");
+  const [utmDim, setUtmDim] = useState("utm_source");
 
   const { data: referrers, isLoading: refLoading } =
     useSiteQuery<ReferrerRow[]>("sources", ["sources-referrers"], {
       view: "referrers",
     });
 
-  const { data: utm, isLoading: utmLoading } = useSiteQuery<UTMRow[]>(
-    "sources",
-    ["sources-utm"],
-    { view: "utm" }
-  );
+  const channelsParams = useMemo(() => ({ view: "channels" }), []);
+  const { data: channels, isLoading: chLoading } =
+    useSiteQuery<ChannelRow[]>("sources", ["sources-channels"], channelsParams);
+
+  // Chart data for channels
+  const channelChartData = (channels ?? []).map((row) => ({
+    name: row.channel,
+    visitors: row.visitors,
+  }));
 
   return (
     <div className="space-y-4">
@@ -129,8 +256,10 @@ export default function SourcesPage() {
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="referrers">Referrers</TabsTrigger>
-              <TabsTrigger value="utm">UTM Campaigns</TabsTrigger>
+              <TabsTrigger value="channels">Channels</TabsTrigger>
+              <TabsTrigger value="utm">UTM</TabsTrigger>
             </TabsList>
+
             <TabsContent value="referrers" className="mt-4">
               <DataTable
                 columns={referrerColumns}
@@ -139,15 +268,46 @@ export default function SourcesPage() {
                 searchColumn="referrerDomain"
                 searchPlaceholder="Search sources..."
                 emptyMessage="No referrer data"
+                exportFilename="referrers"
               />
             </TabsContent>
-            <TabsContent value="utm" className="mt-4">
+
+            <TabsContent value="channels" className="mt-4 space-y-4">
+              {channelChartData.length > 0 && (
+                <BarChart
+                  data={channelChartData}
+                  xKey="name"
+                  yKeys={["visitors"]}
+                  labels={{ visitors: "Visitors" }}
+                  height={220}
+                  horizontal
+                />
+              )}
               <DataTable
-                columns={utmColumns}
-                data={utm ?? []}
-                loading={utmLoading}
-                emptyMessage="No UTM data"
+                columns={channelColumns}
+                data={channels ?? []}
+                loading={chLoading}
+                emptyMessage="No channel data"
+                exportFilename="channels"
               />
+            </TabsContent>
+
+            <TabsContent value="utm" className="mt-4 space-y-4">
+              {/* Sub-tabs for UTM dimensions */}
+              <Tabs value={utmDim} onValueChange={setUtmDim}>
+                <TabsList>
+                  {UTM_DIMENSIONS.map((d) => (
+                    <TabsTrigger key={d.key} value={d.key}>
+                      {d.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                {UTM_DIMENSIONS.map((d) => (
+                  <TabsContent key={d.key} value={d.key} className="mt-4">
+                    <UTMDimensionPanel dimension={d.key} />
+                  </TabsContent>
+                ))}
+              </Tabs>
             </TabsContent>
           </Tabs>
         </CardContent>

@@ -8,6 +8,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
 } from "recharts";
 import { format } from "date-fns";
 import { formatNumber } from "@/lib/format";
@@ -15,6 +16,12 @@ import { CHART_COLORS } from "@/lib/constants";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ChartRow = Record<string, any>;
+
+export interface AnnotationMarker {
+  x: string;
+  label: string;
+  color: string;
+}
 
 interface AreaChartProps {
   data: ChartRow[];
@@ -31,6 +38,8 @@ interface AreaChartProps {
   comparisonData?: ChartRow[];
   /** Keys in comparisonData to render as dashed overlay lines */
   comparisonKeys?: string[];
+  /** Annotation markers to render as vertical reference lines */
+  annotations?: AnnotationMarker[];
 }
 
 function formatXAxis(value: string): string {
@@ -75,6 +84,7 @@ export function AreaChart({
   showGrid = true,
   comparisonData,
   comparisonKeys,
+  annotations,
 }: AreaChartProps) {
   const hasComparison =
     comparisonData && comparisonData.length > 0 && comparisonKeys && comparisonKeys.length > 0;
@@ -175,6 +185,23 @@ export function AreaChart({
             strokeWidth={2}
             dot={false}
             name={labels[key] || key}
+          />
+        ))}
+        {/* Annotation markers */}
+        {annotations?.map((ann, i) => (
+          <ReferenceLine
+            key={`ann-${i}`}
+            x={ann.x}
+            stroke={ann.color}
+            strokeDasharray="4 2"
+            strokeWidth={1.5}
+            label={{
+              value: ann.label,
+              position: "top",
+              fill: ann.color,
+              fontSize: 10,
+              fontWeight: 500,
+            }}
           />
         ))}
       </RechartsAreaChart>
