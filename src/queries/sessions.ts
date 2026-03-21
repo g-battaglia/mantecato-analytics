@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface SessionListItem {
   sessionId: string;
@@ -21,8 +21,12 @@ export async function getSessionList(
   startDate: Date,
   endDate: Date,
   limit = 50,
-  offset = 0
+  offset = 0,
+  filters: Filter[] = []
 ): Promise<SessionListItem[]> {
+  // Session join is always present here
+  const { sql: filterWhere, params: filterParams } = buildFilterSQL(filters);
+
   const results = await rawQuery<{
     session_id: string;
     country: string | null;
@@ -49,10 +53,11 @@ export async function getSessionList(
     WHERE we.website_id = {{websiteId::uuid}}
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
+      ${filterWhere}
     GROUP BY we.session_id, s.country, s.city, s.browser, s.os, s.device
     ORDER BY started_at DESC
     LIMIT ${limit} OFFSET ${offset}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({

@@ -41,6 +41,9 @@ export const CHART_COLORS = [
 
 /** Date range preset definitions */
 export const DATE_RANGE_PRESETS = {
+  "1h": { label: "Last 1 hour" },
+  "3h": { label: "Last 3 hours" },
+  "6h": { label: "Last 6 hours" },
   today: { label: "Today" },
   yesterday: { label: "Yesterday" },
   "24h": { label: "Last 24 hours" },
@@ -78,6 +81,7 @@ export type ComparisonMode = keyof typeof COMPARISON_MODES;
 /** Granularity options */
 export const GRANULARITY_OPTIONS = {
   auto: { label: "Auto" },
+  minute: { label: "Per minute" },
   hour: { label: "Hourly" },
   day: { label: "Daily" },
   week: { label: "Weekly" },

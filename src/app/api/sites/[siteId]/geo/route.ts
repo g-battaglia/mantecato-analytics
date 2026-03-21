@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
 import { resolveDateRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
+import { parseFiltersFromParams } from "@/lib/queries";
 import { getGeoMetrics } from "@/queries/geo";
 
 export async function GET(
@@ -32,6 +33,7 @@ export async function GET(
     | "city";
   const country = sp.get("country") ?? undefined;
   const region = sp.get("region") ?? undefined;
+  const filters = parseFiltersFromParams(sp);
 
   try {
     const geo = await getGeoMetrics(
@@ -40,7 +42,9 @@ export async function GET(
       endDate,
       level,
       country,
-      region
+      region,
+      50,
+      filters
     );
     return NextResponse.json(geo);
   } catch (error) {

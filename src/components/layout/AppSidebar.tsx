@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   Filter,
   Settings,
+  Timer,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,22 +35,23 @@ import {
 import { SiteSelector } from "./SiteSelector";
 
 const SITE_NAV_ITEMS = [
-  { label: "Overview", href: "", icon: BarChart3 },
-  { label: "Pages", href: "/pages", icon: FileText },
-  { label: "Sources", href: "/sources", icon: Globe },
-  { label: "Events", href: "/events", icon: MousePointerClick },
-  { label: "Sessions", href: "/sessions", icon: Users },
-  { label: "Devices", href: "/devices", icon: Monitor },
-  { label: "Geo", href: "/geo", icon: Globe },
-  { label: "Compare", href: "/compare", icon: GitCompare },
-  { label: "Realtime", href: "/realtime", icon: Radio },
+  { label: "Overview", href: "", icon: BarChart3, tooltip: "Key metrics at a glance: pageviews, visitors, bounce rate, and traffic trends" },
+  { label: "Pages", href: "/pages", icon: FileText, tooltip: "Page-level analytics: views, time on page, bounce rate, entry and exit pages" },
+  { label: "Sources", href: "/sources", icon: Globe, tooltip: "Where your traffic comes from: referrers, UTM campaigns, and channels" },
+  { label: "Events", href: "/events", icon: MousePointerClick, tooltip: "Custom events tracked on your site: clicks, form submissions, and other interactions" },
+  { label: "Sessions", href: "/sessions", icon: Users, tooltip: "Browse individual visitor sessions and their activity timelines" },
+  { label: "Devices", href: "/devices", icon: Monitor, tooltip: "Visitor technology breakdown: browsers, operating systems, screen sizes, and languages" },
+  { label: "Geo", href: "/geo", icon: Globe, tooltip: "Geographic distribution of visitors by country, region, and city" },
+  { label: "Engagement", href: "/engagement", icon: Timer, tooltip: "Visit duration distribution, percentiles, time-on-page per page, and bounce rate breakdown by entry page and source" },
+  { label: "Compare", href: "/compare", icon: GitCompare, tooltip: "Compare metrics between two time periods to spot trends and changes" },
+  { label: "Realtime", href: "/realtime", icon: Radio, tooltip: "Live view of active visitors, current pages, and incoming events" },
 ];
 
 const ADVANCED_NAV_ITEMS = [
-  { label: "Retention", href: "/retention", icon: TrendingUp },
-  { label: "Funnels", href: "/funnels", icon: Filter },
-  { label: "Journeys", href: "/journeys", icon: Shuffle },
-  { label: "Revenue", href: "/revenue", icon: DollarSign },
+  { label: "Retention", href: "/retention", icon: TrendingUp, tooltip: "Cohort retention analysis: how many visitors return over time" },
+  { label: "Funnels", href: "/funnels", icon: Filter, tooltip: "Define multi-step funnels to measure conversion rates and drop-off points" },
+  { label: "Journeys", href: "/journeys", icon: Shuffle, tooltip: "Most common page sequences visitors follow through your site" },
+  { label: "Revenue", href: "/revenue", icon: DollarSign, tooltip: "Revenue analytics: total income, revenue per event, and geographic breakdown" },
 ];
 
 export function AppSidebar() {
@@ -156,7 +158,7 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={pathname === "/dashboards"}
-                  tooltip="Dashboards"
+                  tooltip="Create and manage custom dashboards with drag-and-drop widgets"
                 >
                   <Link href="/dashboards">
                     <LayoutDashboard />
@@ -175,7 +177,7 @@ export function AppSidebar() {
             <SidebarMenuButton
               asChild
               isActive={pathname === "/settings"}
-              tooltip="Settings"
+              tooltip="Preferences: theme, default date range, number format, and timezone"
             >
               <Link href="/settings">
                 <Settings />

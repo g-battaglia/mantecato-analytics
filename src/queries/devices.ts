@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface DeviceMetrics {
   value: string;
@@ -16,10 +16,14 @@ export async function getDeviceMetrics(
   startDate: Date,
   endDate: Date,
   dimension: "browser" | "os" | "device" | "screen" | "language",
-  limit = 20
+  limit = 20,
+  filters: Filter[] = []
 ): Promise<DeviceMetrics[]> {
   const validDimensions = ["browser", "os", "device", "screen", "language"];
   if (!validDimensions.includes(dimension)) return [];
+
+  // Always needs session join for the dimension itself
+  const { sql: filterWhere, params: filterParams } = buildFilterSQL(filters);
 
   const results = await rawQuery<{
     value: string;
@@ -37,10 +41,11 @@ export async function getDeviceMetrics(
       AND we.event_type = 1
       AND s.${dimension} IS NOT NULL
       AND s.${dimension} != ''
+      ${filterWhere}
     GROUP BY s.${dimension}
     ORDER BY visitors DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   const total = results.reduce((sum, r) => sum + Number(r.visitors), 0);

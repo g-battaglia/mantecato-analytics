@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# tracker package build artifacts
+packages/tracker/dist
+packages/tracker/node_modules

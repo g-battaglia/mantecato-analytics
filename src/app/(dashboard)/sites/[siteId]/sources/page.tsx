@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DataTable, type Column } from "@/components/data/DataTable";
+import { DataTable } from "@/components/data/DataTable";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { formatDuration, formatPercent } from "@/lib/format";
 
@@ -23,53 +24,82 @@ interface UTMRow {
   pageviews: number;
 }
 
-const referrerColumns: Column<ReferrerRow>[] = [
-  { key: "referrerDomain", label: "Source" },
+const referrerColumns: ColumnDef<ReferrerRow>[] = [
+  { accessorKey: "referrerDomain", header: "Source", enableSorting: false },
   {
-    key: "visitors",
-    label: "Visitors",
-    align: "right",
-    render: (row) => row.visitors.toLocaleString(),
+    accessorKey: "visitors",
+    header: () => <span className="flex justify-end">Visitors</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
   {
-    key: "pageviews",
-    label: "Pageviews",
-    align: "right",
-    render: (row) => row.pageviews.toLocaleString(),
+    accessorKey: "pageviews",
+    header: () => <span className="flex justify-end">Pageviews</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
   {
-    key: "bounceRate",
-    label: "Bounce Rate",
-    align: "right",
-    render: (row) => formatPercent(row.bounceRate),
+    accessorKey: "bounceRate",
+    header: () => <span className="flex justify-end">Bounce Rate</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatPercent(getValue() as number)}
+      </span>
+    ),
   },
   {
-    key: "avgDuration",
-    label: "Avg Duration",
-    align: "right",
-    render: (row) => formatDuration(row.avgDuration),
+    accessorKey: "avgDuration",
+    header: () => <span className="flex justify-end">Avg Duration</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatDuration(getValue() as number)}
+      </span>
+    ),
   },
 ];
 
-const utmColumns: Column<UTMRow>[] = [
-  { key: "utmSource", label: "Source", render: (row) => row.utmSource ?? "--" },
-  { key: "utmMedium", label: "Medium", render: (row) => row.utmMedium ?? "--" },
+const utmColumns: ColumnDef<UTMRow>[] = [
   {
-    key: "utmCampaign",
-    label: "Campaign",
-    render: (row) => row.utmCampaign ?? "--",
+    accessorKey: "utmSource",
+    header: "Source",
+    cell: ({ getValue }) => (getValue() as string) ?? "--",
+    enableSorting: false,
   },
   {
-    key: "visitors",
-    label: "Visitors",
-    align: "right",
-    render: (row) => row.visitors.toLocaleString(),
+    accessorKey: "utmMedium",
+    header: "Medium",
+    cell: ({ getValue }) => (getValue() as string) ?? "--",
+    enableSorting: false,
   },
   {
-    key: "pageviews",
-    label: "Pageviews",
-    align: "right",
-    render: (row) => row.pageviews.toLocaleString(),
+    accessorKey: "utmCampaign",
+    header: "Campaign",
+    cell: ({ getValue }) => (getValue() as string) ?? "--",
+    enableSorting: false,
+  },
+  {
+    accessorKey: "visitors",
+    header: () => <span className="flex justify-end">Visitors</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "pageviews",
+    header: () => <span className="flex justify-end">Pageviews</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
 ];
 
@@ -106,7 +136,8 @@ export default function SourcesPage() {
                 columns={referrerColumns}
                 data={referrers ?? []}
                 loading={refLoading}
-                rowKey={(row) => row.referrerDomain}
+                searchColumn="referrerDomain"
+                searchPlaceholder="Search sources..."
                 emptyMessage="No referrer data"
               />
             </TabsContent>
@@ -115,9 +146,6 @@ export default function SourcesPage() {
                 columns={utmColumns}
                 data={utm ?? []}
                 loading={utmLoading}
-                rowKey={(row) =>
-                  `${row.utmSource}-${row.utmMedium}-${row.utmCampaign}`
-                }
                 emptyMessage="No UTM data"
               />
             </TabsContent>

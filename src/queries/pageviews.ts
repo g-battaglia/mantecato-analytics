@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface PageMetrics {
   urlPath: string;
@@ -20,8 +20,17 @@ export async function getPageMetrics(
   startDate: Date,
   endDate: Date,
   limit = 50,
-  offset = 0
+  offset = 0,
+  filters: Filter[] = []
 ): Promise<PageMetrics[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  // In the CTE we use "we" alias for consistency with filter SQL
+  const sessionJoinCTE = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     url_path: string;
     page_title: string | null;
@@ -33,7 +42,16 @@ export async function getPageMetrics(
     exits: bigint;
     bounce_rate: number;
   }>(
-    `WITH page_sequence AS (
+    `WITH filtered_events AS (
+      SELECT we.url_path, we.page_title, we.visit_id, we.session_id, we.created_at
+      FROM website_event we
+      ${sessionJoinCTE}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        ${filterWhere}
+    ),
+    page_sequence AS (
       SELECT
         url_path,
         page_title,
@@ -43,17 +61,11 @@ export async function getPageMetrics(
         LEAD(created_at) OVER (PARTITION BY visit_id ORDER BY created_at) AS next_page_at,
         ROW_NUMBER() OVER (PARTITION BY visit_id ORDER BY created_at ASC) AS rn_entry,
         ROW_NUMBER() OVER (PARTITION BY visit_id ORDER BY created_at DESC) AS rn_exit
-      FROM website_event
-      WHERE website_id = {{websiteId::uuid}}
-        AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-        AND event_type = 1
+      FROM filtered_events
     ),
     visit_bounces AS (
       SELECT visit_id, COUNT(*) AS page_count
-      FROM website_event
-      WHERE website_id = {{websiteId::uuid}}
-        AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-        AND event_type = 1
+      FROM filtered_events
       GROUP BY visit_id
     )
     SELECT
@@ -80,7 +92,7 @@ export async function getPageMetrics(
     GROUP BY ps.url_path
     ORDER BY views DESC
     LIMIT ${limit} OFFSET ${offset}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -110,10 +122,17 @@ export async function getPageTimeSeries(
   urlPath: string,
   startDate: Date,
   endDate: Date,
-  granularity: string
+  granularity: string,
+  filters: Filter[] = []
 ): Promise<PageTimeSeries[]> {
   const validGranularities = ["minute", "hour", "day", "week", "month"];
   const gran = validGranularities.includes(granularity) ? granularity : "day";
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
 
   const results = await rawQuery<{
     time: Date;
@@ -121,17 +140,19 @@ export async function getPageTimeSeries(
     visitors: bigint;
   }>(
     `SELECT
-      date_trunc('${gran}', created_at) AS time,
+      date_trunc('${gran}', we.created_at) AS time,
       COUNT(*)::bigint AS views,
-      COUNT(DISTINCT session_id)::bigint AS visitors
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 1
-      AND url_path = {{urlPath}}
+      COUNT(DISTINCT we.session_id)::bigint AS visitors
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      AND we.url_path = {{urlPath}}
+      ${filterWhere}
     GROUP BY 1
     ORDER BY 1 ASC`,
-    { websiteId, startDate, endDate, urlPath }
+    { websiteId, startDate, endDate, urlPath, ...filterParams }
   );
 
   return results.map((r) => ({

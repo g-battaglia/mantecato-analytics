@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
-import { resolveDateRange } from "@/lib/date";
+import { resolveDateRange, getComparisonRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
+import { parseFiltersFromParams } from "@/lib/queries";
 import {
   getWebsiteStats,
   getPageviewTimeSeries,
@@ -36,7 +37,8 @@ export async function GET(
   const customStart = searchParams.get("start");
   const customEnd = searchParams.get("end");
   const granularity = searchParams.get("granularity") || "day";
-  const section = searchParams.get("section"); // optional: only fetch specific section
+  const section = searchParams.get("section");
+  const filters = parseFiltersFromParams(searchParams);
 
   let startDate: Date;
   let endDate: Date;
@@ -47,7 +49,6 @@ export async function GET(
   } else {
     const range = resolveDateRange(preset);
     if (!range) {
-      // All time — use a very early date
       startDate = new Date("2020-01-01");
       endDate = new Date();
     } else {
@@ -56,88 +57,72 @@ export async function GET(
     }
   }
 
+  // Calculate previous period for comparison
+  const prevRange = getComparisonRange(
+    { startDate, endDate },
+    "previous_period"
+  );
+
   try {
-    // If a specific section is requested, only fetch that
     if (section) {
       switch (section) {
         case "metrics": {
-          const stats = await getWebsiteStats(siteId, startDate, endDate);
+          const stats = await getWebsiteStats(siteId, startDate, endDate, filters);
           return NextResponse.json(stats);
         }
         case "timeseries": {
-          const timeseries = await getPageviewTimeSeries(
-            siteId,
-            startDate,
-            endDate,
-            granularity
-          );
+          const timeseries = await getPageviewTimeSeries(siteId, startDate, endDate, granularity, filters);
           return NextResponse.json(timeseries);
         }
         case "pages": {
-          const pages = await getTopPages(siteId, startDate, endDate);
+          const pages = await getTopPages(siteId, startDate, endDate, 10, filters);
           return NextResponse.json(pages);
         }
         case "referrers": {
-          const referrers = await getTopReferrers(siteId, startDate, endDate);
+          const referrers = await getTopReferrers(siteId, startDate, endDate, 10, filters);
           return NextResponse.json(referrers);
         }
         case "events": {
-          const events = await getTopEvents(siteId, startDate, endDate);
+          const events = await getTopEvents(siteId, startDate, endDate, 10, filters);
           return NextResponse.json(events);
         }
         case "browsers": {
-          const browsers = await getDeviceBreakdown(
-            siteId,
-            startDate,
-            endDate,
-            "browser"
-          );
+          const browsers = await getDeviceBreakdown(siteId, startDate, endDate, "browser", 10, filters);
           return NextResponse.json(browsers);
         }
         case "os": {
-          const os = await getDeviceBreakdown(
-            siteId,
-            startDate,
-            endDate,
-            "os"
-          );
+          const os = await getDeviceBreakdown(siteId, startDate, endDate, "os", 10, filters);
           return NextResponse.json(os);
         }
         case "devices": {
-          const devices = await getDeviceBreakdown(
-            siteId,
-            startDate,
-            endDate,
-            "device"
-          );
+          const devices = await getDeviceBreakdown(siteId, startDate, endDate, "device", 10, filters);
           return NextResponse.json(devices);
         }
         case "countries": {
-          const countries = await getCountryBreakdown(
-            siteId,
-            startDate,
-            endDate
-          );
+          const countries = await getCountryBreakdown(siteId, startDate, endDate, 10, filters);
           return NextResponse.json(countries);
         }
       }
     }
 
-    // Default: fetch all overview data in parallel
-    const [stats, timeseries, pages, referrers, events, browsers, countries] =
+    const [stats, previousStats, timeseries, previousTimeseries, pages, referrers, events, browsers, countries] =
       await Promise.all([
-        getWebsiteStats(siteId, startDate, endDate),
-        getPageviewTimeSeries(siteId, startDate, endDate, granularity),
-        getTopPages(siteId, startDate, endDate),
-        getTopReferrers(siteId, startDate, endDate),
-        getTopEvents(siteId, startDate, endDate),
-        getDeviceBreakdown(siteId, startDate, endDate, "browser"),
-        getCountryBreakdown(siteId, startDate, endDate),
+        getWebsiteStats(siteId, startDate, endDate, filters),
+        getWebsiteStats(siteId, prevRange.startDate, prevRange.endDate, filters),
+        getPageviewTimeSeries(siteId, startDate, endDate, granularity, filters),
+        getPageviewTimeSeries(siteId, prevRange.startDate, prevRange.endDate, granularity, filters),
+        getTopPages(siteId, startDate, endDate, 10, filters),
+        getTopReferrers(siteId, startDate, endDate, 10, filters),
+        getTopEvents(siteId, startDate, endDate, 10, filters),
+        getDeviceBreakdown(siteId, startDate, endDate, "browser", 10, filters),
+        getCountryBreakdown(siteId, startDate, endDate, 10, filters),
       ]);
 
     return NextResponse.json({
       stats,
+      previousStats,
       timeseries,
+      previousTimeseries,
       pages,
       referrers,
       events,

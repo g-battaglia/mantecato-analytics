@@ -14,19 +14,25 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
 
+interface StatsBlock {
+  pageviews: number;
+  visitors: number;
+  visits: number;
+  bounces: number;
+  totaltime: number;
+}
+
+interface TimeSeriesRow {
+  time: string;
+  pageviews: number;
+  visitors: number;
+}
+
 interface OverviewData {
-  stats: {
-    pageviews: number;
-    visitors: number;
-    visits: number;
-    bounces: number;
-    totaltime: number;
-  };
-  timeseries: Array<{
-    time: string;
-    pageviews: number;
-    visitors: number;
-  }>;
+  stats: StatsBlock;
+  previousStats: StatsBlock;
+  timeseries: TimeSeriesRow[];
+  previousTimeseries: TimeSeriesRow[];
   pages: Array<{ urlPath: string; views: number; visitors: number }>;
   referrers: Array<{
     referrerDomain: string;
@@ -51,20 +57,24 @@ function useOverviewData(siteId: string) {
   });
 }
 
+function derivedMetrics(s: StatsBlock | undefined) {
+  if (!s) return { bounceRate: null, avgDuration: null, pagesPerVisit: null };
+  return {
+    bounceRate: s.visits > 0 ? (s.bounces / s.visits) * 100 : null,
+    avgDuration: s.visits > 0 ? s.totaltime / s.visits : null,
+    pagesPerVisit: s.visits > 0 ? s.pageviews / s.visits : null,
+  };
+}
+
 export default function SiteOverviewPage() {
   const params = useParams();
   const siteId = params.siteId as string;
   const { data, isLoading } = useOverviewData(siteId);
 
   const stats = data?.stats;
-  const bounceRate =
-    stats && stats.visits > 0
-      ? (stats.bounces / stats.visits) * 100
-      : null;
-  const avgDuration =
-    stats && stats.visits > 0 ? stats.totaltime / stats.visits : null;
-  const pagesPerVisit =
-    stats && stats.visits > 0 ? stats.pageviews / stats.visits : null;
+  const prev = data?.previousStats;
+  const current = derivedMetrics(stats);
+  const previous = derivedMetrics(prev);
 
   return (
     <div className="space-y-4">
@@ -73,34 +83,46 @@ export default function SiteOverviewPage() {
         <MetricCard
           label="Pageviews"
           value={stats?.pageviews ?? null}
+          previousValue={prev?.pageviews ?? null}
+          tooltip="Total number of pages viewed. Repeated views of the same page are counted."
           loading={isLoading}
         />
         <MetricCard
           label="Visitors"
           value={stats?.visitors ?? null}
+          previousValue={prev?.visitors ?? null}
+          tooltip="Unique visitors identified by session. One person visiting from two browsers counts as two visitors."
           loading={isLoading}
         />
         <MetricCard
           label="Visits"
           value={stats?.visits ?? null}
+          previousValue={prev?.visits ?? null}
+          tooltip="Number of browsing sessions. A new visit starts after 30 minutes of inactivity."
           loading={isLoading}
         />
         <MetricCard
           label="Bounce Rate"
-          value={bounceRate}
+          value={current.bounceRate}
+          previousValue={previous.bounceRate}
           format="percent"
+          tooltip="Percentage of visits with only a single page view. Lower is generally better."
           loading={isLoading}
           invertTrend
         />
         <MetricCard
           label="Avg Duration"
-          value={avgDuration}
+          value={current.avgDuration}
+          previousValue={previous.avgDuration}
           format="duration"
+          tooltip="Average time spent on the site per visit, measured from first to last pageview."
           loading={isLoading}
         />
         <MetricCard
           label="Pages / Visit"
-          value={pagesPerVisit}
+          value={current.pagesPerVisit}
+          previousValue={previous.pagesPerVisit}
+          tooltip="Average number of pages viewed during a single visit."
           loading={isLoading}
         />
       </div>
@@ -119,6 +141,8 @@ export default function SiteOverviewPage() {
               xKey="time"
               yKeys={["pageviews", "visitors"]}
               labels={{ pageviews: "Pageviews", visitors: "Visitors" }}
+              comparisonData={data.previousTimeseries}
+              comparisonKeys={["pageviews", "visitors"]}
             />
           ) : null}
         </CardContent>

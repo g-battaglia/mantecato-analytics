@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
 import { resolveDateRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
-import { getEventMetrics, getEventProperties } from "@/queries/events";
+import { parseFiltersFromParams } from "@/lib/queries";
+import {
+  getEventMetrics,
+  getEventProperties,
+  getEventTimeSeries,
+} from "@/queries/events";
 
 export async function GET(
   request: NextRequest,
@@ -27,19 +32,50 @@ export async function GET(
       ? new Date(sp.get("end")!)
       : range?.endDate ?? new Date();
   const eventName = sp.get("event");
+  const granularity = sp.get("granularity") || "day";
+  const section = sp.get("section");
+  const filters = parseFiltersFromParams(sp);
 
   try {
+    // Detail view for a specific event
     if (eventName) {
-      const properties = await getEventProperties(
-        siteId,
-        eventName,
-        startDate,
-        endDate
-      );
-      return NextResponse.json(properties);
+      if (section === "timeseries") {
+        const timeseries = await getEventTimeSeries(
+          siteId,
+          eventName,
+          startDate,
+          endDate,
+          granularity,
+          filters
+        );
+        return NextResponse.json(timeseries);
+      }
+
+      if (section === "properties") {
+        const properties = await getEventProperties(
+          siteId,
+          eventName,
+          startDate,
+          endDate
+        );
+        return NextResponse.json(properties);
+      }
+
+      // Default: return both timeseries + properties for the event
+      const [timeseries, properties] = await Promise.all([
+        getEventTimeSeries(siteId, eventName, startDate, endDate, granularity, filters),
+        getEventProperties(siteId, eventName, startDate, endDate),
+      ]);
+      return NextResponse.json({ timeseries, properties });
     }
 
-    const events = await getEventMetrics(siteId, startDate, endDate);
+    const events = await getEventMetrics(
+      siteId,
+      startDate,
+      endDate,
+      50,
+      filters
+    );
     return NextResponse.json(events);
   } catch (error) {
     console.error("Events query error:", error);

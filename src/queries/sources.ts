@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface ReferrerMetrics {
   referrerDomain: string;
@@ -15,8 +15,16 @@ export async function getReferrerMetrics(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  limit = 50
+  limit = 50,
+  filters: Filter[] = []
 ): Promise<ReferrerMetrics[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     referrer_domain: string;
     visitors: bigint;
@@ -26,15 +34,17 @@ export async function getReferrerMetrics(
   }>(
     `WITH visit_stats AS (
       SELECT
-        visit_id,
-        referrer_domain,
+        we.visit_id,
+        we.referrer_domain,
         COUNT(*) AS pages,
-        EXTRACT(EPOCH FROM (MAX(created_at) - MIN(created_at))) AS duration
-      FROM website_event
-      WHERE website_id = {{websiteId::uuid}}
-        AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-        AND event_type = 1
-      GROUP BY visit_id, referrer_domain
+        EXTRACT(EPOCH FROM (MAX(we.created_at) - MIN(we.created_at))) AS duration
+      FROM website_event we
+      ${sessionJoin}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        ${filterWhere}
+      GROUP BY we.visit_id, we.referrer_domain
     )
     SELECT
       COALESCE(referrer_domain, '(direct)') AS referrer_domain,
@@ -48,7 +58,7 @@ export async function getReferrerMetrics(
     GROUP BY referrer_domain
     ORDER BY visitors DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -76,10 +86,18 @@ export async function getUTMMetrics(
   startDate: Date,
   endDate: Date,
   groupBy: "utm_source" | "utm_medium" | "utm_campaign" = "utm_source",
-  limit = 50
+  limit = 50,
+  filters: Filter[] = []
 ): Promise<UTMMetrics[]> {
   const validFields = ["utm_source", "utm_medium", "utm_campaign"];
   if (!validFields.includes(groupBy)) return [];
+
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
 
   const results = await rawQuery<{
     utm_source: string | null;
@@ -89,20 +107,22 @@ export async function getUTMMetrics(
     pageviews: bigint;
   }>(
     `SELECT
-      utm_source,
-      utm_medium,
-      utm_campaign,
-      COUNT(DISTINCT session_id)::bigint AS visitors,
+      we.utm_source,
+      we.utm_medium,
+      we.utm_campaign,
+      COUNT(DISTINCT we.session_id)::bigint AS visitors,
       COUNT(*)::bigint AS pageviews
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 1
-      AND ${groupBy} IS NOT NULL
-    GROUP BY utm_source, utm_medium, utm_campaign
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      AND we.${groupBy} IS NOT NULL
+      ${filterWhere}
+    GROUP BY we.utm_source, we.utm_medium, we.utm_campaign
     ORDER BY visitors DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({

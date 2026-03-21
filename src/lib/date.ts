@@ -15,6 +15,7 @@ import {
   subYears,
   subWeeks,
   subQuarters,
+  differenceInHours,
   differenceInDays,
 } from "date-fns";
 import type { DateRangePreset, Granularity } from "./constants";
@@ -31,6 +32,12 @@ export function resolveDateRange(preset: DateRangePreset): DateRange | null {
   const now = new Date();
 
   switch (preset) {
+    case "1h":
+      return { startDate: subHours(now, 1), endDate: now };
+    case "3h":
+      return { startDate: subHours(now, 3), endDate: now };
+    case "6h":
+      return { startDate: subHours(now, 6), endDate: now };
     case "today":
       return { startDate: startOfDay(now), endDate: now };
     case "yesterday":
@@ -107,6 +114,7 @@ export function getComparisonRange(
   range: DateRange,
   mode: "previous_period" | "previous_year"
 ): DateRange {
+  const hours = differenceInHours(range.endDate, range.startDate);
   const days = differenceInDays(range.endDate, range.startDate);
 
   if (mode === "previous_year") {
@@ -117,6 +125,14 @@ export function getComparisonRange(
   }
 
   // Previous period: same duration, immediately before
+  if (hours < 24) {
+    // For sub-day ranges, shift by hours
+    return {
+      startDate: subHours(range.startDate, hours),
+      endDate: subHours(range.endDate, hours),
+    };
+  }
+
   return {
     startDate: subDays(range.startDate, days + 1),
     endDate: subDays(range.startDate, 1),
@@ -127,8 +143,10 @@ export function getComparisonRange(
  * Auto-select granularity based on date range span.
  */
 export function getAutoGranularity(range: DateRange): Exclude<Granularity, "auto"> {
+  const hours = differenceInHours(range.endDate, range.startDate);
   const days = differenceInDays(range.endDate, range.startDate);
 
+  if (hours <= 6) return "minute";
   if (days <= 1) return "hour";
   if (days <= 90) return "day";
   if (days <= 365) return "week";

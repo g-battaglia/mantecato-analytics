@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface EventMetrics {
   eventName: string;
@@ -14,8 +14,16 @@ export async function getEventMetrics(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  limit = 50
+  limit = 50,
+  filters: Filter[] = []
 ): Promise<EventMetrics[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     event_name: string;
     count: bigint;
@@ -23,19 +31,21 @@ export async function getEventMetrics(
     last_triggered: Date | null;
   }>(
     `SELECT
-      event_name,
+      we.event_name,
       COUNT(*)::bigint AS count,
-      COUNT(DISTINCT session_id)::bigint AS visitors,
-      MAX(created_at) AS last_triggered
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 2
-      AND event_name IS NOT NULL
-    GROUP BY event_name
+      COUNT(DISTINCT we.session_id)::bigint AS visitors,
+      MAX(we.created_at) AS last_triggered
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 2
+      AND we.event_name IS NOT NULL
+      ${filterWhere}
+    GROUP BY we.event_name
     ORDER BY count DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -63,26 +73,35 @@ export async function getEventTimeSeries(
   eventName: string,
   startDate: Date,
   endDate: Date,
-  granularity: string
+  granularity: string,
+  filters: Filter[] = []
 ): Promise<EventTimeSeries[]> {
   const validGranularities = ["minute", "hour", "day", "week", "month"];
   const gran = validGranularities.includes(granularity) ? granularity : "day";
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
 
   const results = await rawQuery<{
     time: Date;
     count: bigint;
   }>(
     `SELECT
-      date_trunc('${gran}', created_at) AS time,
+      date_trunc('${gran}', we.created_at) AS time,
       COUNT(*)::bigint AS count
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 2
-      AND event_name = {{eventName}}
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 2
+      AND we.event_name = {{eventName}}
+      ${filterWhere}
     GROUP BY 1
     ORDER BY 1 ASC`,
-    { websiteId, startDate, endDate, eventName }
+    { websiteId, startDate, endDate, eventName, ...filterParams }
   );
 
   return results.map((r) => ({

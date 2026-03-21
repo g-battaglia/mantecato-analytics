@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
 import { resolveDateRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
+import { parseFiltersFromParams } from "@/lib/queries";
 import { getDeviceMetrics } from "@/queries/devices";
 
 export async function GET(
@@ -26,14 +27,15 @@ export async function GET(
     preset === "custom" && sp.get("end")
       ? new Date(sp.get("end")!)
       : range?.endDate ?? new Date();
+  const filters = parseFiltersFromParams(sp);
 
   try {
     const [browsers, os, devices, screens, languages] = await Promise.all([
-      getDeviceMetrics(siteId, startDate, endDate, "browser"),
-      getDeviceMetrics(siteId, startDate, endDate, "os"),
-      getDeviceMetrics(siteId, startDate, endDate, "device"),
-      getDeviceMetrics(siteId, startDate, endDate, "screen"),
-      getDeviceMetrics(siteId, startDate, endDate, "language"),
+      getDeviceMetrics(siteId, startDate, endDate, "browser", 20, filters),
+      getDeviceMetrics(siteId, startDate, endDate, "os", 20, filters),
+      getDeviceMetrics(siteId, startDate, endDate, "device", 20, filters),
+      getDeviceMetrics(siteId, startDate, endDate, "screen", 20, filters),
+      getDeviceMetrics(siteId, startDate, endDate, "language", 20, filters),
     ]);
 
     return NextResponse.json({ browsers, os, devices, screens, languages });

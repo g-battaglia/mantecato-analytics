@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
 import { resolveDateRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
+import { parseFiltersFromParams } from "@/lib/queries";
 import { getReferrerMetrics, getUTMMetrics } from "@/queries/sources";
 
 export async function GET(
@@ -27,6 +28,7 @@ export async function GET(
       ? new Date(sp.get("end")!)
       : range?.endDate ?? new Date();
   const view = sp.get("view") || "referrers";
+  const filters = parseFiltersFromParams(sp);
 
   try {
     if (view === "utm") {
@@ -34,11 +36,24 @@ export async function GET(
         | "utm_source"
         | "utm_medium"
         | "utm_campaign";
-      const utm = await getUTMMetrics(siteId, startDate, endDate, groupBy);
+      const utm = await getUTMMetrics(
+        siteId,
+        startDate,
+        endDate,
+        groupBy,
+        50,
+        filters
+      );
       return NextResponse.json(utm);
     }
 
-    const referrers = await getReferrerMetrics(siteId, startDate, endDate);
+    const referrers = await getReferrerMetrics(
+      siteId,
+      startDate,
+      endDate,
+      50,
+      filters
+    );
     return NextResponse.json(referrers);
   } catch (error) {
     console.error("Sources query error:", error);

@@ -11,7 +11,8 @@ import { resolveDateRange, resolveGranularity } from "@/lib/date";
  * Returns stable query key parts to avoid infinite re-fetches.
  */
 export function useDateParams() {
-  const { preset, customStart, customEnd, granularity } = useFiltersStore();
+  const { preset, customStart, customEnd, granularity, filters } =
+    useFiltersStore();
 
   return useMemo(() => {
     const range = resolveDateRange(preset);
@@ -36,19 +37,34 @@ export function useDateParams() {
       granularity: resolvedGran,
     });
 
-    // For non-custom presets, use the preset name as the stable key
-    // (the server resolves it to dates). For custom, use the actual dates.
+    // Serialize active filters into search params
+    for (const filter of filters) {
+      params.append("f", `${filter.column}:${filter.operator}:${filter.value}`);
+    }
+
+    // Build stable query key: preset-based for non-custom, includes filter fingerprint
+    const filterKey = filters
+      .map((f) => `${f.column}:${f.operator}:${f.value}`)
+      .sort();
+
     const queryKeyParts =
       preset === "custom"
-        ? [preset, startDate, endDate, resolvedGran]
-        : [preset, resolvedGran];
+        ? [preset, startDate, endDate, resolvedGran, ...filterKey]
+        : [preset, resolvedGran, ...filterKey];
 
-    return { params, startDate, endDate, granularity: resolvedGran, preset, queryKeyParts };
-  }, [preset, customStart, customEnd, granularity]);
+    return {
+      params,
+      startDate,
+      endDate,
+      granularity: resolvedGran,
+      preset,
+      queryKeyParts,
+    };
+  }, [preset, customStart, customEnd, granularity, filters]);
 }
 
 /**
- * Convenience hook for fetching site-scoped data with date range.
+ * Convenience hook for fetching site-scoped data with date range + filters.
  */
 export function useSiteQuery<T>(
   endpoint: string,
@@ -75,7 +91,9 @@ export function useSiteQuery<T>(
       ...(extraParams ? Object.values(extraParams) : []),
     ],
     queryFn: async () => {
-      const res = await fetch(`/api/sites/${siteId}/${endpoint}?${finalParams}`);
+      const res = await fetch(
+        `/api/sites/${siteId}/${endpoint}?${finalParams}`
+      );
       if (!res.ok) throw new Error(`Failed to fetch ${endpoint}`);
       return res.json();
     },

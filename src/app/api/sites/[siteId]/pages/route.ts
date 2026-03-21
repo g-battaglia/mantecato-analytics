@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
 import { resolveDateRange } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
+import { parseFiltersFromParams } from "@/lib/queries";
 import { getPageMetrics } from "@/queries/pageviews";
 
 export async function GET(
@@ -28,6 +29,7 @@ export async function GET(
       : range?.endDate ?? new Date();
   const limit = Number(sp.get("limit") || 50);
   const offset = Number(sp.get("offset") || 0);
+  const filters = parseFiltersFromParams(sp);
 
   try {
     const pages = await getPageMetrics(
@@ -35,7 +37,8 @@ export async function GET(
       startDate,
       endDate,
       limit,
-      offset
+      offset,
+      filters
     );
     return NextResponse.json(pages);
   } catch (error) {

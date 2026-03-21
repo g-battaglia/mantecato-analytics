@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface GeoMetrics {
   country: string;
@@ -20,11 +20,16 @@ export async function getGeoMetrics(
   level: "country" | "region" | "city" = "country",
   countryFilter?: string,
   regionFilter?: string,
-  limit = 50
+  limit = 50,
+  filters: Filter[] = []
 ): Promise<GeoMetrics[]> {
   let groupBy: string;
   let extraFilter = "";
   const params: Record<string, unknown> = { websiteId, startDate, endDate };
+
+  // Merge filter params
+  const { sql: filterWhere, params: filterParams } = buildFilterSQL(filters);
+  Object.assign(params, filterParams);
 
   switch (level) {
     case "city":
@@ -71,6 +76,7 @@ export async function getGeoMetrics(
       AND we.event_type = 1
       AND s.country IS NOT NULL
       ${extraFilter}
+      ${filterWhere}
     GROUP BY ${groupBy}
     ORDER BY visitors DESC
     LIMIT ${limit}`,

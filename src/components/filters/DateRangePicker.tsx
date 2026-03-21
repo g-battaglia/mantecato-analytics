@@ -23,6 +23,10 @@ import { useFiltersStore } from "@/stores/filters";
 import type { DateRange as DateRangeType } from "react-day-picker";
 
 const QUICK_PRESETS: DateRangePreset[] = [
+  "1h",
+  "3h",
+  "6h",
+  "24h",
   "today",
   "yesterday",
   "7d",
@@ -110,7 +114,7 @@ export function GranularitySelector() {
     <Select
       value={granularity}
       onValueChange={(v) =>
-        setGranularity(v as "auto" | "hour" | "day" | "week" | "month")
+        setGranularity(v as "auto" | "minute" | "hour" | "day" | "week" | "month")
       }
     >
       <SelectTrigger className="h-8 w-[100px] text-xs">
@@ -118,6 +122,7 @@ export function GranularitySelector() {
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="auto">Auto</SelectItem>
+        <SelectItem value="minute">Per minute</SelectItem>
         <SelectItem value="hour">Hourly</SelectItem>
         <SelectItem value="day">Daily</SelectItem>
         <SelectItem value="week">Weekly</SelectItem>

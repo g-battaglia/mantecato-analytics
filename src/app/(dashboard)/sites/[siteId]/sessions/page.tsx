@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DataTable, type Column } from "@/components/data/DataTable";
+import { DataTable } from "@/components/data/DataTable";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { formatDuration } from "@/lib/format";
 import { format } from "date-fns";
@@ -35,42 +36,69 @@ interface SessionActivity {
   eventData: Array<{ key: string; value: string }> | null;
 }
 
-const columns: Column<SessionRow>[] = [
+const columns: ColumnDef<SessionRow>[] = [
   {
-    key: "sessionId",
-    label: "Session",
-    render: (row) => (
+    accessorKey: "sessionId",
+    header: "Session",
+    cell: ({ getValue }) => (
       <span className="font-mono text-xs">
-        {row.sessionId.substring(0, 8)}...
+        {(getValue() as string).substring(0, 8)}...
+      </span>
+    ),
+    enableSorting: false,
+  },
+  {
+    id: "location",
+    header: "Location",
+    cell: ({ row }) =>
+      [row.original.city, row.original.country].filter(Boolean).join(", ") ||
+      "--",
+    enableSorting: false,
+  },
+  {
+    accessorKey: "browser",
+    header: "Browser",
+    cell: ({ getValue }) => (getValue() as string) ?? "--",
+    enableSorting: false,
+  },
+  {
+    accessorKey: "os",
+    header: "OS",
+    cell: ({ getValue }) => (getValue() as string) ?? "--",
+    enableSorting: false,
+  },
+  {
+    accessorKey: "device",
+    header: "Device",
+    cell: ({ getValue }) => (getValue() as string) ?? "--",
+    enableSorting: false,
+  },
+  {
+    accessorKey: "pagesViewed",
+    header: () => <span className="flex justify-end">Pages</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toString()}
       </span>
     ),
   },
   {
-    key: "country",
-    label: "Location",
-    render: (row) =>
-      [row.city, row.country].filter(Boolean).join(", ") || "--",
-  },
-  { key: "browser", label: "Browser", render: (row) => row.browser ?? "--" },
-  { key: "os", label: "OS", render: (row) => row.os ?? "--" },
-  { key: "device", label: "Device", render: (row) => row.device ?? "--" },
-  {
-    key: "pagesViewed",
-    label: "Pages",
-    align: "right",
-    render: (row) => row.pagesViewed.toString(),
+    accessorKey: "duration",
+    header: () => <span className="flex justify-end">Duration</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatDuration(getValue() as number)}
+      </span>
+    ),
   },
   {
-    key: "duration",
-    label: "Duration",
-    align: "right",
-    render: (row) => formatDuration(row.duration),
-  },
-  {
-    key: "startedAt",
-    label: "Started",
-    align: "right",
-    render: (row) => format(new Date(row.startedAt), "MMM d, HH:mm"),
+    accessorKey: "startedAt",
+    header: () => <span className="flex justify-end">Started</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {format(new Date(getValue() as string), "MMM d, HH:mm")}
+      </span>
+    ),
   },
 ];
 
@@ -98,7 +126,7 @@ function SessionDetail({
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={onBack}>
+          <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <CardTitle className="text-sm font-medium">
@@ -123,7 +151,7 @@ function SessionDetail({
                     <Monitor className="h-3 w-3" />
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-mono text-xs">
                       {event.urlPath}
@@ -199,9 +227,9 @@ export default function SessionsPage() {
             columns={columns}
             data={data ?? []}
             loading={isLoading}
-            rowKey={(row) => row.sessionId}
             emptyMessage="No sessions in this period"
             onRowClick={(row) => setSelectedSession(row.sessionId)}
+            pageSize={25}
           />
         </CardContent>
       </Card>

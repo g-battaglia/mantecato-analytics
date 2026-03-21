@@ -1,7 +1,8 @@
 "use client";
 
+import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataTable, type Column } from "@/components/data/DataTable";
+import { DataTable } from "@/components/data/DataTable";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { formatDuration, formatPercent } from "@/lib/format";
 
@@ -17,57 +18,80 @@ interface PageRow {
   bounceRate: number;
 }
 
-const columns: Column<PageRow>[] = [
+const columns: ColumnDef<PageRow>[] = [
   {
-    key: "urlPath",
-    label: "Page",
-    render: (row) => (
+    accessorKey: "urlPath",
+    header: "Page",
+    cell: ({ row }) => (
       <div className="max-w-[300px]">
-        <span className="block truncate font-mono text-xs">{row.urlPath}</span>
-        {row.pageTitle && (
+        <span className="block truncate font-mono text-xs">
+          {row.original.urlPath}
+        </span>
+        {row.original.pageTitle && (
           <span className="block truncate text-xs text-muted-foreground">
-            {row.pageTitle}
+            {row.original.pageTitle}
           </span>
         )}
       </div>
     ),
+    enableSorting: false,
   },
   {
-    key: "views",
-    label: "Views",
-    align: "right",
-    render: (row) => row.views.toLocaleString(),
+    accessorKey: "views",
+    header: () => <span className="flex justify-end">Views</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
   {
-    key: "visitors",
-    label: "Visitors",
-    align: "right",
-    render: (row) => row.visitors.toLocaleString(),
+    accessorKey: "visitors",
+    header: () => <span className="flex justify-end">Visitors</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
   {
-    key: "avgTimeOnPage",
-    label: "Avg Time",
-    align: "right",
-    render: (row) =>
-      row.avgTimeOnPage != null ? formatDuration(row.avgTimeOnPage) : "--",
+    accessorKey: "avgTimeOnPage",
+    header: () => <span className="flex justify-end">Avg Time</span>,
+    cell: ({ getValue }) => {
+      const v = getValue() as number | null;
+      return (
+        <span className="flex justify-end tabular-nums">
+          {v != null ? formatDuration(v) : "--"}
+        </span>
+      );
+    },
   },
   {
-    key: "bounceRate",
-    label: "Bounce Rate",
-    align: "right",
-    render: (row) => formatPercent(row.bounceRate),
+    accessorKey: "bounceRate",
+    header: () => <span className="flex justify-end">Bounce Rate</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatPercent(getValue() as number)}
+      </span>
+    ),
   },
   {
-    key: "entries",
-    label: "Entries",
-    align: "right",
-    render: (row) => row.entries.toLocaleString(),
+    accessorKey: "entries",
+    header: () => <span className="flex justify-end">Entries</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
   {
-    key: "exits",
-    label: "Exits",
-    align: "right",
-    render: (row) => row.exits.toLocaleString(),
+    accessorKey: "exits",
+    header: () => <span className="flex justify-end">Exits</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
   },
 ];
 
@@ -85,7 +109,8 @@ export default function PagesPage() {
             columns={columns}
             data={data ?? []}
             loading={isLoading}
-            rowKey={(row) => row.urlPath}
+            searchColumn="urlPath"
+            searchPlaceholder="Search pages..."
             emptyMessage="No page data for this period"
           />
         </CardContent>

@@ -13,13 +13,24 @@ import { format } from "date-fns";
 import { formatNumber } from "@/lib/format";
 import { CHART_COLORS } from "@/lib/constants";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ChartRow = Record<string, any>;
+
 interface AreaChartProps {
-  data: Array<Record<string, unknown>>;
+  data: ChartRow[];
   xKey: string;
   yKeys: string[];
   labels?: Record<string, string>;
   height?: number;
   showGrid?: boolean;
+  /**
+   * Previous period comparison data. Must be the same length as `data`.
+   * Each row should use the same xKey values (aligned by index) and
+   * keys prefixed with "prev_" (e.g. prev_pageviews, prev_visitors).
+   */
+  comparisonData?: ChartRow[];
+  /** Keys in comparisonData to render as dashed overlay lines */
+  comparisonKeys?: string[];
 }
 
 function formatXAxis(value: string): string {
@@ -32,6 +43,29 @@ function formatXAxis(value: string): string {
   }
 }
 
+/**
+ * Merge current and comparison data into a single array for Recharts.
+ * Comparison series use keys prefixed with "prev_".
+ */
+function mergeData(
+  data: ChartRow[],
+  comparisonData: ChartRow[] | undefined,
+  yKeys: string[]
+): ChartRow[] {
+  if (!comparisonData || comparisonData.length === 0) return data;
+
+  return data.map((row, i) => {
+    const merged = { ...row };
+    const compRow = comparisonData[i];
+    if (compRow) {
+      for (const key of yKeys) {
+        merged[`prev_${key}`] = compRow[key] ?? 0;
+      }
+    }
+    return merged;
+  });
+}
+
 export function AreaChart({
   data,
   xKey,
@@ -39,11 +73,25 @@ export function AreaChart({
   labels = {},
   height = 300,
   showGrid = true,
+  comparisonData,
+  comparisonKeys,
 }: AreaChartProps) {
+  const hasComparison =
+    comparisonData && comparisonData.length > 0 && comparisonKeys && comparisonKeys.length > 0;
+
+  const mergedData = hasComparison
+    ? mergeData(data, comparisonData, comparisonKeys)
+    : data;
+
+  // Build comparison key names (prev_pageviews, etc.)
+  const prevKeys = hasComparison
+    ? comparisonKeys.map((k) => `prev_${k}`)
+    : [];
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RechartsAreaChart
-        data={data}
+        data={mergedData}
         margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
       >
         {showGrid && (
@@ -84,11 +132,38 @@ export function AreaChart({
               return String(label);
             }
           }}
-          formatter={(value, name) => [
-            formatNumber(Number(value), false),
-            labels[String(name)] || String(name),
-          ]}
+          formatter={(value, name) => {
+            const nameStr = String(name);
+            const isPrev = nameStr.startsWith("prev_");
+            const baseKey = isPrev ? nameStr.slice(5) : nameStr;
+            const displayLabel = labels[baseKey] || baseKey;
+            return [
+              formatNumber(Number(value), false),
+              isPrev ? `${displayLabel} (prev)` : displayLabel,
+            ];
+          }}
         />
+        {/* Comparison areas — rendered first so they appear behind current data */}
+        {prevKeys.map((key, i) => {
+          const baseKey = key.slice(5); // remove "prev_"
+          const colorIndex = yKeys.indexOf(baseKey);
+          const color = CHART_COLORS[(colorIndex >= 0 ? colorIndex : i) % CHART_COLORS.length];
+          return (
+            <Area
+              key={key}
+              type="monotone"
+              dataKey={key}
+              stroke={color}
+              fill="none"
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              strokeOpacity={0.4}
+              dot={false}
+              name={key}
+            />
+          );
+        })}
+        {/* Current period areas */}
         {yKeys.map((key, i) => (
           <Area
             key={key}

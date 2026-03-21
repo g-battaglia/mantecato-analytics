@@ -1,7 +1,8 @@
 "use client";
 
+import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataTable, type Column } from "@/components/data/DataTable";
+import { DataTable } from "@/components/data/DataTable";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { formatPercent } from "@/lib/format";
 
@@ -20,20 +21,26 @@ interface DevicesData {
   languages: DeviceRow[];
 }
 
-function deviceColumns(label: string): Column<DeviceRow>[] {
+function deviceColumns(label: string): ColumnDef<DeviceRow>[] {
   return [
-    { key: "value", label },
+    { accessorKey: "value", header: label, enableSorting: false },
     {
-      key: "visitors",
-      label: "Visitors",
-      align: "right",
-      render: (row) => row.visitors.toLocaleString(),
+      accessorKey: "visitors",
+      header: () => <span className="flex justify-end">Visitors</span>,
+      cell: ({ getValue }) => (
+        <span className="flex justify-end tabular-nums">
+          {(getValue() as number).toLocaleString()}
+        </span>
+      ),
     },
     {
-      key: "percentage",
-      label: "%",
-      align: "right",
-      render: (row) => formatPercent(row.percentage),
+      accessorKey: "percentage",
+      header: () => <span className="flex justify-end">%</span>,
+      cell: ({ getValue }) => (
+        <span className="flex justify-end tabular-nums">
+          {formatPercent(getValue() as number)}
+        </span>
+      ),
     },
   ];
 }
@@ -122,8 +129,9 @@ export default function DevicesPage() {
               <DataTable
                 columns={deviceColumns("Screen")}
                 data={data?.screens ?? []}
-                rowKey={(row) => row.value}
                 emptyMessage="No screen data"
+                compact
+                showPagination={false}
               />
             )}
           </CardContent>
@@ -141,8 +149,8 @@ export default function DevicesPage() {
             <DataTable
               columns={deviceColumns("Language")}
               data={data?.languages ?? []}
-              rowKey={(row) => row.value}
               emptyMessage="No language data"
+              compact
             />
           )}
         </CardContent>

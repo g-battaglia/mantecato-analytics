@@ -1,4 +1,4 @@
-import { rawQuery } from "@/lib/queries";
+import { rawQuery, buildFilterSQL, type Filter } from "@/lib/queries";
 
 export interface WebsiteStats {
   pageviews: number;
@@ -14,8 +14,16 @@ export interface WebsiteStats {
 export async function getWebsiteStats(
   websiteId: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  filters: Filter[] = []
 ): Promise<WebsiteStats> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     pageviews: bigint;
     visitors: bigint;
@@ -31,17 +39,19 @@ export async function getWebsiteStats(
       COALESCE(SUM(FLOOR(EXTRACT(EPOCH FROM (t.max_time - t.min_time)))), 0)::bigint AS totaltime
     FROM (
       SELECT
-        session_id, visit_id,
+        we.session_id, we.visit_id,
         COUNT(*) AS c,
-        MIN(created_at) AS min_time,
-        MAX(created_at) AS max_time
-      FROM website_event
-      WHERE website_id = {{websiteId::uuid}}
-        AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-        AND event_type = 1
-      GROUP BY 1, 2
+        MIN(we.created_at) AS min_time,
+        MAX(we.created_at) AS max_time
+      FROM website_event we
+      ${sessionJoin}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        ${filterWhere}
+      GROUP BY we.session_id, we.visit_id
     ) AS t`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   const row = results[0];
@@ -67,10 +77,17 @@ export async function getPageviewTimeSeries(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  granularity: string
+  granularity: string,
+  filters: Filter[] = []
 ): Promise<PageviewTimeSeries[]> {
   const validGranularities = ["minute", "hour", "day", "week", "month"];
   const gran = validGranularities.includes(granularity) ? granularity : "day";
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
 
   const results = await rawQuery<{
     time: Date;
@@ -78,16 +95,18 @@ export async function getPageviewTimeSeries(
     visitors: bigint;
   }>(
     `SELECT
-      date_trunc('${gran}', created_at) AS time,
+      date_trunc('${gran}', we.created_at) AS time,
       COUNT(*)::bigint AS pageviews,
-      COUNT(DISTINCT session_id)::bigint AS visitors
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 1
+      COUNT(DISTINCT we.session_id)::bigint AS visitors
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      ${filterWhere}
     GROUP BY 1
     ORDER BY 1 ASC`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -110,25 +129,35 @@ export async function getTopPages(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  limit = 10
+  limit = 10,
+  filters: Filter[] = []
 ): Promise<TopPage[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     url_path: string;
     views: bigint;
     visitors: bigint;
   }>(
     `SELECT
-      url_path,
+      we.url_path,
       COUNT(*)::bigint AS views,
-      COUNT(DISTINCT session_id)::bigint AS visitors
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 1
-    GROUP BY url_path
+      COUNT(DISTINCT we.session_id)::bigint AS visitors
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      ${filterWhere}
+    GROUP BY we.url_path
     ORDER BY views DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -151,27 +180,37 @@ export async function getTopReferrers(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  limit = 10
+  limit = 10,
+  filters: Filter[] = []
 ): Promise<TopReferrer[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     referrer_domain: string;
     visitors: bigint;
     pageviews: bigint;
   }>(
     `SELECT
-      referrer_domain,
-      COUNT(DISTINCT session_id)::bigint AS visitors,
+      we.referrer_domain,
+      COUNT(DISTINCT we.session_id)::bigint AS visitors,
       COUNT(*)::bigint AS pageviews
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 1
-      AND referrer_domain IS NOT NULL
-      AND referrer_domain != ''
-    GROUP BY referrer_domain
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      AND we.referrer_domain IS NOT NULL
+      AND we.referrer_domain != ''
+      ${filterWhere}
+    GROUP BY we.referrer_domain
     ORDER BY visitors DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -194,26 +233,36 @@ export async function getTopEvents(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  limit = 10
+  limit = 10,
+  filters: Filter[] = []
 ): Promise<TopEvent[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
   const results = await rawQuery<{
     event_name: string;
     count: bigint;
     visitors: bigint;
   }>(
     `SELECT
-      event_name,
+      we.event_name,
       COUNT(*)::bigint AS count,
-      COUNT(DISTINCT session_id)::bigint AS visitors
-    FROM website_event
-    WHERE website_id = {{websiteId::uuid}}
-      AND created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND event_type = 2
-      AND event_name IS NOT NULL
-    GROUP BY event_name
+      COUNT(DISTINCT we.session_id)::bigint AS visitors
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 2
+      AND we.event_name IS NOT NULL
+      ${filterWhere}
+    GROUP BY we.event_name
     ORDER BY count DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -237,11 +286,15 @@ export async function getDeviceBreakdown(
   startDate: Date,
   endDate: Date,
   field: "browser" | "os" | "device",
-  limit = 10
+  limit = 10,
+  filters: Filter[] = []
 ): Promise<DeviceBreakdown[]> {
   const validFields = ["browser", "os", "device"];
   if (!validFields.includes(field)) return [];
 
+  const { sql: filterWhere, params: filterParams } = buildFilterSQL(filters);
+
+  // Always needs session join for the field itself
   const results = await rawQuery<{
     value: string;
     visitors: bigint;
@@ -255,10 +308,11 @@ export async function getDeviceBreakdown(
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
       AND s.${field} IS NOT NULL
+      ${filterWhere}
     GROUP BY s.${field}
     ORDER BY visitors DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
@@ -281,8 +335,11 @@ export async function getCountryBreakdown(
   websiteId: string,
   startDate: Date,
   endDate: Date,
-  limit = 10
+  limit = 10,
+  filters: Filter[] = []
 ): Promise<CountryBreakdown[]> {
+  const { sql: filterWhere, params: filterParams } = buildFilterSQL(filters);
+
   const results = await rawQuery<{
     country: string;
     visitors: bigint;
@@ -298,10 +355,11 @@ export async function getCountryBreakdown(
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
       AND s.country IS NOT NULL
+      ${filterWhere}
     GROUP BY s.country
     ORDER BY visitors DESC
     LIMIT ${limit}`,
-    { websiteId, startDate, endDate }
+    { websiteId, startDate, endDate, ...filterParams }
   );
 
   return results.map((r) => ({
