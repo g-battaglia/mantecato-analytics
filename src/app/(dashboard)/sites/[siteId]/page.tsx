@@ -181,11 +181,18 @@ export default function SiteOverviewPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Page</span>
+                  <div className="flex gap-4 text-right">
+                    <span className="w-16">Visitors</span>
+                    <span className="w-16">Views</span>
+                  </div>
+                </div>
                 {data?.pages.map((page) => (
                   <div
                     key={page.urlPath}
-                    className="flex items-center justify-between py-1 text-sm"
+                    className="flex items-center justify-between py-1.5 text-sm"
                   >
                     <span className="truncate font-mono text-xs">
                       {page.urlPath}
@@ -223,11 +230,15 @@ export default function SiteOverviewPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Source</span>
+                  <span>Visitors</span>
+                </div>
                 {data?.referrers.map((ref) => (
                   <div
                     key={ref.referrerDomain}
-                    className="flex items-center justify-between py-1 text-sm"
+                    className="flex items-center justify-between py-1.5 text-sm"
                   >
                     <span className="truncate">{ref.referrerDomain}</span>
                     <span className="tabular-nums font-medium">
@@ -261,11 +272,15 @@ export default function SiteOverviewPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Event</span>
+                  <span>Count</span>
+                </div>
                 {data?.events.map((evt) => (
                   <div
                     key={evt.eventName}
-                    className="flex items-center justify-between py-1 text-sm"
+                    className="flex items-center justify-between py-1.5 text-sm"
                   >
                     <span className="truncate font-mono text-xs">
                       {evt.eventName}
@@ -301,11 +316,15 @@ export default function SiteOverviewPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Browser</span>
+                  <span>Visitors</span>
+                </div>
                 {data?.browsers.map((b) => (
                   <div
                     key={b.value}
-                    className="flex items-center justify-between py-1 text-sm"
+                    className="flex items-center justify-between py-1.5 text-sm"
                   >
                     <span className="truncate">{b.value}</span>
                     <span className="tabular-nums font-medium">

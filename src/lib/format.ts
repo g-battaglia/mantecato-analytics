@@ -8,6 +8,12 @@ export function formatNumber(value: number, compact = true): string {
       maximumFractionDigits: 1,
     }).format(value);
   }
+  // For small fractional numbers (e.g. 1.977 pages/visit), show max 2 decimals
+  if (!Number.isInteger(value) && Math.abs(value) < 1000) {
+    return new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
   return new Intl.NumberFormat("en-US").format(value);
 }
 

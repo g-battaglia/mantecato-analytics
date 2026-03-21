@@ -35,13 +35,13 @@ export function Header({
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 !h-4" />
+    <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-4 border-b bg-background px-6">
+      <SidebarTrigger />
+      <Separator orientation="vertical" className="h-6!" />
       {title && (
-        <h1 className="text-sm font-medium">{title}</h1>
+        <h1 className="text-sm font-semibold">{title}</h1>
       )}
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-2">
         {shareId && (
           <Button
             variant="ghost"

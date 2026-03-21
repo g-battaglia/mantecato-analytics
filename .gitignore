@@ -45,3 +45,6 @@ next-env.d.ts
 # tracker package build artifacts
 packages/tracker/dist
 packages/tracker/node_modules
+
+# screenshots
+*.png

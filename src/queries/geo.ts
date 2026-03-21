@@ -25,8 +25,11 @@ export async function getGeoMetrics(
   limit = 50,
   filters: Filter[] = []
 ): Promise<GeoMetrics[]> {
-  let groupBy: string;
-  let selectGeo: string;
+  // Inner refs use s.column (inside CTE with JOIN session s)
+  // Outer refs use bare column names (from the CTE output)
+  let innerGroupBy: string;
+  let outerGroupBy: string;
+  let outerSelectGeo: string;
   let extraFilter = "";
   const params: Record<string, unknown> = { websiteId, startDate, endDate };
 
@@ -36,8 +39,9 @@ export async function getGeoMetrics(
 
   switch (level) {
     case "city":
-      groupBy = "s.country, s.region, s.city";
-      selectGeo = "s.country, s.region, s.city,";
+      innerGroupBy = "s.country, s.region, s.city";
+      outerGroupBy = "country, region, city";
+      outerSelectGeo = "country, region, city,";
       if (countryFilter) {
         extraFilter += " AND s.country = {{countryFilter}}";
         params.countryFilter = countryFilter;
@@ -48,16 +52,18 @@ export async function getGeoMetrics(
       }
       break;
     case "region":
-      groupBy = "s.country, s.region";
-      selectGeo = "s.country, s.region, NULL AS city,";
+      innerGroupBy = "s.country, s.region";
+      outerGroupBy = "country, region";
+      outerSelectGeo = "country, region, NULL AS city,";
       if (countryFilter) {
         extraFilter += " AND s.country = {{countryFilter}}";
         params.countryFilter = countryFilter;
       }
       break;
     default:
-      groupBy = "s.country";
-      selectGeo = "s.country, NULL AS region, NULL AS city,";
+      innerGroupBy = "s.country";
+      outerGroupBy = "country";
+      outerSelectGeo = "country, NULL AS region, NULL AS city,";
   }
 
   const results = await rawQuery<{
@@ -72,7 +78,7 @@ export async function getGeoMetrics(
   }>(
     `WITH visit_stats AS (
       SELECT
-        ${groupBy},
+        ${innerGroupBy},
         we.visit_id,
         COUNT(*) AS pages,
         EXTRACT(EPOCH FROM (MAX(we.created_at) - MIN(we.created_at))) AS duration
@@ -84,10 +90,10 @@ export async function getGeoMetrics(
         AND s.country IS NOT NULL
         ${extraFilter}
         ${filterWhere}
-      GROUP BY ${groupBy}, we.visit_id
+      GROUP BY ${innerGroupBy}, we.visit_id
     )
     SELECT
-      ${selectGeo}
+      ${outerSelectGeo}
       COUNT(DISTINCT visit_id)::bigint AS visitors,
       SUM(pages)::bigint AS pageviews,
       COUNT(visit_id)::bigint AS visits,
@@ -96,7 +102,7 @@ export async function getGeoMetrics(
       END AS bounce_rate,
       COALESCE(AVG(duration), 0) AS avg_duration
     FROM visit_stats
-    GROUP BY ${groupBy}
+    GROUP BY ${outerGroupBy}
     ORDER BY visitors DESC
     LIMIT ${limit}`,
     params

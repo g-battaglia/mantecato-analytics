@@ -52,7 +52,7 @@ export function SiteSelector() {
         router.push(`/sites/${value}`);
       }}
     >
-      <SelectTrigger className="w-full">
+      <SelectTrigger className="w-full h-14 py-2 text-left">
         <Globe className="mr-2 h-4 w-4 shrink-0 opacity-50" />
         <SelectValue placeholder="Select a site" />
       </SelectTrigger>
