@@ -259,17 +259,16 @@ export async function getTimeOnPageDistribution(
       COUNT(*)::bigint AS count
     FROM page_durations
     GROUP BY 1
-    ORDER BY
-      CASE bucket
-        WHEN '0-5s' THEN 1
-        WHEN '5-15s' THEN 2
-        WHEN '15-30s' THEN 3
-        WHEN '30-60s' THEN 4
-        WHEN '1-2m' THEN 5
-        WHEN '2-5m' THEN 6
-        WHEN '5m+' THEN 7
-        WHEN 'Exit' THEN 8
-      END`,
+    ORDER BY MIN(CASE
+        WHEN duration_sec IS NULL THEN 8
+        WHEN duration_sec < 5 THEN 1
+        WHEN duration_sec < 15 THEN 2
+        WHEN duration_sec < 30 THEN 3
+        WHEN duration_sec < 60 THEN 4
+        WHEN duration_sec < 120 THEN 5
+        WHEN duration_sec < 300 THEN 6
+        ELSE 7
+      END)`,
     { websiteId, startDate, endDate, urlPath }
   );
 

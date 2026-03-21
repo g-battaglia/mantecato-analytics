@@ -789,6 +789,249 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// CRUD: Annotations, Saved Views, Dashboards, Scheduled Exports
+// ---------------------------------------------------------------------------
+
+import { listAnnotations, createAnnotation, deleteAnnotation } from "@/queries/annotations";
+import { listSavedViews, getSavedView, createSavedView, deleteSavedView } from "@/queries/saved-views";
+import { listDashboards, getDashboard, deleteDashboard } from "@/queries/dashboards";
+import { listScheduledExports, getScheduledExport, deleteScheduledExport } from "@/queries/scheduled-exports";
+
+const MCP_USER_ID = "1626be51-0e8f-4d98-9968-cce8bdf11357";
+
+// --- annotations ---
+server.tool(
+  "list_annotations",
+  "List timeline annotations for a site",
+  {
+    site: siteParam,
+    period: periodParam,
+    start: startParam,
+    end: endParam,
+  },
+  async ({ site, period, start, end }) => {
+    try {
+      const siteId = await resolveSiteId(site);
+      const range = parseDateArgs(period, start, end);
+      return ok(await listAnnotations(MCP_USER_ID, siteId, range.startDate, range.endDate));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "create_annotation",
+  "Create a timeline annotation on a site (e.g. 'Deployed v2.0', 'Started ad campaign')",
+  {
+    site: siteParam,
+    title: z.string().describe("Annotation title"),
+    date: z.string().describe("Date for the annotation (ISO 8601)"),
+    description: z.string().optional().default("").describe("Annotation description"),
+    color: z.enum(["blue", "green", "red", "amber", "purple"]).optional().default("blue").describe("Annotation color"),
+  },
+  async ({ site, title, date, description, color }) => {
+    try {
+      const siteId = await resolveSiteId(site);
+      return ok(await createAnnotation(MCP_USER_ID, siteId, title, description, date, color));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "delete_annotation",
+  "Delete an annotation by its report ID",
+  {
+    id: z.string().describe("Annotation report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const deleted = await deleteAnnotation(id, MCP_USER_ID);
+      return ok({ deleted, message: deleted ? "Annotation deleted" : "Annotation not found or not owned by you" });
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+// --- saved views ---
+server.tool(
+  "list_saved_views",
+  "List saved views (filter + date presets) for a site",
+  {
+    site: siteParam,
+  },
+  async ({ site }) => {
+    try {
+      const siteId = await resolveSiteId(site);
+      return ok(await listSavedViews(MCP_USER_ID, siteId));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "get_saved_view",
+  "Get a specific saved view by ID",
+  {
+    id: z.string().describe("Saved view report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const view = await getSavedView(id, MCP_USER_ID);
+      if (!view) return err("Saved view not found");
+      return ok(view);
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "create_saved_view",
+  "Create a saved view with filters and date preset",
+  {
+    site: siteParam,
+    name: z.string().describe("View name"),
+    description: z.string().optional().default("").describe("View description"),
+    config: z.object({
+      preset: z.string().describe("Date range preset (e.g. 30d)"),
+      granularity: z.string().optional().default("auto"),
+      filters: z.array(z.object({
+        column: z.string(),
+        operator: z.string(),
+        value: z.string(),
+      })).optional().default([]),
+      page: z.string().optional().describe("Page this view applies to"),
+    }).describe("View configuration"),
+  },
+  async ({ site, name, description, config }) => {
+    try {
+      const siteId = await resolveSiteId(site);
+      return ok(await createSavedView(MCP_USER_ID, siteId, name, description, config));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "delete_saved_view",
+  "Delete a saved view by ID",
+  {
+    id: z.string().describe("Saved view report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const deleted = await deleteSavedView(id, MCP_USER_ID);
+      return ok({ deleted, message: deleted ? "Saved view deleted" : "Saved view not found" });
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+// --- dashboards ---
+server.tool(
+  "list_dashboards",
+  "List custom dashboards, optionally filtered by site",
+  {
+    site: z.string().optional().describe("Site name/domain/UUID to filter by (optional, returns all if omitted)"),
+  },
+  async ({ site }) => {
+    try {
+      const siteId = site ? await resolveSiteId(site) : undefined;
+      return ok(await listDashboards(MCP_USER_ID, siteId));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "get_dashboard",
+  "Get a specific custom dashboard by ID, including its widget configuration",
+  {
+    id: z.string().describe("Dashboard report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const dashboard = await getDashboard(id, MCP_USER_ID);
+      if (!dashboard) return err("Dashboard not found");
+      return ok(dashboard);
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "delete_dashboard",
+  "Delete a custom dashboard by ID",
+  {
+    id: z.string().describe("Dashboard report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const deleted = await deleteDashboard(id, MCP_USER_ID);
+      return ok({ deleted, message: deleted ? "Dashboard deleted" : "Dashboard not found" });
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+// --- scheduled exports ---
+server.tool(
+  "list_scheduled_exports",
+  "List all scheduled data exports",
+  {},
+  async () => {
+    try {
+      return ok(await listScheduledExports(MCP_USER_ID));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "get_scheduled_export",
+  "Get a specific scheduled export by ID",
+  {
+    id: z.string().describe("Scheduled export report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const exp = await getScheduledExport(id, MCP_USER_ID);
+      if (!exp) return err("Scheduled export not found");
+      return ok(exp);
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "delete_scheduled_export",
+  "Delete a scheduled export by ID",
+  {
+    id: z.string().describe("Scheduled export report ID"),
+  },
+  async ({ id }) => {
+    try {
+      const deleted = await deleteScheduledExport(id, MCP_USER_ID);
+      return ok({ deleted, message: deleted ? "Scheduled export deleted" : "Scheduled export not found" });
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 

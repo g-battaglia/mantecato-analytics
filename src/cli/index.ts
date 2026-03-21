@@ -31,8 +31,8 @@ import {
 } from "./helpers.js";
 
 import { getWebsiteStats, getPageviewTimeSeries, getTopPages, getTopReferrers, getTopEvents } from "@/queries/stats";
-import { getPageMetrics, getPageReferrers, getNextPages } from "@/queries/pageviews";
-import { getReferrerMetrics, getUTMDetailMetrics, getChannelMetrics, getClickIdMetrics, getHostnameMetrics } from "@/queries/sources";
+import { getPageMetrics, getPageReferrers, getNextPages, getTimeOnPageDistribution, getPageTimeSeries } from "@/queries/pageviews";
+import { getReferrerMetrics, getUTMDetailMetrics, getChannelMetrics, getClickIdMetrics, getHostnameMetrics, getReferrerPages } from "@/queries/sources";
 import { getEventMetrics, getEventTimeSeries, getEventProperties } from "@/queries/events";
 import { getSessionList, getSessionActivity } from "@/queries/sessions";
 import { getDeviceMetrics } from "@/queries/devices";
@@ -46,6 +46,13 @@ import { getRevenueSummary, getRevenueTimeSeries, getRevenueByEvent, getRevenueB
 import { getDurationDistribution, getDurationPercentiles, getDurationByPage, getBounceRateByPage, getBounceRateBySource } from "@/queries/engagement";
 import { getFilterValues } from "@/queries/filter-values";
 import { getComparisonRange } from "@/lib/date";
+import { listAnnotations, createAnnotation, deleteAnnotation } from "@/queries/annotations";
+import { listSavedViews, getSavedView, createSavedView, deleteSavedView } from "@/queries/saved-views";
+import { listDashboards, getDashboard, deleteDashboard } from "@/queries/dashboards";
+import { listScheduledExports, getScheduledExport, deleteScheduledExport } from "@/queries/scheduled-exports";
+
+// Hard-coded user ID for CLI operations (the test admin user)
+const CLI_USER_ID = "1626be51-0e8f-4d98-9968-cce8bdf11357";
 
 // ---------------------------------------------------------------------------
 // Common options
@@ -152,20 +159,25 @@ addCommonOptions(
 addCommonOptions(
   program
     .command("page-detail")
-    .description("Detailed stats for a specific page: referrers, next pages, time distribution")
+    .description("Detailed stats for a specific page: referrers, next pages, time distribution, time series")
     .requiredOption("--url <path>", "URL path to analyze (e.g. /pricing)")
 ).action(async (opts: CommonOpts & { url: string }) => {
   const siteId = await requireSite(opts);
   const range = parseDateArgs(opts.period, opts.start, opts.end);
-  const [referrers, nextPages] = await Promise.all([
+  const gran = resolveGranularityArg(opts.granularity, range);
+  const [referrers, nextPages, distribution, timeseries] = await Promise.all([
     getPageReferrers(siteId, opts.url, range.startDate, range.endDate, +opts.limit),
     getNextPages(siteId, opts.url, range.startDate, range.endDate, +opts.limit),
+    getTimeOnPageDistribution(siteId, opts.url, range.startDate, range.endDate),
+    getPageTimeSeries(siteId, opts.url, range.startDate, range.endDate, gran),
   ]);
   if (opts.format === "json") {
-    out({ referrers, nextPages }, opts.format);
+    out({ referrers, nextPages, distribution, timeseries }, opts.format);
   } else {
     out(referrers, opts.format, `Referrers for ${opts.url}`);
     out(nextPages, opts.format, `Next Pages from ${opts.url}`);
+    out(distribution, opts.format, `Time on Page Distribution for ${opts.url}`);
+    out(timeseries, opts.format, `Page Time Series for ${opts.url}`);
   }
 });
 
@@ -180,6 +192,20 @@ addCommonOptions(
   const filters = parseFilterArgs(opts.filter || []);
   const data = await getReferrerMetrics(siteId, range.startDate, range.endDate, +opts.limit, filters);
   out(data, opts.format, "Traffic Sources");
+});
+
+// --- referrer-pages ---
+addCommonOptions(
+  program
+    .command("referrer-pages")
+    .description("Drill-down: which pages a specific referrer drives traffic to")
+    .requiredOption("--referrer <domain>", "Referrer domain (e.g. google.com or '(direct)')")
+).action(async (opts: CommonOpts & { referrer: string }) => {
+  const siteId = await requireSite(opts);
+  const range = parseDateArgs(opts.period, opts.start, opts.end);
+  const filters = parseFilterArgs(opts.filter || []);
+  const data = await getReferrerPages(siteId, range.startDate, range.endDate, opts.referrer, +opts.limit, filters);
+  out(data, opts.format, `Pages from ${opts.referrer}`);
 });
 
 // --- channels ---
@@ -574,6 +600,168 @@ addCommonOptions(
   const data = await getTopEvents(siteId, range.startDate, range.endDate, +opts.limit, filters);
   out(data, opts.format, "Top Events");
 });
+
+// ---------------------------------------------------------------------------
+// CRUD commands: annotations, saved-views, dashboards, scheduled-exports
+// ---------------------------------------------------------------------------
+
+// --- annotations ---
+program
+  .command("annotations")
+  .description("List annotations for a site")
+  .requiredOption("-s, --site <site>", "Site name, domain, or UUID")
+  .option("-p, --period <preset>", "Date range preset", "30d")
+  .option("--start <date>", "Custom start date")
+  .option("--end <date>", "Custom end date")
+  .option("-f, --format <format>", "Output format", "table")
+  .action(async (opts: { site: string; period: string; start?: string; end?: string; format: OutputFormat }) => {
+    const siteId = await resolveSiteId(opts.site);
+    const range = parseDateArgs(opts.period, opts.start, opts.end);
+    const data = await listAnnotations(CLI_USER_ID, siteId, range.startDate, range.endDate);
+    out(data, opts.format, "Annotations");
+  });
+
+program
+  .command("annotation-create")
+  .description("Create a new annotation on a site's timeline")
+  .requiredOption("-s, --site <site>", "Site name, domain, or UUID")
+  .requiredOption("--title <title>", "Annotation title")
+  .requiredOption("--date <date>", "Date for the annotation (ISO 8601)")
+  .option("--description <desc>", "Annotation description", "")
+  .option("--color <color>", "Color: blue, green, red, amber, purple", "blue")
+  .option("-f, --format <format>", "Output format", "json")
+  .action(async (opts: { site: string; title: string; date: string; description: string; color: string; format: OutputFormat }) => {
+    const siteId = await resolveSiteId(opts.site);
+    const result = await createAnnotation(CLI_USER_ID, siteId, opts.title, opts.description, opts.date, opts.color);
+    out(result, opts.format, "Annotation Created");
+  });
+
+program
+  .command("annotation-delete")
+  .description("Delete an annotation by ID")
+  .requiredOption("--id <id>", "Annotation report ID")
+  .action(async (opts: { id: string }) => {
+    const ok = await deleteAnnotation(opts.id, CLI_USER_ID);
+    console.log(ok ? "Annotation deleted." : "Annotation not found or not owned by you.");
+  });
+
+// --- saved-views ---
+program
+  .command("saved-views")
+  .description("List saved views for a site")
+  .requiredOption("-s, --site <site>", "Site name, domain, or UUID")
+  .option("-f, --format <format>", "Output format", "table")
+  .action(async (opts: { site: string; format: OutputFormat }) => {
+    const siteId = await resolveSiteId(opts.site);
+    const data = await listSavedViews(CLI_USER_ID, siteId);
+    out(data, opts.format, "Saved Views");
+  });
+
+program
+  .command("saved-view")
+  .description("Get a specific saved view by ID")
+  .requiredOption("--id <id>", "Saved view report ID")
+  .option("-f, --format <format>", "Output format", "json")
+  .action(async (opts: { id: string; format: OutputFormat }) => {
+    const data = await getSavedView(opts.id, CLI_USER_ID);
+    if (!data) {
+      console.error("Saved view not found.");
+      process.exit(1);
+    }
+    out(data, opts.format, "Saved View");
+  });
+
+program
+  .command("saved-view-create")
+  .description("Create a new saved view (filter + date preset)")
+  .requiredOption("-s, --site <site>", "Site name, domain, or UUID")
+  .requiredOption("--name <name>", "View name")
+  .option("--description <desc>", "View description", "")
+  .requiredOption("--config <json>", "View config as JSON: {\"preset\":\"30d\",\"granularity\":\"auto\",\"filters\":[]}")
+  .option("-f, --format <format>", "Output format", "json")
+  .action(async (opts: { site: string; name: string; description: string; config: string; format: OutputFormat }) => {
+    const siteId = await resolveSiteId(opts.site);
+    const config = JSON.parse(opts.config);
+    const result = await createSavedView(CLI_USER_ID, siteId, opts.name, opts.description, config);
+    out(result, opts.format, "Saved View Created");
+  });
+
+program
+  .command("saved-view-delete")
+  .description("Delete a saved view by ID")
+  .requiredOption("--id <id>", "Saved view report ID")
+  .action(async (opts: { id: string }) => {
+    const ok = await deleteSavedView(opts.id, CLI_USER_ID);
+    console.log(ok ? "Saved view deleted." : "Saved view not found or not owned by you.");
+  });
+
+// --- dashboards ---
+program
+  .command("dashboards")
+  .description("List custom dashboards")
+  .option("-s, --site <site>", "Filter by site (optional)")
+  .option("-f, --format <format>", "Output format", "table")
+  .action(async (opts: { site?: string; format: OutputFormat }) => {
+    const siteId = opts.site ? await resolveSiteId(opts.site) : undefined;
+    const data = await listDashboards(CLI_USER_ID, siteId);
+    out(data, opts.format, "Dashboards");
+  });
+
+program
+  .command("dashboard")
+  .description("Get a specific dashboard by ID")
+  .requiredOption("--id <id>", "Dashboard report ID")
+  .option("-f, --format <format>", "Output format", "json")
+  .action(async (opts: { id: string; format: OutputFormat }) => {
+    const data = await getDashboard(opts.id, CLI_USER_ID);
+    if (!data) {
+      console.error("Dashboard not found.");
+      process.exit(1);
+    }
+    out(data, opts.format, "Dashboard");
+  });
+
+program
+  .command("dashboard-delete")
+  .description("Delete a dashboard by ID")
+  .requiredOption("--id <id>", "Dashboard report ID")
+  .action(async (opts: { id: string }) => {
+    const ok = await deleteDashboard(opts.id, CLI_USER_ID);
+    console.log(ok ? "Dashboard deleted." : "Dashboard not found or not owned by you.");
+  });
+
+// --- scheduled-exports ---
+program
+  .command("scheduled-exports")
+  .description("List scheduled exports")
+  .option("-f, --format <format>", "Output format", "table")
+  .action(async (opts: { format: OutputFormat }) => {
+    const data = await listScheduledExports(CLI_USER_ID);
+    out(data, opts.format, "Scheduled Exports");
+  });
+
+program
+  .command("scheduled-export")
+  .description("Get a specific scheduled export by ID")
+  .requiredOption("--id <id>", "Scheduled export report ID")
+  .option("-f, --format <format>", "Output format", "json")
+  .action(async (opts: { id: string; format: OutputFormat }) => {
+    const data = await getScheduledExport(opts.id, CLI_USER_ID);
+    if (!data) {
+      console.error("Scheduled export not found.");
+      process.exit(1);
+    }
+    out(data, opts.format, "Scheduled Export");
+  });
+
+program
+  .command("scheduled-export-delete")
+  .description("Delete a scheduled export by ID")
+  .requiredOption("--id <id>", "Scheduled export report ID")
+  .action(async (opts: { id: string }) => {
+    const ok = await deleteScheduledExport(opts.id, CLI_USER_ID);
+    console.log(ok ? "Scheduled export deleted." : "Scheduled export not found or not owned by you.");
+  });
 
 // ---------------------------------------------------------------------------
 // Run
