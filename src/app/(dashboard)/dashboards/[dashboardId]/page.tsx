@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  type DropResult,
+} from "@hello-pangea/dnd";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,14 +30,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Trash2, GripVertical, ArrowLeft } from "lucide-react";
 import { WidgetRenderer } from "@/components/dashboard/WidgetRenderer";
+import { ExportMenu } from "@/components/export/ExportMenu";
 import type {
   Dashboard,
   DashboardConfig,
   DashboardWidget,
   WidgetType,
   WidgetConfig,
-  DEFAULT_WIDGET_SIZES,
-  WIDGET_TYPE_LABELS,
 } from "@/lib/dashboard-types";
 import {
   DEFAULT_WIDGET_SIZES as SIZES,
@@ -56,6 +61,7 @@ export default function DashboardEditorPage() {
   const dashboardId = params.dashboardId as string;
   const { data: dashboard, isLoading } = useDashboard(dashboardId);
   const [addOpen, setAddOpen] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const saveMutation = useMutation({
     mutationFn: async (config: DashboardConfig) => {
@@ -91,6 +97,27 @@ export default function DashboardEditorPage() {
       saveMutation.mutate(config);
     },
     [dashboard, saveMutation]
+  );
+
+  const handleDragEnd = useCallback(
+    (result: DropResult) => {
+      if (!result.destination || !dashboard) return;
+      const { source, destination } = result;
+      if (source.index === destination.index) return;
+
+      const widgets = [...dashboard.config.widgets];
+      const [moved] = widgets.splice(source.index, 1);
+      widgets.splice(destination.index, 0, moved);
+
+      const config = { ...dashboard.config, widgets };
+      // Optimistic update: mutate directly in the query cache
+      queryClient.setQueryData<Dashboard>(["dashboard", dashboardId], {
+        ...dashboard,
+        config,
+      });
+      saveMutation.mutate(config);
+    },
+    [dashboard, dashboardId, queryClient, saveMutation]
   );
 
   if (isLoading) {
@@ -133,26 +160,35 @@ export default function DashboardEditorPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             Back
           </Button>
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                Add Widget
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Add Widget</DialogTitle>
-              </DialogHeader>
-              <AddWidgetForm
-                siteId={dashboard.websiteId}
-                onAdd={addWidget}
-              />
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-center gap-2">
+            <ExportMenu
+              data={[]}
+              columns={[]}
+              filename={dashboard.name.replace(/\s+/g, "-").toLowerCase()}
+              captureRef={gridRef}
+              pdfTitle={dashboard.name}
+            />
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Widget
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add Widget</DialogTitle>
+                </DialogHeader>
+                <AddWidgetForm
+                  siteId={dashboard.websiteId}
+                  onAdd={addWidget}
+                />
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
-        {/* Widget grid */}
+        {/* Widget grid with drag-and-drop */}
         {dashboard.config.widgets.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-muted-foreground">
             <GripVertical className="mb-3 h-8 w-8" />
@@ -162,24 +198,63 @@ export default function DashboardEditorPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {dashboard.config.widgets.map((widget) => (
-              <div key={widget.id} className="relative group">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute top-2 right-2 z-10 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                  onClick={() => removeWidget(widget.id)}
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="dashboard-widgets" direction="horizontal">
+              {(provided, snapshot) => (
+                <div
+                  ref={(el) => {
+                    provided.innerRef(el);
+                    (gridRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+                  }}
+                  {...provided.droppableProps}
+                  className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${
+                    snapshot.isDraggingOver ? "ring-2 ring-primary/20 rounded-lg" : ""
+                  }`}
                 >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-                <WidgetRenderer
-                  widget={widget}
-                  dateRange={dashboard.config.dateRange}
-                />
-              </div>
-            ))}
-          </div>
+                  {dashboard.config.widgets.map((widget, index) => (
+                    <Draggable
+                      key={widget.id}
+                      draggableId={widget.id}
+                      index={index}
+                    >
+                      {(dragProvided, dragSnapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          className={`relative group ${
+                            dragSnapshot.isDragging
+                              ? "z-50 opacity-90 shadow-xl ring-2 ring-primary rounded-lg"
+                              : ""
+                          }`}
+                        >
+                          {/* Drag handle */}
+                          <div
+                            {...dragProvided.dragHandleProps}
+                            className="absolute top-2 left-2 z-10 h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                          >
+                            <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute top-2 right-2 z-10 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                            onClick={() => removeWidget(widget.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                          <WidgetRenderer
+                            widget={widget}
+                            dateRange={dashboard.config.dateRange}
+                          />
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
         )}
       </div>
     </>

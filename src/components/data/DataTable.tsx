@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -11,7 +11,9 @@ import {
   type ColumnDef,
   type SortingState,
   type ColumnFiltersState,
+  type Row,
 } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Table,
   TableBody,
@@ -35,6 +37,9 @@ import { cn } from "@/lib/utils";
 import { ExportMenu } from "@/components/export/ExportMenu";
 import type { ExportColumn } from "@/lib/export";
 
+/** Threshold above which virtualization is automatically enabled */
+const VIRTUALIZATION_THRESHOLD = 200;
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -50,6 +55,14 @@ interface DataTableProps<TData, TValue> {
   exportFilename?: string;
   /** Override which columns to export. Defaults to all columns with accessorKey. */
   exportColumns?: ExportColumn[];
+  /** Force virtualization on/off. Auto-enabled when data exceeds threshold. */
+  virtualize?: boolean;
+  /** Max height of the virtual scroll container (default 600px). */
+  virtualHeight?: number;
+  /** Ref to DOM element for visual export (PDF/PNG) */
+  captureRef?: React.RefObject<HTMLElement | null>;
+  /** Title for PDF export */
+  pdfTitle?: string;
 }
 
 export function DataTable<TData, TValue>({
@@ -65,16 +78,25 @@ export function DataTable<TData, TValue>({
   compact = false,
   exportFilename,
   exportColumns,
+  virtualize,
+  virtualHeight = 600,
+  captureRef,
+  pdfTitle,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+
+  // Auto-detect whether to virtualize
+  const shouldVirtualize = virtualize ?? data.length >= VIRTUALIZATION_THRESHOLD;
+  // When virtualizing, disable pagination so all rows are available to the virtualizer
+  const usePagination = showPagination && !shouldVirtualize;
 
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: showPagination ? getPaginationRowModel() : undefined,
+    getPaginationRowModel: usePagination ? getPaginationRowModel() : undefined,
     getFilteredRowModel: searchColumn ? getFilteredRowModel() : undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -107,6 +129,8 @@ export function DataTable<TData, TValue>({
           })
       : undefined;
 
+  const rows = table.getRowModel().rows;
+
   return (
     <div className="space-y-3">
       {/* Toolbar: search + export */}
@@ -131,95 +155,108 @@ export function DataTable<TData, TValue>({
               data={data as Record<string, unknown>[]}
               columns={resolvedExportColumns}
               filename={exportFilename}
+              captureRef={captureRef}
+              pdfTitle={pdfTitle}
             />
           )}
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
-                  return (
-                    <TableHead
-                      key={header.id}
-                      className={cn(
-                        compact && "h-8 px-2 text-xs",
-                        canSort && "cursor-pointer select-none"
-                      )}
-                      onClick={
-                        canSort
-                          ? header.column.getToggleSortingHandler()
-                          : undefined
-                      }
-                    >
-                      <div className="flex items-center gap-1">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
-                        {canSort && (
-                          <span className="text-muted-foreground">
-                            {sorted === "asc" ? (
-                              <ArrowUp className="h-3 w-3" />
-                            ) : sorted === "desc" ? (
-                              <ArrowDown className="h-3 w-3" />
-                            ) : (
-                              <ArrowUpDown className="h-3 w-3 opacity-50" />
-                            )}
-                          </span>
+      {/* Table — virtualized or standard */}
+      {shouldVirtualize ? (
+        <VirtualizedTableBody
+          rows={rows}
+          columns={columns}
+          compact={compact}
+          emptyMessage={emptyMessage}
+          onRowClick={onRowClick}
+          maxHeight={virtualHeight}
+        />
+      ) : (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    const canSort = header.column.getCanSort();
+                    const sorted = header.column.getIsSorted();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className={cn(
+                          compact && "h-8 px-2 text-xs",
+                          canSort && "cursor-pointer select-none"
                         )}
-                      </div>
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  {emptyMessage}
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className={cn(onRowClick && "cursor-pointer")}
-                  onClick={() => onRowClick?.(row.original)}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(compact && "h-8 px-2 py-1 text-xs")}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
+                        onClick={
+                          canSort
+                            ? header.column.getToggleSortingHandler()
+                            : undefined
+                        }
+                      >
+                        <div className="flex items-center gap-1">
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                          {canSort && (
+                            <span className="text-muted-foreground">
+                              {sorted === "asc" ? (
+                                <ArrowUp className="h-3 w-3" />
+                              ) : sorted === "desc" ? (
+                                <ArrowDown className="h-3 w-3" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 opacity-50" />
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="py-8 text-center text-muted-foreground"
+                  >
+                    {emptyMessage}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    className={cn(onRowClick && "cursor-pointer")}
+                    onClick={() => onRowClick?.(row.original)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        className={cn(compact && "h-8 px-2 py-1 text-xs")}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
-      {/* Pagination */}
-      {showPagination && table.getPageCount() > 1 && (
+      {/* Pagination (only for non-virtualized) */}
+      {usePagination && table.getPageCount() > 1 && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>
@@ -271,6 +308,140 @@ export function DataTable<TData, TValue>({
           </div>
         </div>
       )}
+
+      {/* Virtual info bar */}
+      {shouldVirtualize && rows.length > 0 && (
+        <div className="text-xs text-muted-foreground">
+          {rows.length.toLocaleString()} rows (scroll to view)
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Virtualized Table Body ---
+
+function VirtualizedTableBody<TData, TValue>({
+  rows,
+  columns,
+  compact,
+  emptyMessage,
+  onRowClick,
+  maxHeight,
+}: {
+  rows: Row<TData>[];
+  columns: ColumnDef<TData, TValue>[];
+  compact: boolean;
+  emptyMessage: string;
+  onRowClick?: (row: TData) => void;
+  maxHeight: number;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowHeight = compact ? 32 : 40;
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 20,
+  });
+
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-md border">
+        <Table>
+          <TableBody>
+            <TableRow>
+              <TableCell
+                colSpan={columns.length}
+                className="py-8 text-center text-muted-foreground"
+              >
+                {emptyMessage}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border">
+      {/* Sticky header */}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {rows[0]?.getVisibleCells().map((cell) => {
+              const header = cell.column.columnDef.header;
+              return (
+                <TableHead
+                  key={cell.column.id}
+                  className={cn(compact && "h-8 px-2 text-xs")}
+                >
+                  {typeof header === "function"
+                    ? flexRender(header, {
+                        column: cell.column,
+                        header: cell.column.columnDef,
+                        table: cell.getContext().table,
+                      } as never)
+                    : header}
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        </TableHeader>
+      </Table>
+
+      {/* Scrollable virtualized body */}
+      <div
+        ref={parentRef}
+        className="overflow-auto"
+        style={{ maxHeight }}
+      >
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          <Table>
+            <TableBody>
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const row = rows[virtualRow.index];
+                return (
+                  <TableRow
+                    key={row.id}
+                    data-index={virtualRow.index}
+                    ref={(node) => virtualizer.measureElement(node)}
+                    className={cn(onRowClick && "cursor-pointer")}
+                    onClick={() => onRowClick?.(row.original)}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        className={cn(compact && "h-8 px-2 py-1 text-xs")}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </div>
   );
 }
