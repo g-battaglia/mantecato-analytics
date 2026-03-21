@@ -6,7 +6,7 @@ const SECRET = new TextEncoder().encode(
   process.env.SESSION_SECRET || "mantecato-default-secret"
 );
 
-const PUBLIC_PATHS = ["/login", "/api/auth"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/share", "/api/share"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

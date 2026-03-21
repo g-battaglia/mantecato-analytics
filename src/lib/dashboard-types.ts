@@ -21,7 +21,11 @@ export type WidgetType =
   | "table"
   | "pie"
   | "bar"
-  | "note";
+  | "note"
+  | "map"
+  | "funnel"
+  | "retention"
+  | "comparison";
 
 export interface MetricWidgetConfig {
   type: "metric";
@@ -62,13 +66,41 @@ export interface NoteWidgetConfig {
   content: string;
 }
 
+export interface MapWidgetConfig {
+  type: "map";
+  siteId: string;
+}
+
+export interface FunnelWidgetConfig {
+  type: "funnel";
+  steps: string[];
+  window: number; // hours
+  siteId: string;
+}
+
+export interface RetentionWidgetConfig {
+  type: "retention";
+  period: "day" | "week" | "month";
+  siteId: string;
+}
+
+export interface ComparisonWidgetConfig {
+  type: "comparison";
+  metric: "pageviews" | "visitors" | "visits" | "bounceRate" | "avgDuration" | "pagesPerVisit";
+  siteId: string;
+}
+
 export type WidgetConfig =
   | MetricWidgetConfig
   | TimeSeriesWidgetConfig
   | TableWidgetConfig
   | PieWidgetConfig
   | BarWidgetConfig
-  | NoteWidgetConfig;
+  | NoteWidgetConfig
+  | MapWidgetConfig
+  | FunnelWidgetConfig
+  | RetentionWidgetConfig
+  | ComparisonWidgetConfig;
 
 export interface DashboardConfig {
   version: 1;
@@ -106,6 +138,10 @@ export const DEFAULT_WIDGET_SIZES: Record<WidgetType, { w: number; h: number }> 
   pie: { w: 4, h: 3 },
   bar: { w: 6, h: 3 },
   note: { w: 4, h: 2 },
+  map: { w: 8, h: 4 },
+  funnel: { w: 6, h: 3 },
+  retention: { w: 8, h: 4 },
+  comparison: { w: 3, h: 1 },
 };
 
 /** Widget type labels */
@@ -116,4 +152,8 @@ export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
   pie: "Pie Chart",
   bar: "Bar Chart",
   note: "Text Note",
+  map: "World Map",
+  funnel: "Funnel",
+  retention: "Retention Grid",
+  comparison: "Comparison Card",
 };

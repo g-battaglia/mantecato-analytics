@@ -24,14 +24,14 @@ export default async function SiteLayout({
 
   const website = await prisma.website.findUnique({
     where: { website_id: siteId },
-    select: { name: true, domain: true },
+    select: { name: true, domain: true, shareId: true },
   });
 
   if (!website) redirect("/");
 
   return (
     <>
-      <Header title={website.name} />
+      <Header title={website.name} shareId={website.shareId} />
       <FilterBar />
       <div className="flex-1 overflow-auto p-4">{children}</div>
     </>

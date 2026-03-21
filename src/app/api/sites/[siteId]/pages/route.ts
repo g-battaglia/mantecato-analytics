@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, canAccessWebsite } from "@/lib/auth";
-import { resolveDateRange } from "@/lib/date";
+import { resolveDateRange, resolveGranularity } from "@/lib/date";
 import type { DateRangePreset } from "@/lib/constants";
 import { parseFiltersFromParams } from "@/lib/queries";
-import { getPageMetrics } from "@/queries/pageviews";
+import {
+  getPageMetrics,
+  getPageTimeSeries,
+  getPageReferrers,
+  getNextPages,
+  getTimeOnPageDistribution,
+} from "@/queries/pageviews";
 
 export async function GET(
   request: NextRequest,
@@ -27,10 +33,58 @@ export async function GET(
     preset === "custom" && sp.get("end")
       ? new Date(sp.get("end")!)
       : range?.endDate ?? new Date();
+  const filters = parseFiltersFromParams(sp);
+
+  // Page detail mode: when ?page=<urlPath> is provided
+  const pageDetailPath = sp.get("page");
+  if (pageDetailPath) {
+    const granularity = (sp.get("granularity") || "day") as "auto" | "minute" | "hour" | "day" | "week" | "month";
+    const resolvedGran = range
+      ? resolveGranularity(granularity, range)
+      : "day";
+
+    try {
+      const [timeseries, referrers, nextPages, timeDistribution] =
+        await Promise.all([
+          getPageTimeSeries(
+            siteId,
+            pageDetailPath,
+            startDate,
+            endDate,
+            resolvedGran,
+            filters
+          ),
+          getPageReferrers(siteId, pageDetailPath, startDate, endDate, 10),
+          getNextPages(siteId, pageDetailPath, startDate, endDate, 10),
+          getTimeOnPageDistribution(
+            siteId,
+            pageDetailPath,
+            startDate,
+            endDate
+          ),
+        ]);
+
+      return NextResponse.json({
+        timeseries,
+        referrers,
+        nextPages,
+        timeDistribution,
+      });
+    } catch (error) {
+      console.error("Page detail query error:", error);
+      return NextResponse.json(
+        { error: "Failed to fetch page detail" },
+        { status: 500 }
+      );
+    }
+  }
+
+  // List mode
   const limit = Number(sp.get("limit") || 50);
   const offset = Number(sp.get("offset") || 0);
-  const pageMode = (sp.get("mode") === "slug" ? "slug" : "path") as "path" | "slug";
-  const filters = parseFiltersFromParams(sp);
+  const pageMode = (sp.get("mode") === "slug" ? "slug" : "path") as
+    | "path"
+    | "slug";
 
   try {
     const pages = await getPageMetrics(

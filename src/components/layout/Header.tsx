@@ -1,20 +1,37 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, LogOut } from "lucide-react";
+import { Moon, Sun, LogOut, Share2, Check } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 
-export function Header({ title }: { title?: string }) {
+export function Header({
+  title,
+  shareId,
+}: {
+  title?: string;
+  shareId?: string | null;
+}) {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const [copied, setCopied] = useState(false);
 
   async function handleLogout() {
     await fetch("/api/auth", { method: "DELETE" });
     router.push("/login");
     router.refresh();
+  }
+
+  function handleCopyShareLink() {
+    if (!shareId) return;
+    const url = `${window.location.origin}/share/${shareId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }
 
   return (
@@ -25,6 +42,21 @@ export function Header({ title }: { title?: string }) {
         <h1 className="text-sm font-medium">{title}</h1>
       )}
       <div className="ml-auto flex items-center gap-1">
+        {shareId && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleCopyShareLink}
+            title="Copy public share link"
+          >
+            {copied ? (
+              <Check className="h-4 w-4 text-green-500" />
+            ) : (
+              <Share2 className="h-4 w-4" />
+            )}
+            <span className="sr-only">Copy share link</span>
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"

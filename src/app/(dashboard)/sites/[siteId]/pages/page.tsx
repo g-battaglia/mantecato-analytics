@@ -4,12 +4,15 @@ import { useState, useMemo } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data/DataTable";
 import { MetricCard } from "@/components/data/MetricCard";
 import { BarChart } from "@/components/charts/BarChart";
-import { useSiteQuery } from "@/hooks/use-site-query";
+import { AreaChart } from "@/components/charts/AreaChart";
+import { useSiteQuery, useDateParams } from "@/hooks/use-site-query";
 import { usePreferencesStore } from "@/stores/preferences";
 import { formatDuration, formatPercent } from "@/lib/format";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 interface PageRow {
   urlPath: string;
@@ -21,6 +24,13 @@ interface PageRow {
   entries: number;
   exits: number;
   bounceRate: number;
+}
+
+interface PageDetail {
+  timeseries: { time: string; views: number; visitors: number }[];
+  referrers: { referrerDomain: string; visitors: number; views: number }[];
+  nextPages: { urlPath: string; count: number; percentage: number }[];
+  timeDistribution: { bucket: string; count: number }[];
 }
 
 // --- Column definitions ---
@@ -207,6 +217,7 @@ const exitColumns: ColumnDef<PageRow>[] = [
 
 export default function PagesPage() {
   const [tab, setTab] = useState("all");
+  const [selectedPage, setSelectedPage] = useState<PageRow | null>(null);
   const pageMode = usePreferencesStore((s) => s.pageMode);
   const { data, isLoading } = useSiteQuery<PageRow[]>("pages", ["pages"], {
     mode: pageMode,
@@ -300,6 +311,16 @@ export default function PagesPage() {
     exits: p.exits,
   }));
 
+  // If a page is selected, show its detail view
+  if (selectedPage) {
+    return (
+      <PageDetailView
+        page={selectedPage}
+        onBack={() => setSelectedPage(null)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Summary metrics */}
@@ -351,6 +372,7 @@ export default function PagesPage() {
                 searchPlaceholder="Search pages..."
                 emptyMessage="No page data for this period"
                 exportFilename="pages"
+                onRowClick={(row) => setSelectedPage(row)}
               />
             </TabsContent>
 
@@ -373,6 +395,7 @@ export default function PagesPage() {
                 searchPlaceholder="Search entry pages..."
                 emptyMessage="No entry page data"
                 exportFilename="entry-pages"
+                onRowClick={(row) => setSelectedPage(row)}
               />
             </TabsContent>
 
@@ -395,11 +418,220 @@ export default function PagesPage() {
                 searchPlaceholder="Search exit pages..."
                 emptyMessage="No exit page data"
                 exportFilename="exit-pages"
+                onRowClick={(row) => setSelectedPage(row)}
               />
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// --- Page Detail View ---
+
+function PageDetailView({
+  page,
+  onBack,
+}: {
+  page: PageRow;
+  onBack: () => void;
+}) {
+  const { data, isLoading } = useSiteQuery<PageDetail>("pages", [
+    "page-detail",
+    page.urlPath,
+  ], {
+    page: page.urlPath,
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5"
+          onClick={onBack}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back
+        </Button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-mono text-sm font-medium">
+            {page.urlPath}
+          </h2>
+          {page.pageTitle && (
+            <p className="truncate text-xs text-muted-foreground">
+              {page.pageTitle}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Metrics */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+        <MetricCard
+          label="Views"
+          value={page.views}
+          tooltip="Total views for this page"
+        />
+        <MetricCard
+          label="Visitors"
+          value={page.visitors}
+          tooltip="Unique visitors for this page"
+        />
+        <MetricCard
+          label="Avg Time"
+          value={page.avgTimeOnPage}
+          format="duration"
+          tooltip="Average time spent on this page"
+        />
+        <MetricCard
+          label="Bounce Rate"
+          value={page.bounceRate}
+          format="percent"
+          tooltip="Percentage of single-page visits landing on this page"
+        />
+        <MetricCard
+          label="Entries"
+          value={page.entries}
+          tooltip="Number of visits that started on this page"
+        />
+        <MetricCard
+          label="Exits"
+          value={page.exits}
+          tooltip="Number of visits that ended on this page"
+        />
+      </div>
+
+      {/* Time series */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">Views Over Time</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+              Loading...
+            </div>
+          ) : data?.timeseries && data.timeseries.length > 0 ? (
+            <AreaChart
+              data={data.timeseries}
+              xKey="time"
+              yKeys={["views", "visitors"]}
+              labels={{ views: "Views", visitors: "Visitors" }}
+              height={250}
+            />
+          ) : (
+            <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+              No data
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Bottom panels */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Time on page distribution */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Time on Page Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : data?.timeDistribution && data.timeDistribution.length > 0 ? (
+              <BarChart
+                data={data.timeDistribution}
+                xKey="bucket"
+                yKeys={["count"]}
+                labels={{ count: "Views" }}
+                height={200}
+              />
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                No data
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Referrers to this page */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Top Referrers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : data?.referrers && data.referrers.length > 0 ? (
+              <div className="space-y-1.5">
+                {data.referrers.map((r, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="truncate">{r.referrerDomain}</span>
+                    <span className="shrink-0 tabular-nums font-medium">
+                      {r.visitors.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                No referrer data
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Where visitors go next */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Next Pages
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : data?.nextPages && data.nextPages.length > 0 ? (
+              <div className="space-y-1.5">
+                {data.nextPages.map((np, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="flex items-center gap-1 truncate">
+                      <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-mono">{np.urlPath}</span>
+                    </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {np.percentage.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                No next-page data
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

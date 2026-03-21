@@ -279,6 +279,9 @@ function AddWidgetForm({
   const [chartMetrics, setChartMetrics] = useState("pageviews,visitors");
   const [noteContent, setNoteContent] = useState("");
   const [limit, setLimit] = useState("10");
+  const [funnelSteps, setFunnelSteps] = useState("/,/pricing,/signup");
+  const [funnelWindow, setFunnelWindow] = useState("24");
+  const [retentionPeriod, setRetentionPeriod] = useState<"day" | "week" | "month">("week");
 
   function handleAdd() {
     const size = SIZES[type];
@@ -328,6 +331,34 @@ function AddWidgetForm({
         config = {
           type: "note",
           content: noteContent,
+        };
+        break;
+      case "map":
+        config = {
+          type: "map",
+          siteId,
+        };
+        break;
+      case "funnel":
+        config = {
+          type: "funnel",
+          steps: funnelSteps.split(",").map((s) => s.trim()).filter(Boolean),
+          window: Number(funnelWindow) || 24,
+          siteId,
+        };
+        break;
+      case "retention":
+        config = {
+          type: "retention",
+          period: retentionPeriod,
+          siteId,
+        };
+        break;
+      case "comparison":
+        config = {
+          type: "comparison",
+          metric: metric as "pageviews" | "visitors" | "visits" | "bounceRate" | "avgDuration" | "pagesPerVisit",
+          siteId,
         };
         break;
     }
@@ -471,6 +502,64 @@ function AddWidgetForm({
             value={noteContent}
             onChange={(e) => setNoteContent(e.target.value)}
           />
+        </div>
+      )}
+
+      {type === "funnel" && (
+        <>
+          <div className="space-y-2">
+            <Label>Steps (comma-separated URL paths)</Label>
+            <Input
+              placeholder="/,/pricing,/signup"
+              value={funnelSteps}
+              onChange={(e) => setFunnelSteps(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Window (hours)</Label>
+            <Input
+              type="number"
+              value={funnelWindow}
+              onChange={(e) => setFunnelWindow(e.target.value)}
+              min="1"
+              max="168"
+            />
+          </div>
+        </>
+      )}
+
+      {type === "retention" && (
+        <div className="space-y-2">
+          <Label>Period</Label>
+          <Select value={retentionPeriod} onValueChange={(v) => setRetentionPeriod(v as "day" | "week" | "month")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="day">Day</SelectItem>
+              <SelectItem value="week">Week</SelectItem>
+              <SelectItem value="month">Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {type === "comparison" && (
+        <div className="space-y-2">
+          <Label>Metric</Label>
+          <Select value={metric} onValueChange={setMetric}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pageviews">Pageviews</SelectItem>
+              <SelectItem value="visitors">Visitors</SelectItem>
+              <SelectItem value="visits">Visits</SelectItem>
+              <SelectItem value="bounceRate">Bounce Rate</SelectItem>
+              <SelectItem value="avgDuration">Avg Duration</SelectItem>
+              <SelectItem value="pagesPerVisit">Pages / Visit</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       )}
 

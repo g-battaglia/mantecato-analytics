@@ -7,6 +7,9 @@ import { PieChart } from "@/components/charts/PieChart";
 import { BarChart } from "@/components/charts/BarChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CHART_COLORS } from "@/lib/constants";
+import { formatNumber, formatPercent, percentChange } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type {
   DashboardWidget,
   MetricWidgetConfig,
@@ -15,6 +18,10 @@ import type {
   PieWidgetConfig,
   BarWidgetConfig,
   NoteWidgetConfig,
+  MapWidgetConfig,
+  FunnelWidgetConfig,
+  RetentionWidgetConfig,
+  ComparisonWidgetConfig,
 } from "@/lib/dashboard-types";
 
 interface WidgetRendererProps {
@@ -36,6 +43,14 @@ export function WidgetRenderer({ widget, dateRange }: WidgetRendererProps) {
       return <BarWidget widget={widget} config={widget.config} dateRange={dateRange} />;
     case "note":
       return <NoteWidget widget={widget} config={widget.config} />;
+    case "map":
+      return <MapWidget widget={widget} config={widget.config} dateRange={dateRange} />;
+    case "funnel":
+      return <FunnelWidget widget={widget} config={widget.config} dateRange={dateRange} />;
+    case "retention":
+      return <RetentionWidget widget={widget} config={widget.config} dateRange={dateRange} />;
+    case "comparison":
+      return <ComparisonWidget widget={widget} config={widget.config} dateRange={dateRange} />;
     default:
       return (
         <Card>
@@ -359,5 +374,337 @@ function NoteWidget({
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+// --- Map Widget ---
+
+function MapWidget({
+  widget,
+  config,
+  dateRange,
+}: {
+  widget: DashboardWidget;
+  config: MapWidgetConfig;
+  dateRange: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["widget-map", config.siteId, dateRange],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/sites/${config.siteId}/geo?range=${dateRange}`
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const rows = (data as Record<string, unknown>[] | undefined) ?? [];
+
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-[200px] w-full" />
+        ) : rows.length > 0 ? (
+          <div className="space-y-1">
+            {rows.slice(0, 10).map((row, i) => {
+              const country = String(row.country ?? "Unknown");
+              const visitors = Number(row.visitors ?? 0);
+              const maxVisitors = Number(rows[0]?.visitors ?? 1);
+              const pct = (visitors / maxVisitors) * 100;
+              return (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="w-8 shrink-0 text-right tabular-nums font-medium">
+                    {country}
+                  </span>
+                  <div className="flex-1 h-4 rounded bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: CHART_COLORS[0],
+                        opacity: 0.7,
+                      }}
+                    />
+                  </div>
+                  <span className="w-12 shrink-0 text-right tabular-nums">
+                    {visitors.toLocaleString()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-xs text-muted-foreground">No data</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Funnel Widget ---
+
+function FunnelWidget({
+  widget,
+  config,
+  dateRange,
+}: {
+  widget: DashboardWidget;
+  config: FunnelWidgetConfig;
+  dateRange: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["widget-funnel", config.siteId, config.steps, config.window, dateRange],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        range: dateRange,
+        window: String(config.window),
+      });
+      config.steps.forEach((s) => params.append("step", s));
+      const res = await fetch(
+        `/api/sites/${config.siteId}/funnels?${params}`
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: config.steps.length >= 2,
+  });
+
+  interface FunnelStep {
+    step: number;
+    name: string;
+    visitors: number;
+    dropoff: number;
+    conversionRate: number;
+  }
+
+  const steps = (data as FunnelStep[] | undefined) ?? [];
+
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-[200px] w-full" />
+        ) : steps.length > 0 ? (
+          <div className="space-y-2">
+            {steps.map((step, i) => {
+              const maxVisitors = steps[0]?.visitors ?? 1;
+              const pct = (step.visitors / maxVisitors) * 100;
+              return (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="truncate font-mono">
+                      {step.step}. {step.name}
+                    </span>
+                    <span className="shrink-0 tabular-nums">
+                      {step.visitors.toLocaleString()}{" "}
+                      <span className="text-muted-foreground">
+                        ({pct.toFixed(0)}%)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="h-5 rounded bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                        opacity: 0.7,
+                      }}
+                    />
+                  </div>
+                  {i < steps.length - 1 && step.dropoff > 0 && (
+                    <p className="text-[10px] text-muted-foreground text-right">
+                      -{step.dropoff.toLocaleString()} dropped
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-xs text-muted-foreground">
+            {config.steps.length < 2 ? "Add at least 2 steps" : "No data"}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Retention Widget ---
+
+function RetentionWidget({
+  widget,
+  config,
+  dateRange,
+}: {
+  widget: DashboardWidget;
+  config: RetentionWidgetConfig;
+  dateRange: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["widget-retention", config.siteId, config.period, dateRange],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/sites/${config.siteId}/retention?range=${dateRange}&period=${config.period}`
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  interface RetentionRow {
+    cohort: string;
+    totalUsers: number;
+    periods: number[];
+  }
+
+  const rows = (data as RetentionRow[] | undefined) ?? [];
+
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-[200px] w-full" />
+        ) : rows.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px]">
+              <thead>
+                <tr>
+                  <th className="text-left px-1 py-0.5 font-medium text-muted-foreground">
+                    Cohort
+                  </th>
+                  <th className="text-right px-1 py-0.5 font-medium text-muted-foreground">
+                    Users
+                  </th>
+                  {rows[0]?.periods.map((_, i) => (
+                    <th
+                      key={i}
+                      className="text-center px-1 py-0.5 font-medium text-muted-foreground"
+                    >
+                      {config.period === "day" ? `D${i}` : config.period === "week" ? `W${i}` : `M${i}`}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 8).map((row, ri) => (
+                  <tr key={ri}>
+                    <td className="px-1 py-0.5 whitespace-nowrap text-muted-foreground">
+                      {row.cohort}
+                    </td>
+                    <td className="px-1 py-0.5 text-right tabular-nums">
+                      {row.totalUsers}
+                    </td>
+                    {row.periods.map((pct, pi) => (
+                      <td
+                        key={pi}
+                        className="px-1 py-0.5 text-center tabular-nums"
+                        style={{
+                          backgroundColor:
+                            pct > 0
+                              ? `color-mix(in srgb, ${CHART_COLORS[0]} ${Math.min(pct, 100)}%, transparent)`
+                              : undefined,
+                        }}
+                      >
+                        {pct > 0 ? `${pct.toFixed(0)}%` : ""}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="py-8 text-center text-xs text-muted-foreground">No data</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Comparison Widget ---
+
+function ComparisonWidget({
+  widget,
+  config,
+  dateRange,
+}: {
+  widget: DashboardWidget;
+  config: ComparisonWidgetConfig;
+  dateRange: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["widget-comparison", config.siteId, config.metric, dateRange],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/sites/${config.siteId}/compare?range=${dateRange}`
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const metricMap: Record<string, { key: string; format: "number" | "percent" | "duration"; compute?: (s: Record<string, number>) => number }> = {
+    pageviews: { key: "pageviews", format: "number" },
+    visitors: { key: "visitors", format: "number" },
+    visits: { key: "visits", format: "number" },
+    bounceRate: {
+      key: "bounceRate",
+      format: "percent",
+      compute: (s) => (s.visits > 0 ? (s.bounces / s.visits) * 100 : 0),
+    },
+    avgDuration: {
+      key: "avgDuration",
+      format: "duration",
+      compute: (s) => (s.visits > 0 ? s.totaltime / s.visits : 0),
+    },
+    pagesPerVisit: {
+      key: "pagesPerVisit",
+      format: "number",
+      compute: (s) => (s.visits > 0 ? s.pageviews / s.visits : 0),
+    },
+  };
+
+  const m = metricMap[config.metric];
+
+  let currentValue: number | null = null;
+  let previousValue: number | null = null;
+
+  if (data) {
+    const current = data.current as Record<string, number> | undefined;
+    const previous = data.previous as Record<string, number> | undefined;
+    if (current) {
+      currentValue = m?.compute ? m.compute(current) : (current[m?.key ?? config.metric] ?? null);
+    }
+    if (previous) {
+      previousValue = m?.compute ? m.compute(previous) : (previous[m?.key ?? config.metric] ?? null);
+    }
+  }
+
+  const change =
+    currentValue != null && previousValue != null
+      ? percentChange(currentValue, previousValue)
+      : null;
+
+  return (
+    <MetricCard
+      label={widget.title}
+      value={currentValue}
+      previousValue={previousValue ?? undefined}
+      format={m?.format ?? "number"}
+      loading={isLoading}
+    />
   );
 }
