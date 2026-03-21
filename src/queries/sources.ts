@@ -369,6 +369,63 @@ export async function getClickIdMetrics(
   }));
 }
 
+export interface ReferrerPageMetrics {
+  urlPath: string;
+  visitors: number;
+  pageviews: number;
+}
+
+/**
+ * Get top pages visited from a specific referrer domain.
+ * Used for referrer drill-down: click a source to see which pages that source drives traffic to.
+ */
+export async function getReferrerPages(
+  websiteId: string,
+  startDate: Date,
+  endDate: Date,
+  referrerDomain: string,
+  limit = 20,
+  filters: Filter[] = []
+): Promise<ReferrerPageMetrics[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
+  // Handle "(direct)" as NULL referrer_domain
+  const isDirect = referrerDomain === "(direct)";
+
+  const results = await rawQuery<{
+    url_path: string;
+    visitors: bigint;
+    pageviews: bigint;
+  }>(
+    `SELECT
+      we.url_path,
+      COUNT(DISTINCT we.session_id)::bigint AS visitors,
+      COUNT(*)::bigint AS pageviews
+    FROM website_event we
+    ${sessionJoin}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      ${isDirect ? "AND we.referrer_domain IS NULL" : "AND we.referrer_domain = {{referrerDomain}}"}
+      ${filterWhere}
+    GROUP BY we.url_path
+    ORDER BY pageviews DESC
+    LIMIT ${limit}`,
+    { websiteId, startDate, endDate, ...(isDirect ? {} : { referrerDomain }), ...filterParams }
+  );
+
+  return results.map((r) => ({
+    urlPath: r.url_path,
+    visitors: Number(r.visitors),
+    pageviews: Number(r.pageviews),
+  }));
+}
+
 export interface HostnameMetrics {
   hostname: string;
   visitors: number;

@@ -5,6 +5,7 @@ import type { DateRangePreset } from "@/lib/constants";
 import { parseFiltersFromParams } from "@/lib/queries";
 import {
   getReferrerMetrics,
+  getReferrerPages,
   getUTMMetrics,
   getUTMDetailMetrics,
   getChannelMetrics,
@@ -38,6 +39,14 @@ export async function GET(
   const filters = parseFiltersFromParams(sp);
 
   try {
+    if (view === "referrer-pages") {
+      const referrerDomain = sp.get("referrer") || "(direct)";
+      const pages = await getReferrerPages(
+        siteId, startDate, endDate, referrerDomain, 20, filters
+      );
+      return NextResponse.json(pages);
+    }
+
     if (view === "channels") {
       const channels = await getChannelMetrics(siteId, startDate, endDate, filters);
       return NextResponse.json(channels);

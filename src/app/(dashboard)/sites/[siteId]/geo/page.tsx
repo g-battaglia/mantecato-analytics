@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/data/DataTable";
 import { WorldMap } from "@/components/charts/WorldMap";
 import { useSiteQuery } from "@/hooks/use-site-query";
+import { formatDuration, formatPercent } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
 
 interface GeoRow {
@@ -17,6 +18,8 @@ interface GeoRow {
   visitors: number;
   pageviews: number;
   visits: number;
+  bounceRate: number;
+  avgDuration: number;
 }
 
 const numCols: ColumnDef<GeoRow>[] = [
@@ -39,11 +42,20 @@ const numCols: ColumnDef<GeoRow>[] = [
     ),
   },
   {
-    accessorKey: "visits",
-    header: () => <span className="flex justify-end">Visits</span>,
+    accessorKey: "bounceRate",
+    header: () => <span className="flex justify-end">Bounce Rate</span>,
     cell: ({ getValue }) => (
       <span className="flex justify-end tabular-nums">
-        {(getValue() as number).toLocaleString()}
+        {formatPercent(getValue() as number)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "avgDuration",
+    header: () => <span className="flex justify-end">Avg Duration</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatDuration(getValue() as number)}
       </span>
     ),
   },

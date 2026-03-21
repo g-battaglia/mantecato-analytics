@@ -4,10 +4,12 @@ import { useState, useMemo } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data/DataTable";
 import { BarChart } from "@/components/charts/BarChart";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { formatDuration, formatPercent } from "@/lib/format";
+import { ArrowLeft } from "lucide-react";
 
 // --- Types ---
 
@@ -49,6 +51,12 @@ interface HostnameRow {
   pageviews: number;
   bounceRate: number;
   avgDuration: number;
+}
+
+interface ReferrerPageRow {
+  urlPath: string;
+  visitors: number;
+  pageviews: number;
 }
 
 // --- Column definitions ---
@@ -269,6 +277,79 @@ function makeUtmColumns(dimensionLabel: string): ColumnDef<UTMDetailRow>[] {
   ];
 }
 
+// --- Referrer Page Columns ---
+
+const referrerPageColumns: ColumnDef<ReferrerPageRow>[] = [
+  {
+    accessorKey: "urlPath",
+    header: "Page",
+    enableSorting: false,
+    cell: ({ getValue }) => (
+      <span className="font-mono text-xs">{getValue() as string}</span>
+    ),
+  },
+  {
+    accessorKey: "visitors",
+    header: () => <span className="flex justify-end">Visitors</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "pageviews",
+    header: () => <span className="flex justify-end">Pageviews</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+];
+
+// --- Referrer Drill-Down Panel ---
+
+function ReferrerDrillDown({
+  referrerDomain,
+  onBack,
+}: {
+  referrerDomain: string;
+  onBack: () => void;
+}) {
+  const extraParams = useMemo(
+    () => ({ view: "referrer-pages", referrer: referrerDomain }),
+    [referrerDomain]
+  );
+  const { data, isLoading } = useSiteQuery<ReferrerPageRow[]>(
+    "sources",
+    ["sources-referrer-pages", referrerDomain],
+    extraParams
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-sm font-medium">
+          Pages from {referrerDomain}
+        </span>
+      </div>
+      <DataTable
+        columns={referrerPageColumns}
+        data={data ?? []}
+        loading={isLoading}
+        searchColumn="urlPath"
+        searchPlaceholder="Search pages..."
+        emptyMessage="No page data from this source"
+        exportFilename={`referrer-pages-${referrerDomain}`}
+      />
+    </div>
+  );
+}
+
 // --- UTM Dimension Panel ---
 
 const UTM_DIMENSIONS = [
@@ -331,6 +412,7 @@ function UTMDimensionPanel({ dimension }: { dimension: string }) {
 export default function SourcesPage() {
   const [tab, setTab] = useState("referrers");
   const [utmDim, setUtmDim] = useState("utm_source");
+  const [selectedReferrer, setSelectedReferrer] = useState<string | null>(null);
 
   const { data: referrers, isLoading: refLoading } =
     useSiteQuery<ReferrerRow[]>("sources", ["sources-referrers"], {
@@ -380,15 +462,23 @@ export default function SourcesPage() {
             </TabsList>
 
             <TabsContent value="referrers" className="mt-4">
-              <DataTable
-                columns={referrerColumns}
-                data={referrers ?? []}
-                loading={refLoading}
-                searchColumn="referrerDomain"
-                searchPlaceholder="Search sources..."
-                emptyMessage="No referrer data"
-                exportFilename="referrers"
-              />
+              {selectedReferrer ? (
+                <ReferrerDrillDown
+                  referrerDomain={selectedReferrer}
+                  onBack={() => setSelectedReferrer(null)}
+                />
+              ) : (
+                <DataTable
+                  columns={referrerColumns}
+                  data={referrers ?? []}
+                  loading={refLoading}
+                  searchColumn="referrerDomain"
+                  searchPlaceholder="Search sources..."
+                  emptyMessage="No referrer data"
+                  exportFilename="referrers"
+                  onRowClick={(row) => setSelectedReferrer(row.referrerDomain)}
+                />
+              )}
             </TabsContent>
 
             <TabsContent value="channels" className="mt-4 space-y-4">
