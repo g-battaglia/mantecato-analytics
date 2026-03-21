@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Header } from "@/components/layout/Header";
 import {
   Card,
@@ -9,6 +11,8 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -16,9 +20,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTheme } from "@/lib/theme";
 import { DATE_RANGE_PRESETS, GRANULARITY_OPTIONS } from "@/lib/constants";
+import {
+  Plus,
+  Trash2,
+  Clock,
+  Pause,
+  Play,
+  CalendarClock,
+} from "lucide-react";
+import type { ScheduledExport, ScheduledExportConfig } from "@/queries/scheduled-exports";
 
 const COMMON_TIMEZONES = [
   "UTC",
@@ -36,6 +57,44 @@ const COMMON_TIMEZONES = [
   "Australia/Sydney",
 ];
 
+const DATA_SOURCES = [
+  { value: "overview", label: "Overview stats" },
+  { value: "pages", label: "Pages" },
+  { value: "referrers", label: "Referrers" },
+  { value: "events", label: "Events" },
+  { value: "sessions", label: "Sessions" },
+  { value: "devices", label: "Devices" },
+  { value: "geo", label: "Geography" },
+] as const;
+
+const EXPORT_FORMATS = [
+  { value: "csv", label: "CSV" },
+  { value: "json", label: "JSON" },
+  { value: "xlsx", label: "Excel (XLSX)" },
+] as const;
+
+const SCHEDULES = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+] as const;
+
+const WEEK_DAYS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+];
+
+interface Website {
+  website_id: string;
+  name: string;
+  domain: string | null;
+}
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const {
@@ -51,8 +110,9 @@ export default function SettingsPage() {
     setTimezone,
   } = usePreferencesStore();
 
-  // Add setters that are missing from store — we'll use the store's set directly
   const store = usePreferencesStore;
+
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   return (
     <>
@@ -258,6 +318,12 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Scheduled Exports */}
+          <ScheduledExportsSection
+            showCreateDialog={showCreateDialog}
+            setShowCreateDialog={setShowCreateDialog}
+          />
+
           {/* About */}
           <Card>
             <CardHeader>
@@ -282,5 +348,432 @@ export default function SettingsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// ---------- Scheduled Exports Section ----------
+
+function ScheduledExportsSection({
+  showCreateDialog,
+  setShowCreateDialog,
+}: {
+  showCreateDialog: boolean;
+  setShowCreateDialog: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const { data: exports, isLoading } = useQuery<ScheduledExport[]>({
+    queryKey: ["scheduled-exports"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduled-exports");
+      if (!res.ok) throw new Error("Failed to fetch scheduled exports");
+      return res.json();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (exportId: string) => {
+      const res = await fetch(`/api/scheduled-exports/${exportId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scheduled-exports"] });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({
+      exportId,
+      enabled,
+    }: {
+      exportId: string;
+      enabled: boolean;
+    }) => {
+      const res = await fetch(`/api/scheduled-exports/${exportId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: { enabled } }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scheduled-exports"] });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-medium">
+              Scheduled Exports
+            </CardTitle>
+            <CardDescription>
+              Automatically export analytics data on a recurring schedule.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowCreateDialog(true)}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New Export
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : !exports?.length ? (
+          <div className="flex flex-col items-center justify-center py-6 text-center">
+            <CalendarClock className="mb-2 h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">
+              No scheduled exports yet.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Create one to automatically export data on a recurring basis.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {exports.map((exp) => (
+              <div
+                key={exp.id}
+                className="flex items-center justify-between rounded-md border px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">
+                      {exp.name}
+                    </span>
+                    <Badge
+                      variant={exp.config.enabled ? "default" : "secondary"}
+                      className="text-[10px] px-1.5 py-0"
+                    >
+                      {exp.config.enabled ? "Active" : "Paused"}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {exp.config.schedule}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                    <span>
+                      {DATA_SOURCES.find((d) => d.value === exp.config.dataSource)?.label ?? exp.config.dataSource}
+                    </span>
+                    <span>{exp.config.format.toUpperCase()}</span>
+                    {exp.config.nextRunAt && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Next: {new Date(exp.config.nextRunAt).toLocaleDateString()}
+                      </span>
+                    )}
+                    {exp.config.lastRunAt && (
+                      <span>
+                        Last: {new Date(exp.config.lastRunAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 ml-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={() =>
+                      toggleMutation.mutate({
+                        exportId: exp.id,
+                        enabled: !exp.config.enabled,
+                      })
+                    }
+                    title={exp.config.enabled ? "Pause" : "Resume"}
+                  >
+                    {exp.config.enabled ? (
+                      <Pause className="h-3.5 w-3.5" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Delete export "${exp.name}"?`)) {
+                        deleteMutation.mutate(exp.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <CreateExportDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+      />
+    </Card>
+  );
+}
+
+// ---------- Create Export Dialog ----------
+
+function CreateExportDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const [name, setName] = useState("");
+  const [websiteId, setWebsiteId] = useState("");
+  const [dataSource, setDataSource] = useState<ScheduledExportConfig["dataSource"]>("overview");
+  const [format, setFormat] = useState<ScheduledExportConfig["format"]>("csv");
+  const [dateRange, setDateRange] = useState("7d");
+  const [schedule, setSchedule] = useState<ScheduledExportConfig["schedule"]>("weekly");
+  const [weekDay, setWeekDay] = useState(1);
+  const [monthDay, setMonthDay] = useState(1);
+
+  const { data: websites } = useQuery<Website[]>({
+    queryKey: ["websites"],
+    queryFn: async () => {
+      const res = await fetch("/api/sites");
+      if (!res.ok) throw new Error("Failed to fetch sites");
+      return res.json();
+    },
+    staleTime: 300_000,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const config: ScheduledExportConfig = {
+        websiteId,
+        dataSource,
+        format,
+        dateRange,
+        schedule,
+        enabled: true,
+        ...(schedule === "weekly" ? { weekDay } : {}),
+        ...(schedule === "monthly" ? { monthDay } : {}),
+      };
+
+      const res = await fetch("/api/scheduled-exports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, config }),
+      });
+      if (!res.ok) throw new Error("Failed to create export");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scheduled-exports"] });
+      onOpenChange(false);
+      resetForm();
+    },
+  });
+
+  function resetForm() {
+    setName("");
+    setWebsiteId("");
+    setDataSource("overview");
+    setFormat("csv");
+    setDateRange("7d");
+    setSchedule("weekly");
+    setWeekDay(1);
+    setMonthDay(1);
+  }
+
+  const canSubmit = name.trim() && websiteId;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create Scheduled Export</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          {/* Name */}
+          <div className="space-y-1.5">
+            <Label>Name</Label>
+            <Input
+              placeholder="e.g. Weekly traffic report"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          {/* Website */}
+          <div className="space-y-1.5">
+            <Label>Website</Label>
+            <Select value={websiteId} onValueChange={setWebsiteId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a website" />
+              </SelectTrigger>
+              <SelectContent>
+                {websites?.map((site) => (
+                  <SelectItem key={site.website_id} value={site.website_id}>
+                    {site.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Data source */}
+          <div className="space-y-1.5">
+            <Label>Data source</Label>
+            <Select
+              value={dataSource}
+              onValueChange={(v) => setDataSource(v as ScheduledExportConfig["dataSource"])}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DATA_SOURCES.map((src) => (
+                  <SelectItem key={src.value} value={src.value}>
+                    {src.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Format + Date Range row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Format</Label>
+              <Select
+                value={format}
+                onValueChange={(v) => setFormat(v as ScheduledExportConfig["format"])}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPORT_FORMATS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date range</Label>
+              <Select value={dateRange} onValueChange={setDateRange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(DATE_RANGE_PRESETS)
+                    .filter(([key]) => key !== "custom")
+                    .map(([key, preset]) => (
+                      <SelectItem key={key} value={key}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Schedule */}
+          <div className="space-y-1.5">
+            <Label>Schedule</Label>
+            <Select
+              value={schedule}
+              onValueChange={(v) => setSchedule(v as ScheduledExportConfig["schedule"])}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SCHEDULES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Weekly: day of week */}
+          {schedule === "weekly" && (
+            <div className="space-y-1.5">
+              <Label>Day of week</Label>
+              <Select
+                value={String(weekDay)}
+                onValueChange={(v) => setWeekDay(Number(v))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WEEK_DAYS.map((d) => (
+                    <SelectItem key={d.value} value={String(d.value)}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Monthly: day of month */}
+          {schedule === "monthly" && (
+            <div className="space-y-1.5">
+              <Label>Day of month</Label>
+              <Select
+                value={String(monthDay)}
+                onValueChange={(v) => setMonthDay(Number(v))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                    <SelectItem key={d} value={String(d)}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                resetForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createMutation.mutate()}
+              disabled={!canSubmit || createMutation.isPending}
+            >
+              {createMutation.isPending ? "Creating..." : "Create Export"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

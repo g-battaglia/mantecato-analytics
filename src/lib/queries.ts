@@ -96,7 +96,7 @@ const VALID_FILTER_COLUMNS = new Set([
 
 export interface Filter {
   column: string;
-  operator: "eq" | "neq" | "contains" | "starts_with";
+  operator: "eq" | "neq" | "contains" | "not_contains" | "starts_with" | "not_starts_with";
   value: string;
 }
 
@@ -104,55 +104,80 @@ export interface Filter {
  * Build dynamic WHERE clauses from filters.
  * Uses index-based param names to avoid collisions when the same column
  * appears in multiple filters.
+ *
+ * Same-column filters are OR-ed together; different columns are AND-ed.
  */
 export function buildFilterSQL(filters: Filter[]): {
   sql: string;
   params: Record<string, unknown>;
   needsSessionJoin: boolean;
 } {
-  const clauses: string[] = [];
   const params: Record<string, unknown> = {};
   let needsSessionJoin = false;
 
+  // Group filters by column
+  const grouped = new Map<string, { filter: Filter; index: number }[]>();
   for (let i = 0; i < filters.length; i++) {
     const filter = filters[i];
-
-    // Validate column name against whitelist
     if (!VALID_FILTER_COLUMNS.has(filter.column)) continue;
+    if (!grouped.has(filter.column)) grouped.set(filter.column, []);
+    grouped.get(filter.column)!.push({ filter, index: i });
+  }
 
-    const paramName = `f${i}`;
-    const isSessionCol = (SESSION_COLUMNS as readonly string[]).includes(
-      filter.column
-    );
+  const andClauses: string[] = [];
 
-    if (isSessionCol) {
-      needsSessionJoin = true;
+  for (const [, entries] of grouped) {
+    const orClauses: string[] = [];
+
+    for (const { filter, index } of entries) {
+      const paramName = `f${index}`;
+      const isSessionCol = (SESSION_COLUMNS as readonly string[]).includes(
+        filter.column
+      );
+
+      if (isSessionCol) {
+        needsSessionJoin = true;
+      }
+
+      const prefix = isSessionCol ? "s" : "we";
+
+      switch (filter.operator) {
+        case "eq":
+          orClauses.push(`${prefix}.${filter.column} = {{${paramName}}}`);
+          params[paramName] = filter.value;
+          break;
+        case "neq":
+          orClauses.push(`${prefix}.${filter.column} != {{${paramName}}}`);
+          params[paramName] = filter.value;
+          break;
+        case "contains":
+          orClauses.push(`${prefix}.${filter.column} ILIKE {{${paramName}}}`);
+          params[paramName] = `%${filter.value}%`;
+          break;
+        case "not_contains":
+          orClauses.push(`${prefix}.${filter.column} NOT ILIKE {{${paramName}}}`);
+          params[paramName] = `%${filter.value}%`;
+          break;
+        case "starts_with":
+          orClauses.push(`${prefix}.${filter.column} ILIKE {{${paramName}}}`);
+          params[paramName] = `${filter.value}%`;
+          break;
+        case "not_starts_with":
+          orClauses.push(`${prefix}.${filter.column} NOT ILIKE {{${paramName}}}`);
+          params[paramName] = `${filter.value}%`;
+          break;
+      }
     }
 
-    const prefix = isSessionCol ? "s" : "we";
-
-    switch (filter.operator) {
-      case "eq":
-        clauses.push(`${prefix}.${filter.column} = {{${paramName}}}`);
-        params[paramName] = filter.value;
-        break;
-      case "neq":
-        clauses.push(`${prefix}.${filter.column} != {{${paramName}}}`);
-        params[paramName] = filter.value;
-        break;
-      case "contains":
-        clauses.push(`${prefix}.${filter.column} ILIKE {{${paramName}}}`);
-        params[paramName] = `%${filter.value}%`;
-        break;
-      case "starts_with":
-        clauses.push(`${prefix}.${filter.column} ILIKE {{${paramName}}}`);
-        params[paramName] = `${filter.value}%`;
-        break;
+    if (orClauses.length === 1) {
+      andClauses.push(orClauses[0]);
+    } else if (orClauses.length > 1) {
+      andClauses.push(`(${orClauses.join(" OR ")})`);
     }
   }
 
   return {
-    sql: clauses.length > 0 ? `AND ${clauses.join(" AND ")}` : "",
+    sql: andClauses.length > 0 ? `AND ${andClauses.join(" AND ")}` : "",
     params,
     needsSessionJoin,
   };
@@ -176,7 +201,7 @@ export function parseFiltersFromParams(
     const value = rest.substring(secondColon + 1);
     if (!column || !operator || value === undefined) return [];
     if (!VALID_FILTER_COLUMNS.has(column)) return [];
-    const validOps = ["eq", "neq", "contains", "starts_with"];
+    const validOps = ["eq", "neq", "contains", "not_contains", "starts_with", "not_starts_with"];
     if (!validOps.includes(operator)) return [];
     return [{ column, operator: operator as Filter["operator"], value }];
   });

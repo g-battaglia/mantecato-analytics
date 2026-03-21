@@ -47,6 +47,8 @@ export async function GET(
   const limit = Number(sp.get("limit") || 50);
   const offset = Number(sp.get("offset") || 0);
   const filters = parseFiltersFromParams(sp);
+  const visitedPage = sp.get("visitedPage") || undefined;
+  const triggeredEvent = sp.get("triggeredEvent") || undefined;
 
   try {
     const sessions = await getSessionList(
@@ -55,7 +57,9 @@ export async function GET(
       endDate,
       limit,
       offset,
-      filters
+      filters,
+      visitedPage,
+      triggeredEvent
     );
     return NextResponse.json(sessions);
   } catch (error) {

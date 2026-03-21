@@ -15,6 +15,10 @@ export interface SessionListItem {
 /**
  * Get session list with metrics.
  * Demographic fields (browser/os/device/country/city) live on the session table.
+ *
+ * Supports additional subquery filters:
+ * - visitedPage: only sessions that viewed a specific url_path
+ * - triggeredEvent: only sessions that triggered a specific event_name
  */
 export async function getSessionList(
   websiteId: string,
@@ -22,10 +26,46 @@ export async function getSessionList(
   endDate: Date,
   limit = 50,
   offset = 0,
-  filters: Filter[] = []
+  filters: Filter[] = [],
+  visitedPage?: string,
+  triggeredEvent?: string
 ): Promise<SessionListItem[]> {
   // Session join is always present here
   const { sql: filterWhere, params: filterParams } = buildFilterSQL(filters);
+
+  const extraSubqueries: string[] = [];
+  const params: Record<string, unknown> = {
+    websiteId,
+    startDate,
+    endDate,
+    ...filterParams,
+  };
+
+  if (visitedPage) {
+    extraSubqueries.push(
+      `AND we.session_id IN (
+        SELECT vp.session_id FROM website_event vp
+        WHERE vp.website_id = {{websiteId::uuid}}
+          AND vp.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+          AND vp.event_type = 1
+          AND vp.url_path = {{visitedPage}}
+      )`
+    );
+    params.visitedPage = visitedPage;
+  }
+
+  if (triggeredEvent) {
+    extraSubqueries.push(
+      `AND we.session_id IN (
+        SELECT te.session_id FROM website_event te
+        WHERE te.website_id = {{websiteId::uuid}}
+          AND te.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+          AND te.event_type = 2
+          AND te.event_name = {{triggeredEvent}}
+      )`
+    );
+    params.triggeredEvent = triggeredEvent;
+  }
 
   const results = await rawQuery<{
     session_id: string;
@@ -54,10 +94,11 @@ export async function getSessionList(
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
       ${filterWhere}
+      ${extraSubqueries.join("\n      ")}
     GROUP BY we.session_id, s.country, s.city, s.browser, s.os, s.device
     ORDER BY started_at DESC
     LIMIT ${limit} OFFSET ${offset}`,
-    { websiteId, startDate, endDate, ...filterParams }
+    params
   );
 
   return results.map((r) => ({

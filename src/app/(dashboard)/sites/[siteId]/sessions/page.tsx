@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/data/DataTable";
-import { useSiteQuery } from "@/hooks/use-site-query";
+import { useSiteQuery, useDateParams } from "@/hooks/use-site-query";
 import { formatDuration } from "@/lib/format";
 import { format, differenceInSeconds } from "date-fns";
-import { ArrowLeft, Globe, Monitor, Clock, Timer } from "lucide-react";
+import { ArrowLeft, Globe, Monitor, Clock, Timer, Search, X } from "lucide-react";
 
 interface SessionRow {
   sessionId: string;
@@ -229,9 +231,35 @@ function SessionDetail({
 
 export default function SessionsPage() {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
-  const { data, isLoading } = useSiteQuery<SessionRow[]>("sessions", [
+  const [visitedPage, setVisitedPage] = useState("");
+  const [triggeredEvent, setTriggeredEvent] = useState("");
+  const [activePageFilter, setActivePageFilter] = useState("");
+  const [activeEventFilter, setActiveEventFilter] = useState("");
+
+  const extraParams = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (activePageFilter) p.visitedPage = activePageFilter;
+    if (activeEventFilter) p.triggeredEvent = activeEventFilter;
+    return p;
+  }, [activePageFilter, activeEventFilter]);
+
+  const { data, isLoading } = useSiteQuery<SessionRow[]>(
     "sessions",
-  ]);
+    ["sessions", activePageFilter, activeEventFilter],
+    extraParams
+  );
+
+  function applyFilters() {
+    setActivePageFilter(visitedPage.trim());
+    setActiveEventFilter(triggeredEvent.trim());
+  }
+
+  function clearSessionFilters() {
+    setVisitedPage("");
+    setTriggeredEvent("");
+    setActivePageFilter("");
+    setActiveEventFilter("");
+  }
 
   if (selectedSession) {
     return (
@@ -244,8 +272,70 @@ export default function SessionsPage() {
     );
   }
 
+  const hasActiveFilters = activePageFilter || activeEventFilter;
+
   return (
     <div className="space-y-4">
+      {/* Session-specific filters */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">Session Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Visited page</Label>
+              <Input
+                placeholder="/pricing, /blog/..."
+                value={visitedPage}
+                onChange={(e) => setVisitedPage(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+                className="h-8 w-[200px] text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Triggered event</Label>
+              <Input
+                placeholder="signup, purchase..."
+                value={triggeredEvent}
+                onChange={(e) => setTriggeredEvent(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+                className="h-8 w-[200px] text-xs"
+              />
+            </div>
+            <Button size="sm" className="h-8 gap-1 text-xs" onClick={applyFilters}>
+              <Search className="h-3 w-3" />
+              Apply
+            </Button>
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 text-xs"
+                onClick={clearSessionFilters}
+              >
+                <X className="h-3 w-3" />
+                Clear
+              </Button>
+            )}
+          </div>
+          {hasActiveFilters && (
+            <div className="mt-2 flex gap-2">
+              {activePageFilter && (
+                <Badge variant="secondary" className="text-xs">
+                  Visited: {activePageFilter}
+                </Badge>
+              )}
+              {activeEventFilter && (
+                <Badge variant="secondary" className="text-xs">
+                  Event: {activeEventFilter}
+                </Badge>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Sessions</CardTitle>

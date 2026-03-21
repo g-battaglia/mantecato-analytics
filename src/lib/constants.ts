@@ -118,7 +118,9 @@ export const FILTER_OPERATORS = {
   eq: { label: "is", symbol: "=" },
   neq: { label: "is not", symbol: "≠" },
   contains: { label: "contains", symbol: "∋" },
+  not_contains: { label: "does not contain", symbol: "∌" },
   starts_with: { label: "starts with", symbol: "^" },
+  not_starts_with: { label: "does not start with", symbol: "!^" },
 } as const;
 
 export type FilterOperator = keyof typeof FILTER_OPERATORS;
