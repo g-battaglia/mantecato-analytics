@@ -8,6 +8,8 @@ import {
   getUTMMetrics,
   getUTMDetailMetrics,
   getChannelMetrics,
+  getClickIdMetrics,
+  getHostnameMetrics,
 } from "@/queries/sources";
 
 export async function GET(
@@ -63,6 +65,16 @@ export async function GET(
         siteId, startDate, endDate, groupBy, 50, filters
       );
       return NextResponse.json(utm);
+    }
+
+    if (view === "click-ids") {
+      const clickIds = await getClickIdMetrics(siteId, startDate, endDate, filters);
+      return NextResponse.json(clickIds);
+    }
+
+    if (view === "hostnames") {
+      const hostnames = await getHostnameMetrics(siteId, startDate, endDate, 50, filters);
+      return NextResponse.json(hostnames);
     }
 
     const referrers = await getReferrerMetrics(

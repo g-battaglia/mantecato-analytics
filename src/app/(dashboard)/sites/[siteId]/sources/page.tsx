@@ -35,6 +35,22 @@ interface UTMDetailRow {
   avgDuration: number;
 }
 
+interface ClickIdRow {
+  platform: string;
+  visitors: number;
+  pageviews: number;
+  bounceRate: number;
+  avgDuration: number;
+}
+
+interface HostnameRow {
+  hostname: string;
+  visitors: number;
+  pageviews: number;
+  bounceRate: number;
+  avgDuration: number;
+}
+
 // --- Column definitions ---
 
 const referrerColumns: ColumnDef<ReferrerRow>[] = [
@@ -79,6 +95,93 @@ const referrerColumns: ColumnDef<ReferrerRow>[] = [
 
 const channelColumns: ColumnDef<ChannelRow>[] = [
   { accessorKey: "channel", header: "Channel", enableSorting: false },
+  {
+    accessorKey: "visitors",
+    header: () => <span className="flex justify-end">Visitors</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "pageviews",
+    header: () => <span className="flex justify-end">Pageviews</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "bounceRate",
+    header: () => <span className="flex justify-end">Bounce Rate</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatPercent(getValue() as number)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "avgDuration",
+    header: () => <span className="flex justify-end">Avg Duration</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatDuration(getValue() as number)}
+      </span>
+    ),
+  },
+];
+
+const clickIdColumns: ColumnDef<ClickIdRow>[] = [
+  { accessorKey: "platform", header: "Platform", enableSorting: false },
+  {
+    accessorKey: "visitors",
+    header: () => <span className="flex justify-end">Visitors</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "pageviews",
+    header: () => <span className="flex justify-end">Pageviews</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {(getValue() as number).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "bounceRate",
+    header: () => <span className="flex justify-end">Bounce Rate</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatPercent(getValue() as number)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "avgDuration",
+    header: () => <span className="flex justify-end">Avg Duration</span>,
+    cell: ({ getValue }) => (
+      <span className="flex justify-end tabular-nums">
+        {formatDuration(getValue() as number)}
+      </span>
+    ),
+  },
+];
+
+const hostnameColumns: ColumnDef<HostnameRow>[] = [
+  {
+    accessorKey: "hostname",
+    header: "Hostname",
+    enableSorting: false,
+    cell: ({ getValue }) => (
+      <span className="font-mono text-xs">{getValue() as string}</span>
+    ),
+  },
   {
     accessorKey: "visitors",
     header: () => <span className="flex justify-end">Visitors</span>,
@@ -238,9 +341,23 @@ export default function SourcesPage() {
   const { data: channels, isLoading: chLoading } =
     useSiteQuery<ChannelRow[]>("sources", ["sources-channels"], channelsParams);
 
+  const clickIdParams = useMemo(() => ({ view: "click-ids" }), []);
+  const { data: clickIds, isLoading: ciLoading } =
+    useSiteQuery<ClickIdRow[]>("sources", ["sources-click-ids"], clickIdParams);
+
+  const hostnameParams = useMemo(() => ({ view: "hostnames" }), []);
+  const { data: hostnames, isLoading: hnLoading } =
+    useSiteQuery<HostnameRow[]>("sources", ["sources-hostnames"], hostnameParams);
+
   // Chart data for channels
   const channelChartData = (channels ?? []).map((row) => ({
     name: row.channel,
+    visitors: row.visitors,
+  }));
+
+  // Chart data for click IDs
+  const clickIdChartData = (clickIds ?? []).map((row) => ({
+    name: row.platform,
     visitors: row.visitors,
   }));
 
@@ -258,6 +375,8 @@ export default function SourcesPage() {
               <TabsTrigger value="referrers">Referrers</TabsTrigger>
               <TabsTrigger value="channels">Channels</TabsTrigger>
               <TabsTrigger value="utm">UTM</TabsTrigger>
+              <TabsTrigger value="click-ids">Click IDs</TabsTrigger>
+              <TabsTrigger value="hostnames">Hostnames</TabsTrigger>
             </TabsList>
 
             <TabsContent value="referrers" className="mt-4">
@@ -308,6 +427,38 @@ export default function SourcesPage() {
                   </TabsContent>
                 ))}
               </Tabs>
+            </TabsContent>
+
+            <TabsContent value="click-ids" className="mt-4 space-y-4">
+              {clickIdChartData.length > 0 && (
+                <BarChart
+                  data={clickIdChartData}
+                  xKey="name"
+                  yKeys={["visitors"]}
+                  labels={{ visitors: "Visitors" }}
+                  height={220}
+                  horizontal
+                />
+              )}
+              <DataTable
+                columns={clickIdColumns}
+                data={clickIds ?? []}
+                loading={ciLoading}
+                emptyMessage="No paid click ID data — visits with gclid, fbclid, msclkid, etc. will appear here"
+                exportFilename="click-ids"
+              />
+            </TabsContent>
+
+            <TabsContent value="hostnames" className="mt-4">
+              <DataTable
+                columns={hostnameColumns}
+                data={hostnames ?? []}
+                loading={hnLoading}
+                searchColumn="hostname"
+                searchPlaceholder="Search hostnames..."
+                emptyMessage="No hostname data"
+                exportFilename="hostnames"
+              />
             </TabsContent>
           </Tabs>
         </CardContent>

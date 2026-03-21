@@ -14,6 +14,7 @@ export interface PageMetrics {
 
 /**
  * Get detailed page metrics including time on page and entry/exit data.
+ * When pageMode is "slug", strips query strings and normalizes trailing slashes.
  */
 export async function getPageMetrics(
   websiteId: string,
@@ -21,7 +22,8 @@ export async function getPageMetrics(
   endDate: Date,
   limit = 50,
   offset = 0,
-  filters: Filter[] = []
+  filters: Filter[] = [],
+  pageMode: "path" | "slug" = "path"
 ): Promise<PageMetrics[]> {
   const { sql: filterWhere, params: filterParams, needsSessionJoin } =
     buildFilterSQL(filters);
@@ -30,6 +32,17 @@ export async function getPageMetrics(
   const sessionJoinCTE = needsSessionJoin
     ? "JOIN session s ON s.session_id = we.session_id"
     : "";
+
+  // In slug mode, normalize: strip trailing slashes, collapse to lowercase path only
+  const urlExpr =
+    pageMode === "slug"
+      ? "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
+      : "we.url_path";
+  // Ensure empty slug (root with trailing slash stripped) becomes '/'
+  const slugCoalesce =
+    pageMode === "slug"
+      ? `CASE WHEN ${urlExpr} = '' THEN '/' ELSE ${urlExpr} END`
+      : urlExpr;
 
   const results = await rawQuery<{
     url_path: string;
@@ -43,7 +56,7 @@ export async function getPageMetrics(
     bounce_rate: number;
   }>(
     `WITH filtered_events AS (
-      SELECT we.url_path, we.page_title, we.visit_id, we.session_id, we.created_at
+      SELECT ${slugCoalesce} AS url_path, we.page_title, we.visit_id, we.session_id, we.created_at
       FROM website_event we
       ${sessionJoinCTE}
       WHERE we.website_id = {{websiteId::uuid}}

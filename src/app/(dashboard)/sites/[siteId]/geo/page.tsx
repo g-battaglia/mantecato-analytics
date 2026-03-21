@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/data/DataTable";
+import { WorldMap } from "@/components/charts/WorldMap";
 import { useSiteQuery } from "@/hooks/use-site-query";
 import { ArrowLeft } from "lucide-react";
 
@@ -116,8 +118,40 @@ export default function GeoPage() {
         ? `Regions in ${selectedCountry}`
         : "Countries";
 
+  // Map data: only used at country level
+  const mapData = useMemo(() => {
+    if (level !== "country" || !data) return [];
+    return data.map((r) => ({ country: r.country, visitors: r.visitors }));
+  }, [data, level]);
+
+  function handleMapCountryClick(code: string) {
+    setSelectedCountry(code);
+    setLevel("region");
+  }
+
   return (
     <div className="space-y-4">
+      {/* World map — only shown at country level */}
+      {level === "country" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Visitor Map
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-[340px] w-full" />
+            ) : (
+              <WorldMap
+                data={mapData}
+                onCountryClick={handleMapCountryClick}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">

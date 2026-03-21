@@ -8,6 +8,7 @@ import { DataTable } from "@/components/data/DataTable";
 import { MetricCard } from "@/components/data/MetricCard";
 import { BarChart } from "@/components/charts/BarChart";
 import { useSiteQuery } from "@/hooks/use-site-query";
+import { usePreferencesStore } from "@/stores/preferences";
 import { formatDuration, formatPercent } from "@/lib/format";
 
 interface PageRow {
@@ -206,7 +207,10 @@ const exitColumns: ColumnDef<PageRow>[] = [
 
 export default function PagesPage() {
   const [tab, setTab] = useState("all");
-  const { data, isLoading } = useSiteQuery<PageRow[]>("pages", ["pages"]);
+  const pageMode = usePreferencesStore((s) => s.pageMode);
+  const { data, isLoading } = useSiteQuery<PageRow[]>("pages", ["pages"], {
+    mode: pageMode,
+  });
 
   const pages = data ?? [];
 

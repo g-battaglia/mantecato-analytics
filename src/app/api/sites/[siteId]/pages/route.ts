@@ -29,6 +29,7 @@ export async function GET(
       : range?.endDate ?? new Date();
   const limit = Number(sp.get("limit") || 50);
   const offset = Number(sp.get("offset") || 0);
+  const pageMode = (sp.get("mode") === "slug" ? "slug" : "path") as "path" | "slug";
   const filters = parseFiltersFromParams(sp);
 
   try {
@@ -38,7 +39,8 @@ export async function GET(
       endDate,
       limit,
       offset,
-      filters
+      filters,
+      pageMode
     );
     return NextResponse.json(pages);
   } catch (error) {

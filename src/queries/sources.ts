@@ -289,3 +289,153 @@ export async function getChannelMetrics(
     avgDuration: r.avg_duration ?? 0,
   }));
 }
+
+export interface ClickIdMetrics {
+  platform: string;
+  visitors: number;
+  pageviews: number;
+  bounceRate: number;
+  avgDuration: number;
+}
+
+/**
+ * Click ID analysis — counts visits that arrived with gclid, fbclid, msclkid, etc.
+ * Each row represents a paid traffic platform identified by its click ID column.
+ */
+export async function getClickIdMetrics(
+  websiteId: string,
+  startDate: Date,
+  endDate: Date,
+  filters: Filter[] = []
+): Promise<ClickIdMetrics[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
+  const results = await rawQuery<{
+    platform: string;
+    visitors: bigint;
+    pageviews: bigint;
+    bounce_rate: number;
+    avg_duration: number;
+  }>(
+    `WITH click_ids AS (
+      SELECT
+        we.visit_id,
+        CASE
+          WHEN we.gclid IS NOT NULL THEN 'Google Ads (gclid)'
+          WHEN we.fbclid IS NOT NULL THEN 'Meta Ads (fbclid)'
+          WHEN we.msclkid IS NOT NULL THEN 'Microsoft Ads (msclkid)'
+          WHEN we.ttclid IS NOT NULL THEN 'TikTok Ads (ttclid)'
+          WHEN we.twclid IS NOT NULL THEN 'Twitter/X Ads (twclid)'
+          WHEN we.li_fat_id IS NOT NULL THEN 'LinkedIn Ads (li_fat_id)'
+        END AS platform,
+        COUNT(*) AS pages,
+        EXTRACT(EPOCH FROM (MAX(we.created_at) - MIN(we.created_at))) AS duration
+      FROM website_event we
+      ${sessionJoin}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        AND (we.gclid IS NOT NULL OR we.fbclid IS NOT NULL OR we.msclkid IS NOT NULL
+             OR we.ttclid IS NOT NULL OR we.twclid IS NOT NULL OR we.li_fat_id IS NOT NULL)
+        ${filterWhere}
+      GROUP BY we.visit_id, platform
+    )
+    SELECT
+      platform,
+      COUNT(DISTINCT visit_id)::bigint AS visitors,
+      SUM(pages)::bigint AS pageviews,
+      CASE WHEN COUNT(*) = 0 THEN 0
+        ELSE (SUM(CASE WHEN pages = 1 THEN 1 ELSE 0 END)::float / COUNT(*) * 100)
+      END AS bounce_rate,
+      COALESCE(AVG(duration), 0) AS avg_duration
+    FROM click_ids
+    WHERE platform IS NOT NULL
+    GROUP BY platform
+    ORDER BY visitors DESC`,
+    { websiteId, startDate, endDate, ...filterParams }
+  );
+
+  return results.map((r) => ({
+    platform: r.platform,
+    visitors: Number(r.visitors),
+    pageviews: Number(r.pageviews),
+    bounceRate: r.bounce_rate ?? 0,
+    avgDuration: r.avg_duration ?? 0,
+  }));
+}
+
+export interface HostnameMetrics {
+  hostname: string;
+  visitors: number;
+  pageviews: number;
+  bounceRate: number;
+  avgDuration: number;
+}
+
+/**
+ * Get hostname breakdown metrics — useful when a single Umami site tracks multiple subdomains.
+ */
+export async function getHostnameMetrics(
+  websiteId: string,
+  startDate: Date,
+  endDate: Date,
+  limit = 50,
+  filters: Filter[] = []
+): Promise<HostnameMetrics[]> {
+  const { sql: filterWhere, params: filterParams, needsSessionJoin } =
+    buildFilterSQL(filters);
+
+  const sessionJoin = needsSessionJoin
+    ? "JOIN session s ON s.session_id = we.session_id"
+    : "";
+
+  const results = await rawQuery<{
+    hostname: string;
+    visitors: bigint;
+    pageviews: bigint;
+    bounce_rate: number;
+    avg_duration: number;
+  }>(
+    `WITH visit_stats AS (
+      SELECT
+        we.visit_id,
+        we.hostname,
+        COUNT(*) AS pages,
+        EXTRACT(EPOCH FROM (MAX(we.created_at) - MIN(we.created_at))) AS duration
+      FROM website_event we
+      ${sessionJoin}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        AND we.hostname IS NOT NULL AND we.hostname != ''
+        ${filterWhere}
+      GROUP BY we.visit_id, we.hostname
+    )
+    SELECT
+      hostname,
+      COUNT(DISTINCT visit_id)::bigint AS visitors,
+      SUM(pages)::bigint AS pageviews,
+      CASE WHEN COUNT(*) = 0 THEN 0
+        ELSE (SUM(CASE WHEN pages = 1 THEN 1 ELSE 0 END)::float / COUNT(*) * 100)
+      END AS bounce_rate,
+      COALESCE(AVG(duration), 0) AS avg_duration
+    FROM visit_stats
+    GROUP BY hostname
+    ORDER BY visitors DESC
+    LIMIT ${limit}`,
+    { websiteId, startDate, endDate, ...filterParams }
+  );
+
+  return results.map((r) => ({
+    hostname: r.hostname,
+    visitors: Number(r.visitors),
+    pageviews: Number(r.pageviews),
+    bounceRate: r.bounce_rate ?? 0,
+    avgDuration: r.avg_duration ?? 0,
+  }));
+}
