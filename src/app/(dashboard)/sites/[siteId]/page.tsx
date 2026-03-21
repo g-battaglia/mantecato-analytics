@@ -1,9 +1,14 @@
 "use client";
 
+import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { MetricCard } from "@/components/data/MetricCard";
 import { AreaChart } from "@/components/charts/AreaChart";
+import {
+  useAnnotations,
+  getAnnotationMarkers,
+} from "@/components/annotations/AnnotationsManager";
 import {
   Card,
   CardContent,
@@ -70,11 +75,20 @@ export default function SiteOverviewPage() {
   const params = useParams();
   const siteId = params.siteId as string;
   const { data, isLoading } = useOverviewData(siteId);
+  const { data: annotations = [] } = useAnnotations();
 
   const stats = data?.stats;
   const prev = data?.previousStats;
   const current = derivedMetrics(stats);
   const previous = derivedMetrics(prev);
+
+  const annotationMarkers = useMemo(
+    () =>
+      data?.timeseries
+        ? getAnnotationMarkers(annotations, data.timeseries, "time")
+        : [],
+    [annotations, data?.timeseries]
+  );
 
   return (
     <div className="space-y-4">
@@ -143,6 +157,7 @@ export default function SiteOverviewPage() {
               labels={{ pageviews: "Pageviews", visitors: "Visitors" }}
               comparisonData={data.previousTimeseries}
               comparisonKeys={["pageviews", "visitors"]}
+              annotations={annotationMarkers}
             />
           ) : null}
         </CardContent>
