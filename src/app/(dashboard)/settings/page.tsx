@@ -38,6 +38,11 @@ import {
   Pause,
   Play,
   CalendarClock,
+  Key,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import type { ScheduledExport, ScheduledExportConfig } from "@/queries/scheduled-exports";
 
@@ -318,6 +323,9 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* API Keys */}
+          <ApiKeysSection />
+
           {/* Scheduled Exports */}
           <ScheduledExportsSection
             showCreateDialog={showCreateDialog}
@@ -347,6 +355,267 @@ export default function SettingsPage() {
           </Card>
         </div>
       </div>
+    </>
+  );
+}
+
+// ---------- API Keys Section ----------
+
+interface ApiKeyInfo {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+interface ApiKeyCreateResult {
+  id: string;
+  name: string;
+  key: string;
+  prefix: string;
+  scopes: string[];
+  createdAt: string;
+}
+
+function ApiKeysSection() {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createdKey, setCreatedKey] = useState<ApiKeyCreateResult | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  const { data: keys, isLoading } = useQuery<ApiKeyInfo[]>({
+    queryKey: ["api-keys"],
+    queryFn: async () => {
+      const res = await fetch("/api/api-keys");
+      if (!res.ok) throw new Error("Failed to fetch API keys");
+      return res.json();
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch("/api/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("Failed to create API key");
+      return res.json() as Promise<ApiKeyCreateResult>;
+    },
+    onSuccess: (result) => {
+      setCreatedKey(result);
+      setNewKeyName("");
+      setShowCreate(false);
+      setCopied(false);
+      setShowKey(false);
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch("/api/api-keys", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("Failed to delete API key");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+    },
+  });
+
+  function handleCopy(key: string) {
+    navigator.clipboard.writeText(key);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-medium">API Keys</CardTitle>
+              <CardDescription>
+                Generate keys for CLI and MCP server authentication.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowCreate(true)}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              New Key
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : !keys?.length ? (
+            <div className="flex flex-col items-center justify-center py-6 text-center">
+              <Key className="mb-2 h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">
+                No API keys yet.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Create a key to authenticate CLI and MCP access.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {keys.map((k) => (
+                <div
+                  key={k.id}
+                  className="flex items-center justify-between rounded-md border px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Key className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm font-medium">{k.name}</span>
+                      <code className="text-xs text-muted-foreground font-mono">
+                        {k.prefix}
+                      </code>
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                      <span>
+                        Created {new Date(k.createdAt).toLocaleDateString()}
+                      </span>
+                      {k.lastUsedAt && (
+                        <span>
+                          Last used{" "}
+                          {new Date(k.lastUsedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span>{k.scopes.join(", ")}</span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Delete API key "${k.name}"?`)) {
+                        deleteMutation.mutate(k.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create Key Dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create API Key</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input
+                placeholder="e.g. OpenCode MCP, CLI laptop"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowCreate(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createMutation.mutate(newKeyName)}
+                disabled={!newKeyName.trim() || createMutation.isPending}
+              >
+                {createMutation.isPending ? "Creating..." : "Create Key"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Show Created Key Dialog */}
+      <Dialog
+        open={!!createdKey}
+        onOpenChange={() => setCreatedKey(null)}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>API Key Created</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
+              <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+                Copy this key now. It will not be shown again.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Key</Label>
+              <div className="flex gap-2">
+                <code className="flex-1 rounded-md border bg-muted px-3 py-2 text-xs font-mono break-all">
+                  {showKey ? createdKey?.key : createdKey?.key?.replace(/./g, "*")}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => setShowKey(!showKey)}
+                >
+                  {showKey ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => createdKey && handleCopy(createdKey.key)}
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Usage:</p>
+              <div className="space-y-1">
+                <p>CLI:</p>
+                <code className="block rounded bg-muted px-2 py-1 font-mono">
+                  export MANTECATO_API_KEY=&quot;{createdKey?.prefix}&quot;
+                </code>
+                <p className="mt-2">MCP server (opencode.json / claude config):</p>
+                <code className="block rounded bg-muted px-2 py-1 font-mono">
+                  {`"env": { "MANTECATO_API_KEY": "${createdKey?.prefix}" }`}
+                </code>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setCreatedKey(null)}>Done</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

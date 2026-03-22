@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+!README.md
+.env*
+.DS_Store
+*.png
+*.pem
+packages/tracker/dist
+packages/tracker/node_modules
+npm-debug.log*
+.vercel
+coverage

@@ -796,8 +796,37 @@ import { listAnnotations, createAnnotation, deleteAnnotation } from "@/queries/a
 import { listSavedViews, getSavedView, createSavedView, deleteSavedView } from "@/queries/saved-views";
 import { listDashboards, getDashboard, deleteDashboard } from "@/queries/dashboards";
 import { listScheduledExports, getScheduledExport, deleteScheduledExport } from "@/queries/scheduled-exports";
+import { validateApiKey } from "@/queries/api-keys";
 
-const MCP_USER_ID = "1626be51-0e8f-4d98-9968-cce8bdf11357";
+// ---------------------------------------------------------------------------
+// API Key authentication
+// ---------------------------------------------------------------------------
+
+let cachedUserId: string | null = null;
+
+/**
+ * Resolve userId from MANTECATO_API_KEY env var.
+ * Caches the result after first validation.
+ */
+async function getMcpUserId(): Promise<string> {
+  if (cachedUserId) return cachedUserId;
+
+  const key = process.env.MANTECATO_API_KEY;
+  if (!key) {
+    throw new Error(
+      "MANTECATO_API_KEY env var is required. " +
+      "Generate a key in the Mantecato web UI: Settings > API Keys > New Key."
+    );
+  }
+
+  const result = await validateApiKey(key);
+  if (!result) {
+    throw new Error("Invalid MANTECATO_API_KEY.");
+  }
+
+  cachedUserId = result.userId;
+  return result.userId;
+}
 
 // --- annotations ---
 server.tool(
@@ -813,7 +842,7 @@ server.tool(
     try {
       const siteId = await resolveSiteId(site);
       const range = parseDateArgs(period, start, end);
-      return ok(await listAnnotations(MCP_USER_ID, siteId, range.startDate, range.endDate));
+      return ok(await listAnnotations(await getMcpUserId(), siteId, range.startDate, range.endDate));
     } catch (e: unknown) {
       return err((e as Error).message);
     }
@@ -833,7 +862,7 @@ server.tool(
   async ({ site, title, date, description, color }) => {
     try {
       const siteId = await resolveSiteId(site);
-      return ok(await createAnnotation(MCP_USER_ID, siteId, title, description, date, color));
+      return ok(await createAnnotation(await getMcpUserId(), siteId, title, description, date, color));
     } catch (e: unknown) {
       return err((e as Error).message);
     }
@@ -848,7 +877,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const deleted = await deleteAnnotation(id, MCP_USER_ID);
+      const deleted = await deleteAnnotation(id, await getMcpUserId());
       return ok({ deleted, message: deleted ? "Annotation deleted" : "Annotation not found or not owned by you" });
     } catch (e: unknown) {
       return err((e as Error).message);
@@ -866,7 +895,7 @@ server.tool(
   async ({ site }) => {
     try {
       const siteId = await resolveSiteId(site);
-      return ok(await listSavedViews(MCP_USER_ID, siteId));
+      return ok(await listSavedViews(await getMcpUserId(), siteId));
     } catch (e: unknown) {
       return err((e as Error).message);
     }
@@ -881,7 +910,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const view = await getSavedView(id, MCP_USER_ID);
+      const view = await getSavedView(id, await getMcpUserId());
       if (!view) return err("Saved view not found");
       return ok(view);
     } catch (e: unknown) {
@@ -911,7 +940,7 @@ server.tool(
   async ({ site, name, description, config }) => {
     try {
       const siteId = await resolveSiteId(site);
-      return ok(await createSavedView(MCP_USER_ID, siteId, name, description, config));
+      return ok(await createSavedView(await getMcpUserId(), siteId, name, description, config));
     } catch (e: unknown) {
       return err((e as Error).message);
     }
@@ -926,7 +955,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const deleted = await deleteSavedView(id, MCP_USER_ID);
+      const deleted = await deleteSavedView(id, await getMcpUserId());
       return ok({ deleted, message: deleted ? "Saved view deleted" : "Saved view not found" });
     } catch (e: unknown) {
       return err((e as Error).message);
@@ -944,7 +973,7 @@ server.tool(
   async ({ site }) => {
     try {
       const siteId = site ? await resolveSiteId(site) : undefined;
-      return ok(await listDashboards(MCP_USER_ID, siteId));
+      return ok(await listDashboards(await getMcpUserId(), siteId));
     } catch (e: unknown) {
       return err((e as Error).message);
     }
@@ -959,7 +988,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const dashboard = await getDashboard(id, MCP_USER_ID);
+      const dashboard = await getDashboard(id, await getMcpUserId());
       if (!dashboard) return err("Dashboard not found");
       return ok(dashboard);
     } catch (e: unknown) {
@@ -976,7 +1005,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const deleted = await deleteDashboard(id, MCP_USER_ID);
+      const deleted = await deleteDashboard(id, await getMcpUserId());
       return ok({ deleted, message: deleted ? "Dashboard deleted" : "Dashboard not found" });
     } catch (e: unknown) {
       return err((e as Error).message);
@@ -991,7 +1020,7 @@ server.tool(
   {},
   async () => {
     try {
-      return ok(await listScheduledExports(MCP_USER_ID));
+      return ok(await listScheduledExports(await getMcpUserId()));
     } catch (e: unknown) {
       return err((e as Error).message);
     }
@@ -1006,7 +1035,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const exp = await getScheduledExport(id, MCP_USER_ID);
+      const exp = await getScheduledExport(id, await getMcpUserId());
       if (!exp) return err("Scheduled export not found");
       return ok(exp);
     } catch (e: unknown) {
@@ -1023,7 +1052,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const deleted = await deleteScheduledExport(id, MCP_USER_ID);
+      const deleted = await deleteScheduledExport(id, await getMcpUserId());
       return ok({ deleted, message: deleted ? "Scheduled export deleted" : "Scheduled export not found" });
     } catch (e: unknown) {
       return err((e as Error).message);

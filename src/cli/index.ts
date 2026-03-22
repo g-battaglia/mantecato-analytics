@@ -50,9 +50,42 @@ import { listAnnotations, createAnnotation, deleteAnnotation } from "@/queries/a
 import { listSavedViews, getSavedView, createSavedView, deleteSavedView } from "@/queries/saved-views";
 import { listDashboards, getDashboard, deleteDashboard } from "@/queries/dashboards";
 import { listScheduledExports, getScheduledExport, deleteScheduledExport } from "@/queries/scheduled-exports";
+import { validateApiKey } from "@/queries/api-keys";
 
-// Hard-coded user ID for CLI operations (the test admin user)
-const CLI_USER_ID = "1626be51-0e8f-4d98-9968-cce8bdf11357";
+// ---------------------------------------------------------------------------
+// API Key authentication
+// ---------------------------------------------------------------------------
+
+let authenticatedUserId: string | null = null;
+
+/**
+ * Resolve the user ID from API key.
+ * Checks --api-key flag first, then MANTECATO_API_KEY env var.
+ * Exits with error if no valid key is provided for commands that need auth.
+ */
+async function resolveUserId(): Promise<string> {
+  if (authenticatedUserId) return authenticatedUserId;
+
+  const key =
+    program.opts().apiKey || process.env.MANTECATO_API_KEY;
+
+  if (!key) {
+    console.error(
+      "Error: API key required. Set MANTECATO_API_KEY env var or use --api-key flag.\n" +
+      "Generate a key in the Mantecato web UI: Settings > API Keys > New Key."
+    );
+    process.exit(1);
+  }
+
+  const result = await validateApiKey(key);
+  if (!result) {
+    console.error("Error: Invalid API key.");
+    process.exit(1);
+  }
+
+  authenticatedUserId = result.userId;
+  return result.userId;
+}
 
 // ---------------------------------------------------------------------------
 // Common options
@@ -101,7 +134,8 @@ const program = new Command();
 program
   .name("mantecato")
   .description("Mantecato Analytics CLI — query your Umami analytics data from the terminal")
-  .version("0.1.0");
+  .version("0.1.0")
+  .option("--api-key <key>", "API key for authentication (or set MANTECATO_API_KEY env var)");
 
 // --- sites ---
 program
@@ -617,7 +651,7 @@ program
   .action(async (opts: { site: string; period: string; start?: string; end?: string; format: OutputFormat }) => {
     const siteId = await resolveSiteId(opts.site);
     const range = parseDateArgs(opts.period, opts.start, opts.end);
-    const data = await listAnnotations(CLI_USER_ID, siteId, range.startDate, range.endDate);
+    const data = await listAnnotations(await resolveUserId(), siteId, range.startDate, range.endDate);
     out(data, opts.format, "Annotations");
   });
 
@@ -632,7 +666,7 @@ program
   .option("-f, --format <format>", "Output format", "json")
   .action(async (opts: { site: string; title: string; date: string; description: string; color: string; format: OutputFormat }) => {
     const siteId = await resolveSiteId(opts.site);
-    const result = await createAnnotation(CLI_USER_ID, siteId, opts.title, opts.description, opts.date, opts.color);
+    const result = await createAnnotation(await resolveUserId(), siteId, opts.title, opts.description, opts.date, opts.color);
     out(result, opts.format, "Annotation Created");
   });
 
@@ -641,7 +675,7 @@ program
   .description("Delete an annotation by ID")
   .requiredOption("--id <id>", "Annotation report ID")
   .action(async (opts: { id: string }) => {
-    const ok = await deleteAnnotation(opts.id, CLI_USER_ID);
+    const ok = await deleteAnnotation(opts.id, await resolveUserId());
     console.log(ok ? "Annotation deleted." : "Annotation not found or not owned by you.");
   });
 
@@ -653,7 +687,7 @@ program
   .option("-f, --format <format>", "Output format", "table")
   .action(async (opts: { site: string; format: OutputFormat }) => {
     const siteId = await resolveSiteId(opts.site);
-    const data = await listSavedViews(CLI_USER_ID, siteId);
+    const data = await listSavedViews(await resolveUserId(), siteId);
     out(data, opts.format, "Saved Views");
   });
 
@@ -663,7 +697,7 @@ program
   .requiredOption("--id <id>", "Saved view report ID")
   .option("-f, --format <format>", "Output format", "json")
   .action(async (opts: { id: string; format: OutputFormat }) => {
-    const data = await getSavedView(opts.id, CLI_USER_ID);
+    const data = await getSavedView(opts.id, await resolveUserId());
     if (!data) {
       console.error("Saved view not found.");
       process.exit(1);
@@ -682,7 +716,7 @@ program
   .action(async (opts: { site: string; name: string; description: string; config: string; format: OutputFormat }) => {
     const siteId = await resolveSiteId(opts.site);
     const config = JSON.parse(opts.config);
-    const result = await createSavedView(CLI_USER_ID, siteId, opts.name, opts.description, config);
+    const result = await createSavedView(await resolveUserId(), siteId, opts.name, opts.description, config);
     out(result, opts.format, "Saved View Created");
   });
 
@@ -691,7 +725,7 @@ program
   .description("Delete a saved view by ID")
   .requiredOption("--id <id>", "Saved view report ID")
   .action(async (opts: { id: string }) => {
-    const ok = await deleteSavedView(opts.id, CLI_USER_ID);
+    const ok = await deleteSavedView(opts.id, await resolveUserId());
     console.log(ok ? "Saved view deleted." : "Saved view not found or not owned by you.");
   });
 
@@ -703,7 +737,7 @@ program
   .option("-f, --format <format>", "Output format", "table")
   .action(async (opts: { site?: string; format: OutputFormat }) => {
     const siteId = opts.site ? await resolveSiteId(opts.site) : undefined;
-    const data = await listDashboards(CLI_USER_ID, siteId);
+    const data = await listDashboards(await resolveUserId(), siteId);
     out(data, opts.format, "Dashboards");
   });
 
@@ -713,7 +747,7 @@ program
   .requiredOption("--id <id>", "Dashboard report ID")
   .option("-f, --format <format>", "Output format", "json")
   .action(async (opts: { id: string; format: OutputFormat }) => {
-    const data = await getDashboard(opts.id, CLI_USER_ID);
+    const data = await getDashboard(opts.id, await resolveUserId());
     if (!data) {
       console.error("Dashboard not found.");
       process.exit(1);
@@ -726,7 +760,7 @@ program
   .description("Delete a dashboard by ID")
   .requiredOption("--id <id>", "Dashboard report ID")
   .action(async (opts: { id: string }) => {
-    const ok = await deleteDashboard(opts.id, CLI_USER_ID);
+    const ok = await deleteDashboard(opts.id, await resolveUserId());
     console.log(ok ? "Dashboard deleted." : "Dashboard not found or not owned by you.");
   });
 
@@ -736,7 +770,7 @@ program
   .description("List scheduled exports")
   .option("-f, --format <format>", "Output format", "table")
   .action(async (opts: { format: OutputFormat }) => {
-    const data = await listScheduledExports(CLI_USER_ID);
+    const data = await listScheduledExports(await resolveUserId());
     out(data, opts.format, "Scheduled Exports");
   });
 
@@ -746,7 +780,7 @@ program
   .requiredOption("--id <id>", "Scheduled export report ID")
   .option("-f, --format <format>", "Output format", "json")
   .action(async (opts: { id: string; format: OutputFormat }) => {
-    const data = await getScheduledExport(opts.id, CLI_USER_ID);
+    const data = await getScheduledExport(opts.id, await resolveUserId());
     if (!data) {
       console.error("Scheduled export not found.");
       process.exit(1);
@@ -759,7 +793,7 @@ program
   .description("Delete a scheduled export by ID")
   .requiredOption("--id <id>", "Scheduled export report ID")
   .action(async (opts: { id: string }) => {
-    const ok = await deleteScheduledExport(opts.id, CLI_USER_ID);
+    const ok = await deleteScheduledExport(opts.id, await resolveUserId());
     console.log(ok ? "Scheduled export deleted." : "Scheduled export not found or not owned by you.");
   });
 

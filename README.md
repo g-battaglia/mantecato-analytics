@@ -31,6 +31,21 @@ npx prisma generate
 npm run dev -- -p 3001
 ```
 
+### Docker
+
+Run the full stack via Docker (compatible with Docker Desktop, Apple Containers, and Podman):
+
+```bash
+# Build and start the web dashboard
+docker compose up web --build
+
+# Or use the CLI / MCP server as one-off containers
+docker compose run --rm cli stats --site kerykeion.net --period 30d
+docker compose run --rm mcp
+```
+
+See [docs/docker.md](docs/docker.md) for multi-arch builds, Apple Containers tips, and production configuration.
+
 ## Web Dashboard
 
 15+ analytics pages covering:
@@ -58,6 +73,26 @@ Additional features: saved views, annotations, scheduled exports, public share l
 
 ---
 
+## Authentication
+
+The web dashboard uses session-based JWT auth (login with username/password).
+
+The CLI and MCP server use **API keys** for authentication. Keys are generated from the web UI and required for CRUD commands (annotations, saved views, dashboards, scheduled exports). Read-only analytics commands work without auth.
+
+```bash
+# Generate a key: Settings > API Keys > New Key (in the web UI)
+
+# Use via environment variable (recommended)
+export MANTECATO_API_KEY="mtk_..."
+
+# Or pass directly
+mantecato annotations --site kerykeion.net --api-key "mtk_..."
+```
+
+Key format: `mtk_<base64url-random>`. Only the SHA-256 hash is stored — the raw key is shown once at creation. See [docs/authentication.md](docs/authentication.md) for details.
+
+---
+
 ## CLI
 
 Full analytics access from the terminal. Every metric available in the web UI can be queried via CLI.
@@ -65,12 +100,17 @@ Full analytics access from the terminal. Every metric available in the web UI ca
 ### Quick Start
 
 ```bash
+# Set your API key (required for CRUD commands)
+export MANTECATO_API_KEY="mtk_..."
+
 # Via npm script
 npm run cli -- stats --site kerykeion.net --period 30d
 
 # Via npx
 npx tsx src/cli/index.ts stats --site kerykeion.net --period 30d
 ```
+
+> Full command reference with all 38 commands: [docs/cli.md](docs/cli.md)
 
 ### Global Options
 
@@ -313,7 +353,8 @@ Add to your MCP client configuration:
       "args": ["tsx", "src/mcp/server.ts"],
       "cwd": "/path/to/mantecato",
       "env": {
-        "DATABASE_URL": "postgresql://..."
+        "DATABASE_URL": "postgresql://...",
+        "MANTECATO_API_KEY": "mtk_..."
       }
     }
   }
@@ -323,8 +364,10 @@ Add to your MCP client configuration:
 Or run directly:
 
 ```bash
-npm run mcp
+MANTECATO_API_KEY="mtk_..." npm run mcp
 ```
+
+> Full setup guide (OpenCode, Claude Desktop, Docker): [docs/mcp-server.md](docs/mcp-server.md)
 
 ### Available Tools (41)
 
@@ -434,7 +477,7 @@ Example MCP tool call:
 src/
   app/                    # Next.js pages and API routes
     (dashboard)/          # Authenticated dashboard pages
-    api/                  # REST API endpoints (28 routes)
+    api/                  # REST API endpoints (29 routes)
     login/                # Login page
     share/                # Public share pages
   cli/
@@ -445,10 +488,15 @@ src/
   components/             # React components (layout, charts, data tables, filters)
   hooks/                  # Custom hooks (use-site-query, use-url-state, etc.)
   lib/                    # Core utilities (queries, auth, date, format, export)
-  queries/                # SQL query functions (15 modules, all read-only)
+  queries/                # SQL query functions (16 modules, including api-keys)
   stores/                 # Zustand stores (filters, preferences)
   types/                  # Type declarations
   generated/prisma/       # Generated Prisma client
+docs/
+  authentication.md       # API key system guide
+  cli.md                  # Full CLI reference (38 commands)
+  mcp-server.md           # MCP server setup guide (41 tools)
+  docker.md               # Docker deployment guide
 packages/
   tracker/                # Tracking script package (ESM + CJS + IIFE)
 prisma/
