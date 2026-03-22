@@ -6,6 +6,8 @@
 
 No data duplication. No new tracking script required. Just point it at your Umami database and go.
 
+![Mantecato Dashboard — Overview page with fake data](public/screenshot.png)
+
 ---
 
 ## Why Mantecato
