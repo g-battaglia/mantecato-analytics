@@ -162,7 +162,7 @@ export async function validateApiKey(
 
   const keyHash = hashKey(key);
 
-  // Find the report row that contains this hash
+  // SQL-side hash matching via JSONB operator — no full table scan
   const rows = await rawQuery<{
     report_id: string;
     user_id: string;
@@ -170,29 +170,28 @@ export async function validateApiKey(
   }>(
     `SELECT report_id, user_id, parameters
      FROM report
-     WHERE type = '${API_KEY_TYPE}'`,
-    {}
+     WHERE type = '${API_KEY_TYPE}'
+       AND parameters->>'keyHash' = {{keyHash}}`,
+    { keyHash }
   );
 
-  for (const row of rows) {
-    const p = parseParams(row.parameters);
-    if (p.keyHash === keyHash) {
-      // Update lastUsedAt (fire and forget)
-      const now = new Date().toISOString();
-      const updatedParams = { ...p, lastUsedAt: now };
-      rawQuery(
-        `UPDATE report
-         SET parameters = {{params}}::jsonb, updated_at = NOW()
-         WHERE report_id = {{reportId::uuid}}`,
-        { params: JSON.stringify(updatedParams), reportId: row.report_id }
-      ).catch(() => {});
+  if (rows.length === 0) return null;
 
-      return {
-        userId: row.user_id,
-        scopes: (p.scopes as string[]) || ["read"],
-      };
-    }
-  }
+  const row = rows[0];
+  const p = parseParams(row.parameters);
 
-  return null;
+  // Update lastUsedAt (fire and forget)
+  const now = new Date().toISOString();
+  const updatedParams = { ...p, lastUsedAt: now };
+  rawQuery(
+    `UPDATE report
+     SET parameters = {{params}}::jsonb, updated_at = NOW()
+     WHERE report_id = {{reportId::uuid}}`,
+    { params: JSON.stringify(updatedParams), reportId: row.report_id }
+  ).catch(() => {});
+
+  return {
+    userId: row.user_id,
+    scopes: (p.scopes as string[]) || ["read"],
+  };
 }

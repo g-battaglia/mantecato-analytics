@@ -23,7 +23,11 @@ COPY . .
 RUN npx prisma generate
 
 # Build Next.js (standalone output)
+# Dummy DATABASE_URL so Prisma client initializes during page data collection
+# (the real URL is provided at runtime via env vars)
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy?sslmode=disable"
+ENV SESSION_SECRET="build-time-placeholder"
 RUN npm run build
 
 # ─── Stage 3: Production ─────────────────────────────────────────────────────
@@ -44,10 +48,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Copy Prisma schema + generated client (needed at runtime)
+# Prisma 7.5 with engineType="client" generates to src/generated/prisma/
+# and uses @prisma/adapter-pg — no node_modules/.prisma directory exists
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src/generated ./src/generated
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/pg ./node_modules/pg
 
 # Copy CLI and MCP server (for running outside the web server)
 COPY --from=builder /app/src/cli ./src/cli
