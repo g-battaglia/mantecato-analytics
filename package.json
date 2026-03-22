@@ -2,6 +2,7 @@
   "name": "mantecato",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "bin": {
     "mantecato": "./src/cli/index.ts"
   },
