@@ -6,7 +6,7 @@ Mantecato CLI provides full analytics access from the terminal. Every metric ava
 
 ```bash
 # Clone and install
-git clone https://github.com/g-battaglia/mantecato.git && cd mantecato
+git clone https://github.com/g-battaglia/mantecato-analytics.git && cd mantecato-analytics
 npm install --legacy-peer-deps
 
 # Generate Prisma client

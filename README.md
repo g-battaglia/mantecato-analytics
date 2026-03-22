@@ -39,7 +39,7 @@ Umami is great at collecting data. Mantecato is built to **analyze** it.
 ## Quick Start
 
 ```bash
-git clone https://github.com/g-battaglia/mantecato.git
+git clone https://github.com/g-battaglia/mantecato-analytics.git
 cd mantecato
 npm install --legacy-peer-deps
 
