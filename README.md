@@ -73,8 +73,8 @@ Mantecato works with any AI coding agent. There are two ways to connect:
 
 | Method | How it works | Best for |
 |--------|-------------|----------|
-| **CLI** | The agent runs terminal commands to query your data | OpenCode, Claude Code, Cline — any agent with shell access |
-| **MCP** | The agent calls structured tools via [Model Context Protocol](https://modelcontextprotocol.io/) | Claude Desktop, Cursor, any MCP-compatible client |
+| **CLI** | The agent runs terminal commands to query your data | OpenCode, Claude Code, OpenClaw, Cline — any agent with shell access |
+| **MCP** | The agent calls structured tools via [Model Context Protocol](https://modelcontextprotocol.io/) | Claude Desktop, Cursor, OpenClaw, any MCP-compatible client |
 
 ### Ready-to-use agent configs
 
@@ -84,6 +84,7 @@ This repo includes pre-built configurations for popular AI tools. Open the proje
 |------|----------------|-------------|
 | **OpenCode** | `site-analyst` agent + 3 analysis skills | `cd mantecato && opencode`, select **site-analyst** from the agent picker |
 | **Claude Code** | `CLAUDE.md` + 3 slash commands | `cd mantecato && claude`, use `/project:traffic-report`, `/project:content-audit`, `/project:funnel-analysis` |
+| **OpenClaw** | 3 analysis skills (traffic-report, content-audit, funnel-analysis) | Install skills from the `.openclaw/` directory, then ask questions or invoke skills |
 | **Cline** | `.clinerules` with full CLI reference | Open the project in VS Code with Cline installed |
 | **Cursor** | `.cursorrules` with full CLI reference | Open the project in Cursor |
 

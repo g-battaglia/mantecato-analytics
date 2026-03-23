@@ -159,6 +159,60 @@ Restart Claude Desktop, then ask:
 
 ---
 
+### OpenClaw
+
+**Included in the repo:**
+- `.openclaw/skills/traffic-report/SKILL.md` — traffic report workflow
+- `.openclaw/skills/content-audit/SKILL.md` — content audit workflow
+- `.openclaw/skills/funnel-analysis/SKILL.md` — funnel analysis workflow
+
+**How to use:**
+
+Copy the skills to your OpenClaw skills directory:
+
+```bash
+cp -r /path/to/mantecato/.openclaw/skills/* ~/.openclaw/skills/
+```
+
+Or add the project's skill directory to your `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "skills": {
+    "load": {
+      "extraDirs": ["/path/to/mantecato/.openclaw/skills"]
+    }
+  }
+}
+```
+
+Then ask OpenClaw questions or invoke skills directly:
+
+```
+"Analyze kerykeion.net traffic for the last 30 days"
+"Run a content audit for mysite.com"
+"Analyze the signup funnel: /, /pricing, /signup, /welcome"
+```
+
+**Add MCP (optional):** Add to `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "mcpServers": {
+    "mantecato": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "env": {
+        "DATABASE_URL": "postgresql://user:pass@host/dbname",
+        "MANTECATO_API_KEY": "mtk_your-key-here"
+      }
+    }
+  }
+}
+```
+
+---
+
 ### Cline
 
 **Included in the repo:** `.clinerules` with CLI reference and analysis methodology.
