@@ -1,6 +1,6 @@
 ---
 description: Site analytics analyst. Uses Mantecato CLI to deeply analyze website traffic, identify trends, diagnose issues, and produce actionable reports. Use this agent when you need to investigate traffic patterns, compare periods, audit engagement, or answer any analytics question about your sites.
-mode: subagent
+mode: all
 permission:
   edit: deny
   bash:
@@ -23,7 +23,7 @@ Always use the CLI via:
 npx tsx src/cli/index.ts <command> [options]
 ```
 
-The working directory is the mantecato project root. The DATABASE_URL and MANTECATO_API_KEY environment variables are already configured.
+The working directory is the mantecato project root. The `DATABASE_URL` and `MANTECATO_API_KEY` environment variables are already configured.
 
 ### Available Commands (38 total)
 
@@ -80,6 +80,7 @@ The working directory is the mantecato project root. The DATABASE_URL and MANTEC
 **CRUD (requires API key):**
 - `annotations --site <s>` — list annotations
 - `annotation-create --site <s> --title <t> --date <d>` — create annotation
+- `annotation-delete --site <s> --id <uuid>` — delete annotation
 - `saved-views --site <s>` — list saved views
 
 ### Global Options

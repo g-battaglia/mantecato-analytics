@@ -1,0 +1,85 @@
+# Mantecato — Cline Instructions
+
+## What This Project Is
+
+Mantecato is a standalone analytics dashboard that reads an existing Umami PostgreSQL database. It provides a web UI, a 38-command CLI, and a 41-tool MCP server. You can analyze any site's traffic using the CLI.
+
+## Next.js 16 Warning
+
+This project uses Next.js 16 with breaking changes. Read `node_modules/next/dist/docs/` before writing any code.
+
+## Running CLI Commands
+
+```bash
+npx tsx src/cli/index.ts <command> [options]
+```
+
+The `DATABASE_URL` and `MANTECATO_API_KEY` environment variables are already configured.
+
+## Global Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-s, --site <site>` | Site name, domain, or UUID (partial match works) | required |
+| `-p, --period <preset>` | `1h` `3h` `6h` `today` `yesterday` `24h` `7d` `14d` `30d` `60d` `90d` `6m` `12m` `this_week` `last_week` `this_month` `last_month` `this_quarter` `last_quarter` `this_year` `last_year` `all` | `30d` |
+| `--start <date>` / `--end <date>` | Custom ISO 8601 range (overrides period) | - |
+| `-f, --format json\|table\|csv` | Output format | `table` |
+| `--filter <col:op:val>` | Repeatable filter | - |
+| `-l, --limit <n>` | Max rows | `20` |
+| `-g, --granularity <g>` | `auto` `minute` `hour` `day` `week` `month` | `auto` |
+
+## All 38 Commands
+
+**Core:** `sites`, `stats`, `timeseries`, `compare`
+
+**Pages:** `pages`, `page-detail --url <path>`, `top-pages`
+
+**Sources:** `sources`, `referrer-pages --referrer <domain>`, `channels`, `utm`, `clickids`, `hostnames`, `top-referrers`
+
+**Events:** `events`, `event-detail --event <name>`, `top-events`
+
+**Sessions:** `sessions`, `session-activity --session-id <uuid>`
+
+**Devices:** `devices` (default dimension: device type), `devices --dimension browser|os|screen|language`
+
+**Geographic:** `geo` (country), `geo --level region --country <CC>`, `geo --level city --country <CC>`
+
+**Advanced:** `realtime`, `retention`, `funnel --steps "/step1,/step2,/step3"`, `journeys`, `revenue`, `engagement`, `filter-values --column <col>`
+
+**CRUD:** `annotations`, `annotation-create`, `annotation-delete`, `saved-views`, `saved-view`, `saved-view-create`, `saved-view-delete`, `dashboards`, `dashboard`, `dashboard-delete`, `scheduled-exports`, `scheduled-export`, `scheduled-export-delete`
+
+## Filter Syntax
+
+Format: `column:operator:value` — repeatable with `--filter`.
+
+**Operators:** `eq`, `neq`, `contains`, `not_contains`, `starts_with`, `not_starts_with`
+
+**Columns:** `url_path`, `page_title`, `hostname`, `referrer_domain`, `utm_source`, `utm_medium`, `utm_campaign`, `event_name`, `tag`, `browser`, `os`, `device`, `country`, `region`, `city`, `language`, `screen`
+
+## Analysis Methodology
+
+When asked to analyze traffic:
+
+1. **Start with context.** Run `stats` and `compare` to see the big picture.
+2. **Go wide, then deep.** Hit `top-pages`, `sources`, `devices`, `geo` first. Drill into anomalies.
+3. **Use `--format json` for computation.** Parse and cross-reference. Use `--format table` for display.
+4. **Cross-reference dimensions with filters.** Example: `--filter device:eq:mobile --filter referrer_domain:contains:google`
+5. **Always compare periods.** Use `compare` or run the same query with two `--period` values.
+6. **Increase limits.** Use `--limit 50` or `--limit 100` for comprehensive analysis.
+7. **Run independent commands in parallel** to save time.
+
+## Output Format for Reports
+
+1. **Executive Summary** — 2-3 sentences with the key takeaway
+2. **Key Metrics** — numbers with period-over-period deltas
+3. **Findings** — organized by theme (traffic, engagement, sources, content)
+4. **Recommendations** — specific, actionable next steps
+
+Always include actual numbers — "traffic increased 23% (1,240 → 1,525 visitors)" not just "traffic increased."
+
+## Rules
+
+- Never guess data — always run the CLI to get real numbers
+- Always specify the period
+- Read-only database — never run Prisma migrations
+- Present insights, not data dumps

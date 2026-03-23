@@ -1,127 +1,72 @@
 # Mantecato
 
-> **Pre-alpha** — This project is under active development. APIs, CLI flags, and database assumptions may change without notice. Use at your own risk.
+> **Pre-alpha** — APIs, CLI flags, and database assumptions may change without notice.
 
-**Deep analytics for Umami users who need more.** Mantecato is a standalone analytics dashboard that connects to your existing Umami PostgreSQL database and unlocks advanced analysis — funnels, retention cohorts, journey mapping, revenue tracking, session replay, and more — through a modern web UI, a 38-command CLI, and a 41-tool MCP server for AI agents.
+**AI-native analytics for Umami.** Mantecato connects to your existing Umami PostgreSQL database and makes every metric queryable by AI agents — through a 41-tool MCP server, a 38-command CLI, and a modern web dashboard. No data duplication. No new tracking script. Just plug in and analyze.
 
-No data duplication. No new tracking script required. Just point it at your Umami database and go.
-
-![Mantecato Dashboard — Overview page with fake data](public/screenshot.png)
+![Mantecato Dashboard](public/screenshot.png)
 
 ---
 
-## Why Mantecato
+## Your Analytics, Agent-Accessible
 
-Umami is great at collecting data. Mantecato is built to **analyze** it.
+Mantecato ships with pre-built agent configurations for **OpenCode**, **Claude Code**, **Cline**, and **Cursor**. Point your agent at your Umami data and start asking questions:
 
-- **15+ analytics pages** — from basic pageviews to cohort retention, funnel conversion, and Sankey journey diagrams
-- **38 CLI commands** — every metric available in the web UI, queryable from the terminal with JSON, table, or CSV output
-- **41 MCP tools** — let Claude, OpenCode, or any MCP-compatible agent query your analytics programmatically
-- **Advanced filters** — combine any dimension (country, browser, UTM, page, event) with AND/OR logic
-- **Realtime** — live active visitors and event stream
-- **Custom dashboards** — drag-and-drop widget builder with PDF/PNG export
-- **Read-only by design** — Mantecato never touches your Umami schema; it only writes to a single `report` table for its own features (saved views, annotations, dashboards, API keys)
+```
+You:    "Analyze traffic for the last 30 days. Which pages are losing visitors?
+         Where is the best traffic coming from?"
 
-## Stack
+Agent:  runs stats, compare, pages, sources, channels...
+        cross-references bounce rates by source and device...
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 16 (Turbopack) + React 19 |
-| Database | PostgreSQL (Neon) via Prisma 7.5 client engine |
-| UI | shadcn/ui + Radix primitives |
-| Charts | Recharts, react-simple-maps (world choropleth), d3-sankey |
-| Data | TanStack Query + TanStack Table (virtualized) |
-| State | Zustand |
-| CLI | Commander.js v14 |
-| MCP | @modelcontextprotocol/sdk v1.27 |
-| Auth | JWT sessions (web), SHA-256 hashed API keys (CLI/MCP) |
-
----
-
-## Quick Start
-
-```bash
-git clone https://github.com/g-battaglia/mantecato-analytics.git
-cd mantecato
-npm install --legacy-peer-deps
-
-# Configure
-cp .env.example .env   # then edit with your Umami DB connection string
-
-# Generate Prisma client (read-only, never migrate)
-npx prisma db pull
-npx prisma generate
-
-# Start
-npm run dev -- -p 3001
+Agent:  "Traffic is up 12% (8,420 → 9,430 visitors). However, /blog/old-post
+         dropped 45% and accounts for most of the bounce rate increase.
+         Organic search drives 62% of quality traffic (3.2 pages/visit vs 1.4
+         from social). Recommendation: redirect /blog/old-post, double down
+         on SEO content."
 ```
 
-Open `http://localhost:3001` and log in with your Umami credentials.
+No dashboard clicking. No SQL. Just ask.
 
-### Container (Apple Containers / Docker)
+---
 
-```bash
-container build -t mantecato:latest --memory 4096MB --cpus 4 .
-container run -d --name mantecato -p 3000:3000 --env-file .env mantecato:latest
+## Two Integration Paths
+
+| Approach | How it works | Best for |
+|----------|-------------|----------|
+| **MCP Server** | Agent calls 41 tools directly via [Model Context Protocol](https://modelcontextprotocol.io/) | Claude Desktop, Cursor, any MCP client |
+| **CLI Agent** | Agent runs `npx tsx src/cli/index.ts <command>` in the shell | OpenCode, Claude Code, Cline, any terminal agent |
+
+Both approaches access the same data through the same query layer. MCP is more structured (typed tool schemas, no output parsing needed). CLI is simpler to set up and works everywhere a shell is available.
+
+---
+
+## Agent Setup
+
+### OpenCode
+
+Mantecato includes a ready-to-use **site-analyst** agent and three analysis skills:
+
+```
+.opencode/
+  agents/
+    site-analyst.md         # CLI-based deep analytics agent
+  skills/
+    traffic-report/SKILL.md # Comprehensive traffic report workflow
+    content-audit/SKILL.md  # Content performance audit workflow
+    funnel-analysis/SKILL.md # Conversion funnel analysis workflow
 ```
 
-See [docs/docker.md](docs/docker.md) for Docker Compose, CLI/MCP via container, and production tips.
-
----
-
-## Web Dashboard
-
-| Page | What it does |
-|------|-------------|
-| **Overview** | Pageviews, visitors, visits, bounce rate, avg duration, pages/visit — with time series and annotations |
-| **Pages** | Per-page views, time-on-page, entries/exits, bounce rate, plus drill-down to referrers and next-page flow |
-| **Sources** | Referrers, UTM params, channels, click IDs, hostnames, and referrer-to-page drill-down |
-| **Events** | Custom event metrics with time series and property breakdown |
-| **Sessions** | Session list with full event-by-event replay timeline |
-| **Devices** | Browser, OS, device type, screen size, language — with donut charts |
-| **Geo** | Country/region/city breakdown with interactive world map choropleth |
-| **Realtime** | Live active visitors and recent event stream |
-| **Compare** | Side-by-side current vs previous period comparison |
-| **Retention** | Cohort retention matrix |
-| **Funnels** | Multi-step conversion funnels with drop-off rates |
-| **Journeys** | User path analysis with Sankey diagram |
-| **Revenue** | Revenue summary, time series, breakdown by event and country |
-| **Engagement** | Session duration distribution, percentiles, bounce rate by page/source |
-| **Dashboards** | Drag-and-drop custom widget dashboards with PDF/PNG export |
-| **Settings** | Site management, API key generation |
-
-Additional capabilities: saved views, timeline annotations, scheduled exports, public share links, table virtualization for large datasets.
-
----
-
-## CLI
-
-Every metric from the web UI, available in your terminal.
+These activate automatically when you open the project in OpenCode:
 
 ```bash
-# Set your API key (required for write operations)
-export MANTECATO_API_KEY="mtk_..."
+cd mantecato && opencode
 
-# Overview stats
-npm run cli -- stats --site mysite.com --period 30d
-
-# Top pages as JSON
-npm run cli -- pages --site mysite.com --limit 10 --format json
-
-# Funnel analysis
-npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
-
-# Filtered by country and browser
-npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
+# Select the site-analyst agent from the agent picker,
+# or ask any question — the skills are available to all agents.
 ```
 
-38 commands covering all analytics, CRUD operations, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
-
----
-
-## MCP Server
-
-Connect your AI agent to your analytics data via the [Model Context Protocol](https://modelcontextprotocol.io/).
+To also enable MCP tools, add to `~/.config/opencode/config.json`:
 
 ```json
 {
@@ -139,44 +84,198 @@ Connect your AI agent to your analytics data via the [Model Context Protocol](ht
 }
 ```
 
-41 tools covering the full analytics surface. Setup guides for OpenCode, Claude Desktop, and Docker: **[docs/mcp-server.md](docs/mcp-server.md)**
+### Claude Code
+
+Mantecato includes a comprehensive `CLAUDE.md` with full CLI instructions and three slash commands:
+
+```bash
+cd mantecato && claude
+
+# Slash commands for common analyses:
+/project:traffic-report mysite.com 30d    # Full traffic report
+/project:content-audit mysite.com 30d     # Content performance audit
+/project:funnel-analysis mysite.com /,/pricing,/signup  # Funnel analysis
+```
+
+Or just ask in natural language — `CLAUDE.md` teaches Claude Code the full CLI and analysis methodology.
+
+To also enable MCP tools:
+
+```bash
+claude mcp add mantecato -- npx tsx /path/to/mantecato/src/mcp/server.ts
+```
+
+### Cline / Cursor
+
+Both read their respective instruction files (`.clinerules`, `.cursorrules`) included in this repo. Open the project and start asking analytics questions — the agent knows all 38 CLI commands and how to chain them for deep analysis.
+
+For MCP, add to your editor's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "mantecato": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "env": {
+        "DATABASE_URL": "postgresql://...",
+        "MANTECATO_API_KEY": "mtk_..."
+      }
+    }
+  }
+}
+```
+
+**Full setup guide with step-by-step instructions and examples: [docs/ai-agents.md](docs/ai-agents.md)**
 
 ---
+
+## What's Included
+
+```
+Agent configurations          Skills / Slash commands
+─────────────────────         ──────────────────────
+.opencode/agents/             .opencode/skills/
+  site-analyst.md               traffic-report/SKILL.md
+                                content-audit/SKILL.md
+CLAUDE.md                       funnel-analysis/SKILL.md
+.claude/commands/
+  traffic-report.md           .claude/commands/
+  content-audit.md              traffic-report.md
+  funnel-analysis.md            content-audit.md
+                                funnel-analysis.md
+.clinerules
+.cursorrules
+```
+
+Every configuration is version-controlled in this repo. Fork it, customize the agents, add your own skills.
+
+---
+
+## CLI
+
+Every metric from the web UI, available in your terminal.
+
+```bash
+export MANTECATO_API_KEY="mtk_..."
+
+# Overview stats
+npm run cli -- stats --site mysite.com --period 30d
+
+# Top pages as JSON
+npm run cli -- pages --site mysite.com --limit 10 --format json
+
+# Funnel analysis
+npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
+
+# Filtered by country and browser
+npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
+```
+
+38 commands covering analytics, CRUD, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
+
+---
+
+## MCP Server
+
+41 tools exposing the full analytics surface via Model Context Protocol. Tool reference and setup: **[docs/mcp-server.md](docs/mcp-server.md)**
+
+---
+
+## Web Dashboard
+
+| Page | What it does |
+|------|-------------|
+| **Overview** | Pageviews, visitors, visits, bounce rate, avg duration — with time series and annotations |
+| **Pages** | Per-page views, time-on-page, entries/exits, bounce rate, referrer drill-down |
+| **Sources** | Referrers, UTM params, channels, click IDs, hostnames |
+| **Events** | Custom event metrics with time series and property breakdown |
+| **Sessions** | Session list with full event-by-event replay |
+| **Devices** | Browser, OS, device type, screen size, language |
+| **Geo** | Country/region/city with interactive world map |
+| **Realtime** | Live active visitors and event stream |
+| **Compare** | Side-by-side period comparison |
+| **Retention** | Cohort retention matrix |
+| **Funnels** | Multi-step conversion with drop-off rates |
+| **Journeys** | Sankey diagram user path analysis |
+| **Revenue** | Revenue summary, time series, breakdowns |
+| **Engagement** | Session duration distribution, percentiles, bounce rates |
+| **Dashboards** | Custom widget dashboards with PDF/PNG export |
+| **Settings** | Site management, API key generation |
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/g-battaglia/mantecato-analytics.git
+cd mantecato
+npm install --legacy-peer-deps
+
+cp .env.example .env   # edit with your Umami DB connection string
+
+npx prisma db pull
+npx prisma generate
+
+npm run dev -- -p 3001
+```
+
+Open `http://localhost:3001` and log in with your Umami credentials.
+
+### Container
+
+```bash
+container build -t mantecato:latest --memory 4096MB --cpus 4 .
+container run -d --name mantecato -p 3000:3000 --env-file .env mantecato:latest
+```
+
+See [docs/docker.md](docs/docker.md) for Docker Compose and production deployment.
+
+---
+
+## Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (Turbopack) + React 19 |
+| Database | PostgreSQL (Neon) via Prisma 7.5 |
+| UI | shadcn/ui + Radix primitives |
+| Charts | Recharts, react-simple-maps, d3-sankey |
+| Data | TanStack Query + TanStack Table (virtualized) |
+| State | Zustand |
+| CLI | Commander.js v14 |
+| MCP | @modelcontextprotocol/sdk v1.27 |
+| Auth | JWT sessions (web), SHA-256 API keys (CLI/MCP) |
 
 ## Authentication
 
-The web dashboard uses session-based JWT auth. The CLI and MCP server use **API keys**.
-
 ```bash
-# Generate: Settings > API Keys > New Key (in the web UI)
+# Generate a key: Settings > API Keys in the web UI
 export MANTECATO_API_KEY="mtk_..."
 ```
 
-Keys are SHA-256 hashed before storage. The raw key is shown once at creation. Full details: **[docs/authentication.md](docs/authentication.md)**
-
----
+Keys are SHA-256 hashed before storage. Details: **[docs/authentication.md](docs/authentication.md)**
 
 ## Project Structure
 
 ```
 src/
-  app/                    # Next.js pages and API routes
-    (dashboard)/          # Authenticated dashboard pages (15+)
-    api/                  # REST API endpoints (29 routes)
-  cli/                    # CLI entry point (38 commands) + helpers
-  mcp/                    # MCP server (41 tools)
-  components/             # React components (layout, charts, tables, filters)
-  queries/                # SQL query modules (16 modules)
-  lib/                    # Core utilities (auth, date, format, export, queries)
-  hooks/                  # Custom React hooks
-  stores/                 # Zustand stores
+  app/            # Next.js pages + API routes (15+ pages, 29 routes)
+  cli/            # CLI entry point (38 commands) + helpers
+  mcp/            # MCP server (41 tools)
+  components/     # React components (layout, charts, tables, filters)
+  queries/        # SQL query modules (20 modules)
+  lib/            # Core utilities (auth, date, format, export, queries)
+  hooks/          # Custom React hooks
+  stores/         # Zustand stores
 docs/
-  authentication.md       # API key system
-  cli.md                  # Full CLI reference
-  mcp-server.md           # MCP server setup
-  docker.md               # Container deployment
-packages/
-  tracker/                # Optional tracking script (ESM + CJS + IIFE)
+  ai-agents.md    # AI agent setup guide (all platforms)
+  cli.md          # Full CLI reference
+  mcp-server.md   # MCP server reference
+  authentication.md
+  docker.md
+.opencode/        # OpenCode agent + skills
+.claude/          # Claude Code slash commands
 ```
 
 ## Requirements
@@ -188,8 +287,7 @@ packages/
 ## Important Notes
 
 - **Read-only database** — Umami owns the schema. Mantecato only writes to the `report` table. Never run Prisma migrations.
-- **Pre-alpha** — expect breaking changes. The project is functional but not yet battle-tested in production.
-- **Port 3001** — dev server defaults to 3001 to avoid conflicts.
+- **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
 
 ## License
 
