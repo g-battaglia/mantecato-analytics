@@ -1,79 +1,43 @@
 # MCP Server
 
-Mantecato exposes all analytics data via the [Model Context Protocol](https://modelcontextprotocol.io/), enabling AI agents (Claude, OpenCode, Cursor, etc.) to query analytics data programmatically.
+Mantecato exposes all analytics data via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). This lets AI agents like Claude, OpenCode, and Cursor query your analytics through structured tool calls instead of parsing terminal output.
+
+> **Not sure if you need MCP?** If your agent already works well via the CLI (terminal commands), MCP is optional. It's most useful for agents that don't have shell access (like Claude Desktop) or when you want tighter integration with typed responses.
 
 ## Setup
 
-### Prerequisites
+You need a running Mantecato instance and an API key (generated from **Settings > API Keys** in the web UI).
 
-1. A running Mantecato instance with access to the database
-2. An API key generated from the web UI (Settings > API Keys)
+For platform-specific setup instructions (where to put the config for OpenCode, Claude Desktop, Cursor, etc.), see **[AI Agent Setup](ai-agents.md)**.
 
-### OpenCode
-
-Add to `~/.config/opencode/config.json`:
-
-```json
-{
-  "mcpServers": {
-    "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
-      "env": {
-        "DATABASE_URL": "postgresql://...",
-        "MANTECATO_API_KEY": "mtk_your-key-here"
-      }
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
-      "env": {
-        "DATABASE_URL": "postgresql://...",
-        "MANTECATO_API_KEY": "mtk_your-key-here"
-      }
-    }
-  }
-}
-```
-
-### Docker
-
-```json
-{
-  "mcpServers": {
-    "mantecato": {
-      "command": "docker",
-      "args": [
-        "compose", "-f", "/path/to/mantecato/docker-compose.yaml",
-        "--profile", "mcp", "run", "--rm", "-i", "mcp"
-      ],
-      "env": {
-        "DATABASE_URL": "postgresql://...",
-        "MANTECATO_API_KEY": "mtk_your-key-here"
-      }
-    }
-  }
-}
-```
-
-### Running Directly
+### Run directly
 
 ```bash
 export DATABASE_URL="postgresql://..."
 export MANTECATO_API_KEY="mtk_your-key-here"
 npm run mcp
 ```
+
+### MCP client configuration
+
+Add this to your editor's MCP config (see [AI Agent Setup](ai-agents.md) for exact file paths per platform):
+
+```json
+{
+  "mcpServers": {
+    "mantecato": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "env": {
+        "DATABASE_URL": "postgresql://...",
+        "MANTECATO_API_KEY": "mtk_your-key-here"
+      }
+    }
+  }
+}
+```
+
+---
 
 ## Available Tools (41)
 
@@ -91,7 +55,7 @@ npm run mcp
 | Tool | Description |
 |------|-------------|
 | `get_pages` | Page analytics with views, time-on-page, bounce rate |
-| `get_page_detail` | Referrers, next pages, time distribution, time series for a page |
+| `get_page_detail` | Referrers, next pages, time distribution for a specific page |
 | `get_top_pages` | Quick top pages by visitors |
 
 ### Sources
@@ -125,7 +89,7 @@ npm run mcp
 
 | Tool | Description |
 |------|-------------|
-| `get_devices` | Device/browser/OS/screen/language breakdown |
+| `get_devices` | Device, browser, OS, screen, or language breakdown |
 | `get_geo` | Country/region/city breakdown with drill-down |
 | `get_realtime` | Real-time active visitors |
 
@@ -138,7 +102,7 @@ npm run mcp
 | `get_journeys` | User journey paths |
 | `get_revenue` | Revenue analytics |
 | `get_engagement` | Engagement metrics (percentiles, distribution) |
-| `get_filter_values` | Available filter values (for autocomplete) |
+| `get_filter_values` | Available filter values (useful for building queries) |
 
 ### CRUD
 
@@ -158,20 +122,26 @@ npm run mcp
 | `get_scheduled_export` | Get export details |
 | `delete_scheduled_export` | Delete scheduled export |
 
+---
+
 ## Common Parameters
 
-All analytics tools accept:
+All analytics tools accept these parameters:
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `site` | string | Site name, domain, or UUID (required) |
-| `period` | string | Date preset: `7d`, `30d`, `90d` (default: `30d`) |
-| `start` | string | Custom start date (ISO 8601) |
-| `end` | string | Custom end date (ISO 8601) |
-| `limit` | number | Max results (default: 20) |
-| `filters` | string[] | Array of `column:operator:value` strings |
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `site` | string | Site name, domain, or UUID | required |
+| `period` | string | Date preset: `7d`, `30d`, `90d`, `this_month`, etc. | `30d` |
+| `start` | string | Custom start date (ISO 8601) | — |
+| `end` | string | Custom end date (ISO 8601) | — |
+| `limit` | number | Max results | `20` |
+| `filters` | string[] | Array of `column:operator:value` strings | — |
 
-## Tool Call Examples
+For the full list of filter operators and columns, see the [CLI Filters reference](cli.md#filters).
+
+---
+
+## Examples
 
 ### Get overview stats
 
@@ -232,4 +202,4 @@ All analytics tools accept:
 
 ## Authentication
 
-The MCP server authenticates via the `MANTECATO_API_KEY` environment variable. See [Authentication](./authentication.md) for details on generating and managing API keys.
+The MCP server authenticates via the `MANTECATO_API_KEY` environment variable. See [Authentication](authentication.md) for details on generating and managing API keys.

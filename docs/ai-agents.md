@@ -1,77 +1,43 @@
-# AI Agent Setup Guide
+# AI Agent Setup
 
-Mantecato is designed to be queried by AI agents. This guide covers setup for every supported platform.
+Mantecato works with any AI coding agent that can run terminal commands or connect via MCP. This guide covers setup for each supported platform.
 
-## Prerequisites
+## Before You Start
 
-1. Mantecato installed and configured (`npm install`, `.env` set up, Prisma client generated)
-2. An API key generated from the web UI (Settings > API Keys)
-3. The `DATABASE_URL` and `MANTECATO_API_KEY` environment variables set
+1. Mantecato installed and running (see the [README](../README.md#get-started))
+2. An API key generated from the web UI (**Settings > API Keys**)
+3. Your `DATABASE_URL` and `MANTECATO_API_KEY` ready
 
 ## How It Works
 
-Mantecato exposes analytics data through two interfaces that AI agents can use:
+There are two ways an AI agent can talk to Mantecato:
 
-### MCP Server (41 tools)
+**CLI** — The agent runs shell commands like `npx tsx src/cli/index.ts stats --site mysite.com` and reads the output. Works with any agent that has terminal access. No extra configuration needed — just open the project folder.
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) server exposes typed tools that agents call directly. The agent receives structured JSON responses — no output parsing needed.
+**MCP** — The agent calls structured tools directly via [Model Context Protocol](https://modelcontextprotocol.io/). Returns typed JSON, no output parsing. Requires adding Mantecato to your editor's MCP configuration.
 
-```
-Agent                          Mantecato MCP Server
-  │                                  │
-  ├─ call get_stats(site, period) ──→│
-  │                                  ├─ query PostgreSQL
-  │←── { pageviews: 8420, ... } ─────┤
-  │                                  │
-  ├─ call get_pages(site, ...) ─────→│
-  │←── [{ url: "/", views: 1200 }] ──┤
-```
-
-**Pros:** Typed schemas, structured responses, no shell needed.
-**Cons:** Requires MCP configuration per editor/tool.
-
-### CLI Agent (38 commands)
-
-The agent runs shell commands via `npx tsx src/cli/index.ts <command>`. It reads the terminal output (table, JSON, or CSV) and reasons about it.
-
-```
-Agent                          Shell
-  │                              │
-  ├─ exec: npx tsx src/cli/     │
-  │   index.ts stats --site     │
-  │   mysite.com --format json ─→│
-  │                              ├─ query PostgreSQL
-  │←── {"pageviews": 8420, ...} ─┤
-```
-
-**Pros:** Works anywhere a shell is available, no MCP config needed.
-**Cons:** Agent must parse output, slightly higher latency.
-
-Both approaches query the same database through the same query modules and return identical data.
+Both methods query the same data and return the same results. Most agents work great with CLI alone. MCP is optional and adds tighter integration.
 
 ---
 
-## OpenCode
+## Platform Setup
 
-### What's included in the repo
+### OpenCode
 
-| File | What it does |
-|------|-------------|
-| `.opencode/agents/site-analyst.md` | Custom agent that uses the CLI for deep analytics. Select it from the agent picker. |
-| `.opencode/skills/traffic-report/SKILL.md` | Skill for generating comprehensive traffic reports |
-| `.opencode/skills/content-audit/SKILL.md` | Skill for auditing content performance |
-| `.opencode/skills/funnel-analysis/SKILL.md` | Skill for analyzing conversion funnels |
+**Included in the repo:**
+- `.opencode/agents/site-analyst.md` — a dedicated analytics agent
+- `.opencode/skills/traffic-report/SKILL.md` — traffic report workflow
+- `.opencode/skills/content-audit/SKILL.md` — content audit workflow
+- `.opencode/skills/funnel-analysis/SKILL.md` — funnel analysis workflow
 
-### Using the CLI agent
-
-The site-analyst agent is available automatically when you open the project:
+**How to use:**
 
 ```bash
 cd /path/to/mantecato
 opencode
 ```
 
-Select **site-analyst** from the agent picker. Then ask:
+Select **site-analyst** from the agent picker, then ask questions:
 
 ```
 "Analyze kerykeion.net traffic for the last 30 days"
@@ -79,21 +45,14 @@ Select **site-analyst** from the agent picker. Then ask:
 "Compare this month vs last month for all my sites"
 ```
 
-The agent will run CLI commands, cross-reference data across dimensions, and deliver structured reports.
-
-### Using skills
-
-Skills are loaded automatically. You can reference them in any conversation:
+The skills are loaded automatically — you can reference them from any agent:
 
 ```
 "Use the traffic-report skill to analyze kerykeion.net"
 "Run a content audit for mysite.com for the last 90 days"
-"Analyze the signup funnel: /, /pricing, /signup, /welcome"
 ```
 
-### Adding MCP (optional)
-
-If you also want MCP tools available (in addition to the CLI agent), add to `~/.config/opencode/config.json`:
+**Add MCP (optional):** Add to `~/.config/opencode/config.json`:
 
 ```json
 {
@@ -113,52 +72,35 @@ If you also want MCP tools available (in addition to the CLI agent), add to `~/.
 
 ---
 
-## Claude Code
+### Claude Code
 
-### What's included in the repo
+**Included in the repo:**
+- `CLAUDE.md` — full CLI reference and analysis methodology (loaded automatically)
+- `.claude/commands/traffic-report.md` — `/project:traffic-report` slash command
+- `.claude/commands/content-audit.md` — `/project:content-audit` slash command
+- `.claude/commands/funnel-analysis.md` — `/project:funnel-analysis` slash command
 
-| File | What it does |
-|------|-------------|
-| `CLAUDE.md` | Project instructions: full CLI reference, analysis methodology, output format |
-| `.claude/commands/traffic-report.md` | `/project:traffic-report` slash command |
-| `.claude/commands/content-audit.md` | `/project:content-audit` slash command |
-| `.claude/commands/funnel-analysis.md` | `/project:funnel-analysis` slash command |
-
-### Using Claude Code with the CLI
-
-Claude Code reads `CLAUDE.md` automatically:
+**How to use:**
 
 ```bash
 cd /path/to/mantecato
 claude
 ```
 
-Then ask analytics questions directly:
+Ask questions directly or use slash commands:
 
 ```
 "Analyze traffic for kerykeion.net over the last 30 days"
-"What are the top traffic sources and how do they compare to last month?"
 "Show me the bounce rate by device type for US visitors"
-```
 
-Claude Code will run `npx tsx src/cli/index.ts <command>` with appropriate options.
-
-### Using slash commands
-
-Slash commands provide structured analysis workflows:
-
-```
 /project:traffic-report kerykeion.net 30d
 /project:content-audit kerykeion.net 90d
 /project:funnel-analysis kerykeion.net /,/pricing,/signup
 ```
 
-Each command runs a multi-step analysis: gathering data, cross-referencing dimensions, and producing a formatted report.
-
-### Adding MCP (optional)
+**Add MCP (optional):**
 
 ```bash
-# Add MCP server to Claude Code
 claude mcp add mantecato \
   -e DATABASE_URL="postgresql://user:pass@host/dbname" \
   -e MANTECATO_API_KEY="mtk_your-key-here" \
@@ -184,11 +126,13 @@ Or add to `~/.claude.json`:
 
 ---
 
-## Claude Desktop
+### Claude Desktop
 
-Claude Desktop supports MCP only (no CLI access).
+Claude Desktop supports MCP only (no terminal access).
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Add to your config file:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -205,7 +149,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-Restart Claude Desktop. Then ask:
+Restart Claude Desktop, then ask:
 
 ```
 "List all my tracked sites"
@@ -215,26 +159,29 @@ Restart Claude Desktop. Then ask:
 
 ---
 
-## Cline
+### Cline
 
-### What's included in the repo
+**Included in the repo:** `.clinerules` with CLI reference and analysis methodology.
 
-| File | What it does |
-|------|-------------|
-| `.clinerules` | Project instructions: CLI reference, analysis methodology |
+Open the project in VS Code with Cline installed. Ask analytics questions directly.
 
-### Using Cline with the CLI
+**Add MCP (optional):** In Cline settings, add an MCP server with the [standard MCP config](#mcp-configuration-reference).
 
-Cline reads `.clinerules` automatically when you open the project:
+---
 
-```
-"Analyze traffic for kerykeion.net"
-"Run a content performance audit for the last 90 days"
-```
+### Cursor
 
-### Adding MCP
+**Included in the repo:** `.cursorrules` with CLI reference and analysis methodology.
 
-In VS Code, open Cline settings and add an MCP server:
+Open the project in Cursor. Ask analytics questions in Composer or Chat.
+
+**Add MCP (optional):** Go to **Settings > Features > MCP Servers** and add the [standard MCP config](#mcp-configuration-reference).
+
+---
+
+## MCP Configuration Reference
+
+All MCP-compatible tools use the same configuration. Replace the paths and credentials with your own:
 
 ```json
 {
@@ -251,47 +198,7 @@ In VS Code, open Cline settings and add an MCP server:
 }
 ```
 
----
-
-## Cursor
-
-### What's included in the repo
-
-| File | What it does |
-|------|-------------|
-| `.cursorrules` | Project instructions: CLI reference, analysis methodology |
-
-### Using Cursor with the CLI
-
-Cursor reads `.cursorrules` automatically. Ask analytics questions in Composer or Chat:
-
-```
-"Analyze my site's traffic trends"
-"Which sources send the highest quality traffic?"
-```
-
-### Adding MCP
-
-In Cursor settings, go to Features > MCP Servers and add:
-
-```json
-{
-  "mcpServers": {
-    "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
-      "env": {
-        "DATABASE_URL": "postgresql://user:pass@host/dbname",
-        "MANTECATO_API_KEY": "mtk_your-key-here"
-      }
-    }
-  }
-}
-```
-
----
-
-## Docker-based MCP
+### Docker alternative
 
 If you prefer not to install Node.js locally, run the MCP server via Docker:
 
@@ -313,8 +220,6 @@ If you prefer not to install Node.js locally, run the MCP server via Docker:
 }
 ```
 
-This works with any MCP client (OpenCode, Claude Desktop, Cursor, etc.).
-
 ---
 
 ## Example Workflows
@@ -324,16 +229,11 @@ This works with any MCP client (OpenCode, Claude Desktop, Cursor, etc.).
 ```
 You:   "Give me a full traffic report for kerykeion.net, last 30 days"
 
-Agent: 1. Runs stats --period 30d (overall metrics)
-       2. Runs compare --period 30d (period-over-period deltas)
-       3. Runs top-pages --limit 20 (content performance)
-       4. Runs sources --limit 20 (traffic sources)
-       5. Runs channels (channel breakdown)
-       6. Runs devices (device split)
-       7. Runs geo --limit 10 (geographic breakdown)
-       8. Cross-references bounce rates by source × device
-       9. Delivers structured report with executive summary,
-          key metrics, findings, and recommendations
+Agent: 1. Gets overall metrics and period-over-period comparison
+       2. Finds top pages, traffic sources, channels
+       3. Checks device and geographic breakdown
+       4. Cross-references bounce rates by source and device
+       5. Delivers a structured report with findings and recommendations
 ```
 
 ### Diagnosing a traffic drop
@@ -341,14 +241,11 @@ Agent: 1. Runs stats --period 30d (overall metrics)
 ```
 You:   "Traffic dropped this week. What happened?"
 
-Agent: 1. Runs compare --period this_week (confirms the drop)
-       2. Runs timeseries --period 14d --granularity day (finds the exact day)
-       3. Runs pages --period this_week --format json (finds which pages dropped)
-       4. Runs sources --period this_week --format json (finds which sources dropped)
-       5. Runs pages --period last_week --format json (baseline comparison)
-       6. Identifies: "Organic traffic to /blog/popular-post dropped 60% on Tuesday.
-          Google may have deindexed it. The page's bounce rate also spiked from
-          35% to 78%, suggesting a content or loading issue."
+Agent: 1. Confirms the drop with a period comparison
+       2. Finds the exact day it started via time series
+       3. Identifies which pages and sources dropped
+       4. Reports: "Organic traffic to /blog/popular-post dropped 60% on
+          Tuesday. The page's bounce rate spiked from 35% to 78%."
 ```
 
 ### Funnel optimization
@@ -356,45 +253,42 @@ Agent: 1. Runs compare --period this_week (confirms the drop)
 ```
 You:   "Analyze the signup funnel and tell me where we're losing people"
 
-Agent: 1. Runs funnel --steps "/,/pricing,/signup,/welcome"
-       2. Runs page-detail --url /pricing (where's the biggest drop-off)
-       3. Runs devices --filter url_path:eq:/pricing (mobile vs desktop conversion)
-       4. Runs sources --filter url_path:eq:/signup (which sources convert best)
-       5. Reports: "The /pricing → /signup step has a 72% drop-off rate.
-          Mobile users drop off at 84% vs 61% desktop. Users from Google Ads
-          convert at 2x the rate of organic. Recommendation: optimize pricing
-          page for mobile, reallocate ad budget toward Google Ads."
+Agent: 1. Runs funnel analysis for /, /pricing, /signup, /welcome
+       2. Checks mobile vs desktop conversion at each step
+       3. Compares traffic sources by conversion rate
+       4. Reports: "The /pricing → /signup step has a 72% drop-off.
+          Mobile users drop at 84% vs 61% desktop. Google Ads converts
+          at 2x organic. Optimize pricing page for mobile."
 ```
 
 ---
 
 ## Customization
 
-All agent configurations are plain text files in the repo. You can:
+All agent configurations are plain text files you can edit:
 
-- **Edit agent instructions** in `.opencode/agents/`, `CLAUDE.md`, `.clinerules`, `.cursorrules`
-- **Add new skills** in `.opencode/skills/` (OpenCode) or `.claude/commands/` (Claude Code)
-- **Adjust permissions** — the OpenCode agent is read-only by default (no file editing, restricted bash). Modify the frontmatter in `site-analyst.md` to change this.
-- **Create specialized agents** — e.g., an SEO-focused agent that only uses page and source commands, or a revenue agent that focuses on conversion and revenue metrics.
+- **Agent instructions:** `.opencode/agents/`, `CLAUDE.md`, `.clinerules`, `.cursorrules`
+- **Skills and commands:** `.opencode/skills/` (OpenCode), `.claude/commands/` (Claude Code)
+- **Permissions:** The OpenCode site-analyst agent is read-only by default. Edit the frontmatter in `site-analyst.md` to change this.
 
-### Writing a custom OpenCode skill
+### Create a custom OpenCode skill
 
-Create `.opencode/skills/my-skill/SKILL.md`:
+Add a file at `.opencode/skills/my-skill/SKILL.md`:
 
 ```markdown
 ---
 description: One-line description of what this skill does
 ---
 
-## Instructions for the skill
+## Instructions
 
 Step 1: ...
 Step 2: ...
 ```
 
-### Writing a custom Claude Code slash command
+### Create a custom Claude Code slash command
 
-Create `.claude/commands/my-command.md`:
+Add a file at `.claude/commands/my-command.md`:
 
 ```markdown
 Analyze $ARGUMENTS using the Mantecato CLI.

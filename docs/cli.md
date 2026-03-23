@@ -1,61 +1,61 @@
 # CLI Reference
 
-Mantecato CLI provides full analytics access from the terminal. Every metric available in the web UI can be queried via CLI.
+The Mantecato CLI gives you full analytics access from the terminal. Everything you can see in the web dashboard is available as a command.
 
-## Installation & Setup
+> **Note:** If you're using an AI agent (OpenCode, Claude Code, etc.), you don't need to learn these commands — the agent knows them already. This reference is here if you want to use the CLI directly or understand what the agent is doing.
+
+## Setup
 
 ```bash
-# Clone and install
+# Install (if you haven't already)
 git clone https://github.com/g-battaglia/mantecato-analytics.git && cd mantecato-analytics
 npm install --legacy-peer-deps
-
-# Generate Prisma client
 npx prisma generate
 
-# Set environment variables
+# Set your API key
 export DATABASE_URL="postgresql://..."
 export MANTECATO_API_KEY="mtk_your-key-here"
 ```
 
-## Running
+## Running Commands
 
 ```bash
 # Via npm script
 npm run cli -- <command> [options]
 
-# Via npx
+# Via npx (equivalent)
 npx tsx src/cli/index.ts <command> [options]
 
 # Via Docker
 docker compose --profile cli run --rm cli <command> [options]
 ```
 
-## Global Options
+## Common Options
 
-Every analytics command supports these options:
+Every analytics command supports these:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--api-key <key>` | API key (or set `MANTECATO_API_KEY` env var) | required |
 | `-s, --site <site>` | Site name, domain, or UUID | required |
-| `-p, --period <preset>` | Date preset: `7d`, `30d`, `90d`, `this_month`, etc. | `30d` |
-| `--start <date>` | Custom start date (ISO 8601) | - |
-| `--end <date>` | Custom end date (ISO 8601) | - |
-| `-f, --format <format>` | Output: `json`, `table`, `csv` | `table` |
-| `--filter <filter...>` | Filters as `column:operator:value` (repeatable) | - |
-| `-l, --limit <n>` | Max rows | `20` |
-| `-g, --granularity <g>` | `auto`, `minute`, `hour`, `day`, `week`, `month` | `auto` |
+| `-p, --period <preset>` | Time period: `7d`, `30d`, `90d`, `this_month`, etc. | `30d` |
+| `--start <date>` | Custom start date (ISO 8601) | — |
+| `--end <date>` | Custom end date (ISO 8601) | — |
+| `-f, --format <format>` | Output format: `json`, `table`, `csv` | `table` |
+| `--filter <filter...>` | Filter results (see [Filters](#filters) below) | — |
+| `-l, --limit <n>` | Max rows to return | `20` |
+| `-g, --granularity <g>` | Time grouping: `auto`, `minute`, `hour`, `day`, `week`, `month` | `auto` |
+| `--api-key <key>` | API key (alternative to `MANTECATO_API_KEY` env var) | — |
 
-## Site Resolution
-
-The `--site` flag is flexible. All of these work:
+The `--site` flag is flexible — all of these work:
 
 ```bash
---site kerykeion.net           # by name
+--site kerykeion.net           # by domain
 --site www.kerykeion.net       # by full domain
 --site b52bd153-29af-...       # by UUID
 --site kery                    # by partial name match
 ```
+
+---
 
 ## Commands
 
@@ -73,7 +73,7 @@ The `--site` flag is flexible. All of these work:
 | Command | Description |
 |---------|-------------|
 | `pages` | Page analytics (views, time-on-page, bounce rate, entries/exits) |
-| `page-detail --url <path>` | Detailed stats: referrers, next pages, time distribution, time series |
+| `page-detail --url <path>` | Detailed stats for a specific page: referrers, next pages, time distribution |
 | `top-pages` | Quick top pages by visitors |
 
 ### Sources
@@ -107,7 +107,7 @@ The `--site` flag is flexible. All of these work:
 
 | Command | Description |
 |---------|-------------|
-| `devices` | Device type breakdown (default dimension) |
+| `devices` | Device type breakdown (default) |
 | `devices --dimension browser` | Browser breakdown |
 | `devices --dimension os` | OS breakdown |
 | `devices --dimension screen` | Screen resolution breakdown |
@@ -131,7 +131,7 @@ The `--site` flag is flexible. All of these work:
 | `journeys` | User journey paths (page sequences) |
 | `revenue` | Revenue analytics |
 | `engagement` | Engagement metrics (duration percentiles, distribution) |
-| `filter-values --column <col>` | Available values for a filter column (autocomplete) |
+| `filter-values --column <col>` | Available values for a filter column (useful for autocomplete) |
 
 ### CRUD Operations
 
@@ -151,68 +151,74 @@ The `--site` flag is flexible. All of these work:
 | `scheduled-export --id <uuid>` | Get export details |
 | `scheduled-export-delete --id <uuid>` | Delete export |
 
+---
+
 ## Filters
 
-Filters use the format `column:operator:value` and can be repeated:
+Filters let you narrow down results. The format is `column:operator:value`, and you can repeat `--filter` to combine multiple conditions:
 
 ```bash
 # Single filter
-mantecato stats --site kerykeion.net --filter country:eq:US
+npm run cli -- stats --site kerykeion.net --filter country:eq:US
 
-# Multiple filters (AND between columns, OR within same column)
-mantecato stats --site kerykeion.net --filter country:eq:US --filter browser:eq:chrome
+# Multiple filters (AND logic between different columns)
+npm run cli -- stats --site kerykeion.net --filter country:eq:US --filter browser:eq:chrome
 ```
 
 ### Operators
 
-| Operator | SQL | Description |
-|----------|-----|-------------|
-| `eq` | `= value` | Equals |
-| `neq` | `!= value` | Not equals |
-| `contains` | `ILIKE %value%` | Contains |
-| `not_contains` | `NOT ILIKE %value%` | Does not contain |
-| `starts_with` | `ILIKE value%` | Starts with |
-| `not_starts_with` | `NOT ILIKE value%` | Does not start with |
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `eq` | Equals | `country:eq:US` |
+| `neq` | Not equals | `browser:neq:chrome` |
+| `contains` | Contains (case-insensitive) | `url_path:contains:blog` |
+| `not_contains` | Does not contain | `referrer_domain:not_contains:spam` |
+| `starts_with` | Starts with | `url_path:starts_with:/docs` |
+| `not_starts_with` | Does not start with | `url_path:not_starts_with:/admin` |
 
-### Filterable Columns
+### Filterable columns
 
 `url_path`, `page_title`, `hostname`, `referrer_domain`, `utm_source`, `utm_medium`, `utm_campaign`, `event_name`, `tag`, `browser`, `os`, `device`, `country`, `region`, `city`, `language`, `screen`
+
+---
 
 ## Output Formats
 
 ```bash
-# Table (default) — human-readable with alignment
-mantecato top-pages --site kerykeion.net --format table
+# Table (default) — human-readable
+npm run cli -- top-pages --site kerykeion.net
 
-# JSON — for programmatic consumption and piping
-mantecato stats --site kerykeion.net --format json
+# JSON — for scripts, piping, and AI agents
+npm run cli -- stats --site kerykeion.net --format json
 
-# CSV — for spreadsheets and data processing
-mantecato pages --site kerykeion.net --format csv > pages.csv
+# CSV — for spreadsheets
+npm run cli -- pages --site kerykeion.net --format csv > pages.csv
 ```
+
+---
 
 ## Examples
 
 ```bash
 # Overview of a site for the last 30 days
-mantecato stats --site kerykeion.net
+npm run cli -- stats --site kerykeion.net
 
 # Top 10 pages this week in JSON
-mantecato pages --site kerykeion.net --period 7d --limit 10 --format json
+npm run cli -- pages --site kerykeion.net --period 7d --limit 10 --format json
 
 # US traffic only, by browser
-mantecato devices --site kerykeion.net --dimension browser --filter country:eq:US
+npm run cli -- devices --site kerykeion.net --dimension browser --filter country:eq:US
 
 # Compare this month vs last month
-mantecato compare --site kerykeion.net --period this_month
+npm run cli -- compare --site kerykeion.net --period this_month
 
 # Funnel: home → docs → examples
-mantecato funnel --site kerykeion.net --steps "/,/content/docs,/content/examples"
+npm run cli -- funnel --site kerykeion.net --steps "/,/content/docs,/content/examples"
 
 # Export all pages to CSV
-mantecato pages --site kerykeion.net --limit 1000 --format csv > pages.csv
+npm run cli -- pages --site kerykeion.net --limit 1000 --format csv > pages.csv
 
 # Session replay
-mantecato sessions --site kerykeion.net --period 7d --limit 1
-mantecato session-activity --site kerykeion.net --session-id <uuid-from-above>
+npm run cli -- sessions --site kerykeion.net --period 7d --limit 1
+npm run cli -- session-activity --site kerykeion.net --session-id <uuid-from-above>
 ```
