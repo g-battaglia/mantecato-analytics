@@ -11,7 +11,7 @@
  *     "mcpServers": {
  *       "mantecato": {
  *         "command": "npx",
- *         "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+ *         "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
  *         "env": { "DATABASE_URL": "..." }
  *       }
  *     }

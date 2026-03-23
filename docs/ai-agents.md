@@ -33,7 +33,7 @@ Both methods query the same data and return the same results. Most agents work g
 **How to use:**
 
 ```bash
-cd /path/to/mantecato
+cd /path/to/mantecato-analytics
 opencode
 ```
 
@@ -60,7 +60,7 @@ The skills are loaded automatically — you can reference them from any agent:
     "mantecato": {
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
-      "cwd": "/path/to/mantecato",
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -83,7 +83,7 @@ The skills are loaded automatically — you can reference them from any agent:
 **How to use:**
 
 ```bash
-cd /path/to/mantecato
+cd /path/to/mantecato-analytics
 claude
 ```
 
@@ -104,7 +104,7 @@ Ask questions directly or use slash commands:
 claude mcp add mantecato \
   -e DATABASE_URL="postgresql://user:pass@host/dbname" \
   -e MANTECATO_API_KEY="mtk_your-key-here" \
-  -- npx tsx /path/to/mantecato/src/mcp/server.ts
+  -- npx tsx /path/to/mantecato-analytics/src/mcp/server.ts
 ```
 
 Or add to `~/.claude.json`:
@@ -114,7 +114,7 @@ Or add to `~/.claude.json`:
   "mcpServers": {
     "mantecato": {
       "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -139,7 +139,7 @@ Add to your config file:
   "mcpServers": {
     "mantecato": {
       "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -171,7 +171,7 @@ Restart Claude Desktop, then ask:
 Copy the skills to your OpenClaw skills directory:
 
 ```bash
-cp -r /path/to/mantecato/.openclaw/skills/* ~/.openclaw/skills/
+cp -r /path/to/mantecato-analytics/.openclaw/skills/* ~/.openclaw/skills/
 ```
 
 Or add the project's skill directory to your `~/.openclaw/openclaw.json`:
@@ -180,7 +180,7 @@ Or add the project's skill directory to your `~/.openclaw/openclaw.json`:
 {
   "skills": {
     "load": {
-      "extraDirs": ["/path/to/mantecato/.openclaw/skills"]
+      "extraDirs": ["/path/to/mantecato-analytics/.openclaw/skills"]
     }
   }
 }
@@ -201,7 +201,7 @@ Then ask OpenClaw questions or invoke skills directly:
   "mcpServers": {
     "mantecato": {
       "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -242,7 +242,7 @@ All MCP-compatible tools use the same configuration. Replace the paths and crede
   "mcpServers": {
     "mantecato": {
       "command": "npx",
-      "args": ["tsx", "/path/to/mantecato/src/mcp/server.ts"],
+      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -262,7 +262,7 @@ If you prefer not to install Node.js locally, run the MCP server via Docker:
     "mantecato": {
       "command": "docker",
       "args": [
-        "compose", "-f", "/path/to/mantecato/docker-compose.yaml",
+        "compose", "-f", "/path/to/mantecato-analytics/docker-compose.yaml",
         "--profile", "mcp", "run", "--rm", "-i", "mcp"
       ],
       "env": {

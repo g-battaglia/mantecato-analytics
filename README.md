@@ -82,8 +82,8 @@ This repo includes pre-built configurations for popular AI tools. Open the proje
 
 | Tool | What's included | How to start |
 |------|----------------|-------------|
-| **OpenCode** | `site-analyst` agent + 3 analysis skills | `cd mantecato && opencode`, select **site-analyst** from the agent picker |
-| **Claude Code** | `CLAUDE.md` + 3 slash commands | `cd mantecato && claude`, use `/project:traffic-report`, `/project:content-audit`, `/project:funnel-analysis` |
+| **OpenCode** | `site-analyst` agent + 3 analysis skills | `cd mantecato-analytics && opencode`, select **site-analyst** from the agent picker |
+| **Claude Code** | `CLAUDE.md` + 3 slash commands | `cd mantecato-analytics && claude`, use `/project:traffic-report`, `/project:content-audit`, `/project:funnel-analysis` |
 | **OpenClaw** | 3 analysis skills (traffic-report, content-audit, funnel-analysis) | Install skills from the `.openclaw/` directory, then ask questions or invoke skills |
 | **Cline** | `.clinerules` with full CLI reference | Open the project in VS Code with Cline installed |
 | **Cursor** | `.cursorrules` with full CLI reference | Open the project in Cursor |
@@ -98,7 +98,7 @@ For agents that support MCP, add this to your editor's MCP configuration:
     "mantecato": {
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
-      "cwd": "/path/to/mantecato",
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://...",
         "MANTECATO_API_KEY": "mtk_..."
