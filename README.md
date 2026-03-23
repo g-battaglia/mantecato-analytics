@@ -2,9 +2,9 @@
 
 > ⚠️ **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
 
-**Talk to your analytics.** Mantecato connects to your existing [Umami](https://umami.is) database and lets you analyze traffic by simply asking an AI agent — no dashboards to click through, no SQL to write, no new tracking scripts to install.
+**Talk to your analytics.** Mantecato connects to your existing [Umami](https://umami.is) database and lets you analyze traffic in natural language through an AI agent, explore the same data in a web dashboard, or query it from the CLI and MCP server.
 
-It also ships with a full **web dashboard**, a **38-command CLI**, and a **41-tool MCP server** — so you can access your data however you prefer.
+It keeps your existing tracking setup and helps you work without writing SQL for routine analysis. It includes a full **web dashboard**, a **38-command CLI**, and a **41-tool MCP server** so you can move between visual exploration, automation, and AI workflows.
 
 ![Mantecato Dashboard](public/screenshot.png)
 
@@ -33,7 +33,7 @@ Agent:  "Traffic is up 12% (8,420 → 9,430 visitors). However, /blog/old-post
          on SEO content."
 ```
 
-No dashboard clicking. No SQL. Just ask.
+Ask directly when you want a quick answer, then use the dashboard or CLI when you want to dig deeper.
 
 ---
 
@@ -77,7 +77,7 @@ API keys are needed for the CLI and AI agent integrations:
 
 ## 🤖 Use with AI Agents
 
-Mantecato works with any AI coding agent. There are two ways to connect:
+Mantecato works with AI coding agents in two main ways:
 
 | Method | How it works | Best for |
 |--------|-------------|----------|
@@ -122,7 +122,7 @@ Where to put this config depends on your tool. See **[docs/ai-agents.md](docs/ai
 
 ## 📊 Web Dashboard
 
-16 pages covering every angle of your analytics:
+The web dashboard gives you a visual view of the same analytics data:
 
 | Page | What it shows |
 |------|-------------|
@@ -147,7 +147,7 @@ Where to put this config depends on your tool. See **[docs/ai-agents.md](docs/ai
 
 ## ⌨️ CLI
 
-Every metric from the dashboard, available in your terminal:
+The same analytics data is available in your terminal:
 
 ```bash
 # Overview stats
@@ -196,8 +196,8 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 
 ## ⚠️ Important Notes
 
-- **Read-only database** — Umami owns the schema. Mantecato only writes to the `report` table (for API keys, saved views, etc.). Never run Prisma migrations.
-- `npm install` requires `--legacy-peer-deps` due to react-simple-maps + React 19.
+- **Read-only database** — Umami remains the source of truth. Mantecato only writes to the `report` table (for API keys, saved views, and related app data). Never run Prisma migrations.
+- `npm install` requires `--legacy-peer-deps` because `react-simple-maps` is not yet aligned with React 19.
 
 ---
 
