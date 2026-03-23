@@ -8,6 +8,16 @@ It also ships with a full **web dashboard**, a **38-command CLI**, and a **41-to
 
 ![Mantecato Dashboard](public/screenshot.png)
 
+## Table of Contents
+
+- [💬 Just Ask](#-just-ask)
+- [🚀 Get Started](#-get-started)
+- [🤖 Use with AI Agents](#-use-with-ai-agents)
+- [📊 Web Dashboard](#-web-dashboard)
+- [⌨️ CLI](#%EF%B8%8F-cli)
+- [🐳 Container Deployment](#-container-deployment)
+- [📚 Documentation](#-documentation)
+
 ---
 
 ## 💬 Just Ask
