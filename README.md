@@ -2,9 +2,9 @@
 
 > ⚠️ **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
 
-**Talk to your analytics.** Mantecato connects to your existing [Umami](https://umami.is) database and lets you analyze traffic in natural language through an AI agent, explore the same data in a web dashboard, or query it from the CLI and MCP server.
+**Talk to your analytics.** Mantecato connects to your existing [Umami](https://umami.is) database and lets you analyze traffic in natural language through an AI agent, explore it visually in a web dashboard, or script queries from the terminal and MCP.
 
-It keeps your existing tracking setup and helps you work without writing SQL for routine analysis. It includes a full **web dashboard**, a **38-command CLI**, and a **41-tool MCP server** so you can move between visual exploration, automation, and AI workflows.
+No new tracking scripts, no SQL for routine analysis. One data source, three interfaces: a **web dashboard**, a **38-command CLI**, and a **41-tool MCP server**.
 
 ![Mantecato Dashboard](public/screenshot.png)
 
@@ -17,6 +17,7 @@ It keeps your existing tracking setup and helps you work without writing SQL for
 - [⌨️ CLI](#%EF%B8%8F-cli)
 - [🐳 Container Deployment](#-container-deployment)
 - [📚 Documentation](#-documentation)
+- [⚠️ Important Notes](#%EF%B8%8F-important-notes)
 
 ---
 
@@ -50,7 +51,7 @@ Ask directly when you want a quick answer, then use the dashboard or CLI when yo
 ```bash
 git clone https://github.com/g-battaglia/mantecato-analytics.git
 cd mantecato-analytics
-npm install --legacy-peer-deps
+npm install --legacy-peer-deps   # required, see Important Notes
 
 cp .env.example .env   # add your DATABASE_URL and a random SESSION_SECRET
 
@@ -62,7 +63,7 @@ npm run dev
 
 Open `http://localhost:3000` and log in with your Umami credentials.
 
-> 💡 **Tip:** You can paste the steps above into Claude Code, OpenCode, Cursor, or Cline and let the agent set everything up for you automatically.
+> 💡 **Tip:** You can paste the steps above into Claude Code, OpenCode, Cursor, or Cline and let the agent handle the setup.
 
 ### 🔑 Generate an API key
 
@@ -86,13 +87,13 @@ Mantecato works with AI coding agents in two main ways:
 
 ### Ready-to-use agent configs
 
-This repo includes pre-built configurations for popular AI tools. Open the project folder in your agent and start asking questions:
+This repo includes pre-built configurations for popular AI tools:
 
 | Tool | What's included | How to start |
 |------|----------------|-------------|
-| **OpenCode** | `site-analyst` agent + 3 analysis skills | `cd mantecato-analytics && opencode`, select **site-analyst** from the agent picker |
-| **Claude Code** | `CLAUDE.md` + 3 slash commands | `cd mantecato-analytics && claude`, use `/project:traffic-report`, `/project:content-audit`, `/project:funnel-analysis` |
-| **OpenClaw** | 3 analysis skills (traffic-report, content-audit, funnel-analysis) | Install skills from the `.openclaw/` directory, then ask questions or invoke skills |
+| **OpenCode** | `site-analyst` agent + 3 analysis skills | Open the project with `opencode`, select **site-analyst** from the agent picker |
+| **Claude Code** | `CLAUDE.md` + 3 slash commands | Open the project with `claude`, use `/project:traffic-report` |
+| **OpenClaw** | 3 analysis skills | Install skills from `.openclaw/`, then ask questions or invoke skills |
 | **Cline** | `.clinerules` with full CLI reference | Open the project in VS Code with Cline installed |
 | **Cursor** | `.cursorrules` with full CLI reference | Open the project in Cursor |
 
@@ -122,7 +123,7 @@ Where to put this config depends on your tool. See **[docs/ai-agents.md](docs/ai
 
 ## 📊 Web Dashboard
 
-The web dashboard gives you a visual view of the same analytics data:
+The web dashboard includes 16 pages:
 
 | Page | What it shows |
 |------|-------------|
@@ -147,7 +148,7 @@ The web dashboard gives you a visual view of the same analytics data:
 
 ## ⌨️ CLI
 
-The same analytics data is available in your terminal:
+All analytics commands are available in your terminal:
 
 ```bash
 # Overview stats
