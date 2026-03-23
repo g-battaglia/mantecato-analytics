@@ -8,6 +8,33 @@
 
 ---
 
+## Quick Agentic Start
+
+Already have Node.js 22+, a Umami PostgreSQL database, and an AI coding agent? Paste this prompt into **Claude Code**, **OpenCode**, **Cursor**, or **Cline** and let it do everything:
+
+> ```
+> Clone and set up Mantecato for me. Here's what you need:
+>
+> 1. git clone https://github.com/g-battaglia/mantecato-analytics.git && cd mantecato-analytics
+> 2. npm install --legacy-peer-deps
+> 3. Copy .env.example to .env and set these values:
+>    - DATABASE_URL=<my Umami PostgreSQL connection string>
+>    - SESSION_SECRET=<generate a random 64-char hex string>
+> 4. Run: npx prisma db pull && npx prisma generate
+> 5. Start the dev server: npm run dev -- -p 3001
+> 6. Open http://localhost:3001, log in with my Umami credentials,
+>    go to Settings > API Keys, create a new key, and give it to me.
+> 7. Add MANTECATO_API_KEY=<the key> to .env
+> 8. Test the CLI works: npx tsx src/cli/index.ts sites
+> 9. Once everything is running, give me a traffic report for my main site
+>    using the /project:traffic-report slash command (Claude Code) or the
+>    traffic-report skill (OpenCode).
+> ```
+
+Replace `<my Umami PostgreSQL connection string>` with your actual `DATABASE_URL`. The agent handles the rest — install, configure, generate the Prisma client, start the server, and run your first analysis.
+
+---
+
 ## Your Analytics, Agent-Accessible
 
 Mantecato ships with pre-built agent configurations for **OpenCode**, **Claude Code**, **Cline**, and **Cursor**. Point your agent at your Umami data and start asking questions:
