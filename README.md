@@ -1,18 +1,16 @@
-# Mantecato
+# 🧠 Mantecato
 
-> **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
+> ⚠️ **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
 
-AI-powered analytics for your [Umami](https://umami.is) data. Connect Mantecato to your existing Umami database and analyze your traffic with AI agents, a terminal CLI, or a modern web dashboard.
+**Talk to your analytics.** Mantecato connects to your existing [Umami](https://umami.is) database and lets you analyze traffic by simply asking an AI agent — no dashboards to click through, no SQL to write, no new tracking scripts to install.
 
-No data duplication. No new tracking script. Just plug in and start asking questions.
+It also ships with a full **web dashboard**, a **38-command CLI**, and a **41-tool MCP server** — so you can access your data however you prefer.
 
 ![Mantecato Dashboard](public/screenshot.png)
 
 ---
 
-## What You Can Do
-
-Ask your AI agent questions in plain language:
+## 💬 Just Ask
 
 ```
 You:    "Analyze traffic for the last 30 days. Which pages are losing visitors?
@@ -29,7 +27,7 @@ No dashboard clicking. No SQL. Just ask.
 
 ---
 
-## Get Started
+## 🚀 Get Started
 
 ### What you need
 
@@ -54,9 +52,9 @@ npm run dev
 
 Open `http://localhost:3000` and log in with your Umami credentials.
 
-> **Tip:** You can paste the steps above into Claude Code, OpenCode, Cursor, or Cline and let the agent set everything up for you automatically.
+> 💡 **Tip:** You can paste the steps above into Claude Code, OpenCode, Cursor, or Cline and let the agent set everything up for you automatically.
 
-### Generate an API key
+### 🔑 Generate an API key
 
 API keys are needed for the CLI and AI agent integrations:
 
@@ -67,14 +65,14 @@ API keys are needed for the CLI and AI agent integrations:
 
 ---
 
-## Use with AI Agents
+## 🤖 Use with AI Agents
 
 Mantecato works with any AI coding agent. There are two ways to connect:
 
 | Method | How it works | Best for |
 |--------|-------------|----------|
-| **CLI** | The agent runs terminal commands to query your data | OpenCode, Claude Code, OpenClaw, Cline — any agent with shell access |
-| **MCP** | The agent calls structured tools via [Model Context Protocol](https://modelcontextprotocol.io/) | Claude Desktop, Cursor, OpenClaw, any MCP-compatible client |
+| **🖥️ CLI** | The agent runs terminal commands to query your data | OpenCode, Claude Code, OpenClaw, Cline — any agent with shell access |
+| **🔌 MCP** | The agent calls structured tools via [Model Context Protocol](https://modelcontextprotocol.io/) | Claude Desktop, Cursor, OpenClaw, any MCP-compatible client |
 
 ### Ready-to-use agent configs
 
@@ -112,32 +110,32 @@ Where to put this config depends on your tool. See **[docs/ai-agents.md](docs/ai
 
 ---
 
-## Web Dashboard
+## 📊 Web Dashboard
 
 16 pages covering every angle of your analytics:
 
 | Page | What it shows |
 |------|-------------|
-| **Overview** | Pageviews, visitors, visits, bounce rate, avg duration with time series and annotations |
-| **Pages** | Per-page views, time-on-page, entries/exits, bounce rate |
-| **Sources** | Referrers, UTM params, channels, click IDs |
-| **Events** | Custom event metrics with property breakdown |
-| **Sessions** | Session list with full event-by-event replay |
-| **Devices** | Browser, OS, device type, screen size, language |
-| **Geo** | Country/region/city with interactive world map |
-| **Realtime** | Live active visitors and event stream |
-| **Compare** | Side-by-side period comparison |
-| **Retention** | Cohort retention matrix |
-| **Funnels** | Multi-step conversion with drop-off rates |
-| **Journeys** | Sankey diagram of user paths |
-| **Revenue** | Revenue summary, time series, breakdowns |
-| **Engagement** | Session duration distribution and percentiles |
-| **Dashboards** | Custom drag-and-drop widget dashboards with PDF/PNG export |
-| **Settings** | Site management, API key generation |
+| 📈 **Overview** | Pageviews, visitors, visits, bounce rate, avg duration with time series and annotations |
+| 📄 **Pages** | Per-page views, time-on-page, entries/exits, bounce rate |
+| 🔗 **Sources** | Referrers, UTM params, channels, click IDs |
+| ⚡ **Events** | Custom event metrics with property breakdown |
+| 👤 **Sessions** | Session list with full event-by-event replay |
+| 💻 **Devices** | Browser, OS, device type, screen size, language |
+| 🌍 **Geo** | Country/region/city with interactive world map |
+| 🔴 **Realtime** | Live active visitors and event stream |
+| ⚖️ **Compare** | Side-by-side period comparison |
+| 🔄 **Retention** | Cohort retention matrix |
+| 🔽 **Funnels** | Multi-step conversion with drop-off rates |
+| 🗺️ **Journeys** | Sankey diagram of user paths |
+| 💰 **Revenue** | Revenue summary, time series, breakdowns |
+| ⏱️ **Engagement** | Session duration distribution and percentiles |
+| 🎛️ **Dashboards** | Custom drag-and-drop widget dashboards with PDF/PNG export |
+| ⚙️ **Settings** | Site management, API key generation |
 
 ---
 
-## CLI
+## ⌨️ CLI
 
 Every metric from the dashboard, available in your terminal:
 
@@ -159,7 +157,7 @@ npm run cli -- devices --site mysite.com --dimension browser --filter country:eq
 
 ---
 
-## Container Deployment
+## 🐳 Container Deployment
 
 ```bash
 # Docker Compose
@@ -174,19 +172,19 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 
 ---
 
-## Documentation
+## 📚 Documentation
 
 | Doc | What it covers |
 |-----|---------------|
-| **[AI Agent Setup](docs/ai-agents.md)** | Step-by-step setup for OpenCode, Claude Code, Claude Desktop, Cline, Cursor |
-| **[CLI Reference](docs/cli.md)** | All 38 commands, options, filters, examples |
-| **[MCP Server](docs/mcp-server.md)** | All 41 tools, parameters, examples |
-| **[Authentication](docs/authentication.md)** | API key generation, security, management |
-| **[Docker](docs/docker.md)** | Container deployment, Docker Compose, production tips |
+| 🤖 **[AI Agent Setup](docs/ai-agents.md)** | Step-by-step setup for OpenCode, Claude Code, Claude Desktop, OpenClaw, Cline, Cursor |
+| ⌨️ **[CLI Reference](docs/cli.md)** | All 38 commands, options, filters, examples |
+| 🔌 **[MCP Server](docs/mcp-server.md)** | All 41 tools, parameters, examples |
+| 🔑 **[Authentication](docs/authentication.md)** | API key generation, security, management |
+| 🐳 **[Docker](docs/docker.md)** | Container deployment, Docker Compose, production tips |
 
 ---
 
-## Important Notes
+## ⚠️ Important Notes
 
 - **Read-only database** — Umami owns the schema. Mantecato only writes to the `report` table (for API keys, saved views, etc.). Never run Prisma migrations.
 - `npm install` requires `--legacy-peer-deps` due to react-simple-maps + React 19.
@@ -194,7 +192,7 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 ---
 
 <details>
-<summary><strong>Tech Stack</strong></summary>
+<summary>🛠️ <strong>Tech Stack</strong></summary>
 
 | Layer | Technology |
 |-------|-----------|
@@ -211,7 +209,7 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 </details>
 
 <details>
-<summary><strong>Project Structure</strong></summary>
+<summary>📁 <strong>Project Structure</strong></summary>
 
 ```
 src/
@@ -225,6 +223,7 @@ src/
   stores/         # Zustand stores
 docs/             # Documentation
 .opencode/        # OpenCode agent + skills
+.openclaw/        # OpenClaw skills
 .claude/          # Claude Code slash commands
 packages/tracker/ # Lightweight tracking script
 ```
