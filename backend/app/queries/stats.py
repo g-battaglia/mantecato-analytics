@@ -120,6 +120,7 @@ async def get_top_pages(
     end_date: datetime,
     limit: int = 10,
     filters: list[Filter] | None = None,
+    page_mode: str = "path",
 ) -> list[dict[str, Any]]:
     filters = filters or []
     result = build_filter_sql(filters)
@@ -131,9 +132,15 @@ async def get_top_pages(
         else ""
     )
 
+    if page_mode == "slug":
+        url_expr = "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
+        url_select = f"CASE WHEN {url_expr} = '' THEN '/' ELSE {url_expr} END"
+    else:
+        url_select = "we.url_path"
+
     rows = await raw_query(
         f"""SELECT
-      we.url_path,
+      {url_select} AS url_path,
       COUNT(*)::bigint AS views,
       COUNT(DISTINCT we.session_id)::bigint AS visitors
     FROM website_event we
@@ -142,7 +149,7 @@ async def get_top_pages(
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
       {filter_where}
-    GROUP BY we.url_path
+    GROUP BY url_path
     ORDER BY views DESC
     LIMIT {limit}""",
         {

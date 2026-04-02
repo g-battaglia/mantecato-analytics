@@ -7,7 +7,7 @@
     "mantecato": "./src/cli/index.ts"
   },
   "scripts": {
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev": "./dev.sh",
     "dev:frontend": "npm --prefix frontend run dev -- --host 0.0.0.0 --port 4180",
     "dev:backend": "./backend/venv/bin/python -m uvicorn app.main:app --app-dir backend --reload --port 8100",
     "build": "npm run build:frontend",

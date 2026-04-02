@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
+import { usePreferencesStore } from "@/stores/preferences";
 
 interface StatsBlock {
   pageviews: number;
@@ -49,11 +50,14 @@ interface OverviewData {
 
 function useOverviewData(siteId: string) {
   const { params, queryKeyParts } = useDateParams();
+  const pageMode = usePreferencesStore((s) => s.pageMode);
 
   return useQuery<OverviewData>({
-    queryKey: ["overview", siteId, ...queryKeyParts],
+    queryKey: ["overview", siteId, pageMode, ...queryKeyParts],
     queryFn: async () => {
-      const res = await fetch(`/api/sites/${siteId}/stats?${params}`);
+      const p = new URLSearchParams(params);
+      p.set("mode", pageMode);
+      const res = await fetch(`/api/sites/${siteId}/stats?${p}`);
       if (!res.ok) throw new Error("Failed to fetch overview data");
       return res.json();
     },

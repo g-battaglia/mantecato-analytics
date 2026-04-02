@@ -26,7 +26,7 @@ export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
       theme: "system",
-      defaultDateRange: "30d",
+      defaultDateRange: "24h",
       defaultGranularity: "auto",
       defaultComparison: "previous_period",
       tableRows: 10,

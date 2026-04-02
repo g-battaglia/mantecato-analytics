@@ -26,7 +26,7 @@ interface FiltersState {
 }
 
 export const useFiltersStore = create<FiltersState>((set) => ({
-  preset: "30d",
+  preset: "24h",
   customStart: null,
   customEnd: null,
   granularity: "auto",

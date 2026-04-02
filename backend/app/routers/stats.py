@@ -36,6 +36,7 @@ async def get_stats(
     end: str | None = Query(None),
     granularity: str = Query("day"),
     section: str | None = Query(None),
+    mode: str = Query("path"),
     filters: list = Depends(parse_filters),
 ):
     preset = range
@@ -52,8 +53,9 @@ async def get_stats(
                 site_id, start_date, end_date, granularity, filters
             )
         if section == "pages":
+            page_mode = "slug" if mode == "slug" else "path"
             return await q_stats.get_top_pages(
-                site_id, start_date, end_date, 10, filters
+                site_id, start_date, end_date, 10, filters, page_mode
             )
         if section == "referrers":
             return await q_stats.get_top_referrers(
@@ -97,7 +99,7 @@ async def get_stats(
         q_stats.get_pageview_time_series(
             site_id, prev_range.start_date, prev_range.end_date, granularity, filters
         ),
-        q_stats.get_top_pages(site_id, start_date, end_date, 10, filters),
+        q_stats.get_top_pages(site_id, start_date, end_date, 10, filters, "slug" if mode == "slug" else "path"),
         q_stats.get_top_referrers(site_id, start_date, end_date, 10, filters),
         q_stats.get_top_events(site_id, start_date, end_date, 10, filters),
         q_stats.get_device_breakdown(
