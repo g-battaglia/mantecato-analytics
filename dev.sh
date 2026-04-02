@@ -132,8 +132,18 @@ do_start() {
 
   printf "%bBoth services running. Press Ctrl+C to stop.%b\n" "$GREEN" "$NC"
 
-  wait -n "${PIDS[@]}" 2>/dev/null || true
-  printf "%bA process exited unexpectedly — cleaning up.%b\n" "$YELLOW" "$NC"
+  # Monitor loop — check both PIDs every second
+  while true; do
+    for i in "${!PIDS[@]}"; do
+      if ! kill -0 "${PIDS[$i]}" 2>/dev/null; then
+        local name="backend"
+        (( i == 1 )) && name="frontend"
+        printf "%b%s (PID %s) exited unexpectedly — cleaning up.%b\n" "$YELLOW" "$name" "${PIDS[$i]}" "$NC"
+        exit 1
+      fi
+    done
+    sleep 1
+  done
 }
 
 # ── Route command ────────────────────────────────────────────────────
