@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useMemo, useState } from "react";
+import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { MetricCard } from "@/components/data/MetricCard";
 import { AreaChart } from "@/components/charts/AreaChart";
@@ -17,6 +17,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
 import { usePreferencesStore } from "@/stores/preferences";
+import { DetailSheet, type DetailKind } from "@/components/overview/DetailSheet";
 
 interface StatsBlock {
   pageviews: number;
@@ -95,9 +96,9 @@ const ROW =
 export function OverviewPage() {
   const params = useParams();
   const siteId = params.siteId as string;
-  const navigate = useNavigate();
   const { data, isLoading } = useOverviewData(siteId);
   const { data: annotations = [] } = useAnnotations();
+  const [detail, setDetail] = useState<DetailKind | null>(null);
 
   const stats = data?.stats;
   const prev = data?.previousStats;
@@ -111,17 +112,6 @@ export function OverviewPage() {
         : [],
     [annotations, data?.timeseries]
   );
-
-  const basePath = `/sites/${siteId}`;
-
-  const goWithFilter = (
-    page: string,
-    column: string,
-    operator: string,
-    value: string
-  ) => {
-    navigate(`${basePath}/${page}?f=${column}:${operator}:${encodeURIComponent(value)}`);
-  };
 
   return (
     <div className="space-y-4">
@@ -223,14 +213,7 @@ export function OverviewPage() {
                 <div
                   key={s.section}
                   className={ROW}
-                  onClick={() =>
-                    goWithFilter(
-                      "pages",
-                      "url_path",
-                      "starts_with",
-                      s.section
-                    )
-                  }
+                  onClick={() => setDetail({ type: "section", value: s.section })}
                 >
                   <span className="truncate font-mono text-xs">
                     {s.section}
@@ -284,9 +267,7 @@ export function OverviewPage() {
                   <div
                     key={page.urlPath}
                     className={ROW}
-                    onClick={() =>
-                      goWithFilter("pages", "url_path", "eq", page.urlPath)
-                    }
+                    onClick={() => setDetail({ type: "page", value: page.urlPath })}
                   >
                     <span className="truncate font-mono text-xs">
                       {page.urlPath}
@@ -329,14 +310,7 @@ export function OverviewPage() {
                   <div
                     key={ref.referrerDomain}
                     className={ROW}
-                    onClick={() =>
-                      goWithFilter(
-                        "sources",
-                        "referrer_domain",
-                        "eq",
-                        ref.referrerDomain
-                      )
-                    }
+                    onClick={() => setDetail({ type: "referrer", value: ref.referrerDomain })}
                   >
                     <span className="truncate">{ref.referrerDomain}</span>
                     <span className="tabular-nums font-medium">
@@ -375,14 +349,7 @@ export function OverviewPage() {
                   <div
                     key={evt.eventName}
                     className={ROW}
-                    onClick={() =>
-                      goWithFilter(
-                        "events",
-                        "event_name",
-                        "eq",
-                        evt.eventName
-                      )
-                    }
+                    onClick={() => setDetail({ type: "event", value: evt.eventName })}
                   >
                     <span className="truncate font-mono text-xs">
                       {evt.eventName}
@@ -423,9 +390,7 @@ export function OverviewPage() {
                   <div
                     key={b.value}
                     className={ROW}
-                    onClick={() =>
-                      goWithFilter("devices", "browser", "eq", b.value)
-                    }
+                    onClick={() => setDetail({ type: "browser", value: b.value })}
                   >
                     <span className="truncate">{b.value}</span>
                     <span className="tabular-nums font-medium">
@@ -438,6 +403,9 @@ export function OverviewPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Detail slide-out panel */}
+      <DetailSheet detail={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
