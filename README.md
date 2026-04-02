@@ -2,9 +2,9 @@
 
 > ⚠️ **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
 
-**Talk to your analytics.** Mantecato connects to your existing [Umami](https://umami.is) database and lets you analyze traffic in natural language through an AI agent, explore it visually in a web dashboard, or script queries from the terminal and MCP.
+Mantecato is an analytics platform that connects to your existing [Umami](https://umami.is) database. It provides a **web dashboard** with features that go beyond what Umami offers — funnels, retention, journeys, revenue tracking, session replay, real-time monitoring, custom dashboards with PDF/PNG export — plus a **38-command CLI** and a **41-tool MCP server**.
 
-No new tracking scripts, no SQL for routine analysis. One data source, three interfaces: a **web dashboard**, a **38-command CLI**, and a **41-tool MCP server**.
+It integrates directly with **Claude Code**, **OpenCode**, **OpenClaw**, **Cursor**, and **Cline**, so you can query your analytics in natural language from your coding agent without leaving the terminal.
 
 ![Mantecato Dashboard](public/screenshot.png)
 

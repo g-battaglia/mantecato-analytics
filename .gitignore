@@ -50,3 +50,4 @@ packages/tracker/node_modules
 # screenshots
 *.png
 !public/screenshot.png
+neondb-dump.backup
