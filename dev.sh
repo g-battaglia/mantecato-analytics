@@ -5,6 +5,14 @@ set -eo pipefail
 CYAN=$'\033[0;36m'  GREEN=$'\033[0;32m'  RED=$'\033[0;31m'
 YELLOW=$'\033[1;33m'  BOLD=$'\033[1m'  NC=$'\033[0m'
 
+# ── Load .env ────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+  set -a
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
+
 FRONTEND_PORT=${FRONTEND_PORT:-4180}
 BACKEND_PORT=${BACKEND_PORT:-8100}
 
