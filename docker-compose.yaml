@@ -1,39 +1,27 @@
-# Mantecato — Docker Compose
-#
-# Usage:
-#   docker compose up -d          # start web dashboard
-#   docker compose --profile cli run --rm cli stats --site kerykeion.net
-#   docker compose --profile mcp run --rm mcp
-#
-# Compatible with Docker Desktop, Podman, and Apple Containers (container).
-# Images build for linux/amd64 and linux/arm64 (Apple Silicon native).
-
 services:
-  # ── Web Dashboard ──────────────────────────────────────────────────────────
-  web:
+  frontend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ./frontend
     ports:
-      - "${PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-4180}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "${BACKEND_PORT:-8100}:8100"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - SESSION_SECRET=${SESSION_SECRET:-mantecato-secret}
-      - NODE_ENV=production
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
-  # ── CLI (on-demand) ────────────────────────────────────────────────────────
   cli:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: builder
+      dockerfile: Dockerfile.cli
     profiles: ["cli"]
     environment:
       - DATABASE_URL=${DATABASE_URL}
@@ -41,12 +29,10 @@ services:
     entrypoint: ["npx", "tsx", "src/cli/index.ts"]
     working_dir: /app
 
-  # ── MCP Server (on-demand) ─────────────────────────────────────────────────
   mcp:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: builder
+      dockerfile: Dockerfile.cli
     profiles: ["mcp"]
     environment:
       - DATABASE_URL=${DATABASE_URL}

@@ -1,6 +1,6 @@
 # Container Deployment
 
-Run Mantecato in a container using Docker, Apple Containers, or Podman. The included Dockerfile produces a minimal production image based on `node:22-alpine`.
+Run Mantecato in containers using Docker Compose, Docker, Apple Containers, or Podman. The production stack is split into a Vite frontend container and a FastAPI backend container, with optional CLI and MCP containers.
 
 ## Compatibility
 
@@ -13,8 +13,6 @@ Run Mantecato in a container using Docker, Apple Containers, or Podman. The incl
 
 ## Quick Start with Docker Compose
 
-The simplest way to run Mantecato in a container.
-
 ### 1. Set up your `.env` file
 
 ```env
@@ -26,10 +24,11 @@ MANTECATO_API_KEY=mtk_your-key-here
 ### 2. Start the dashboard
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-The dashboard is available at `http://localhost:3000`.
+The frontend is available at `http://localhost:4180`.
+The backend API is available at `http://localhost:8100`.
 
 ### 3. Use the CLI via Docker
 
@@ -46,55 +45,32 @@ docker compose --profile mcp run --rm -i mcp
 
 ---
 
-## Quick Start with Apple Containers
+## Standalone Image Builds
 
-If you're on macOS Sequoia+ and prefer Apple's native container runtime:
-
-### Build
+### Frontend
 
 ```bash
-container build -t mantecato:latest --memory 4096MB --cpus 4 .
+docker build -t mantecato-frontend:latest ./frontend
+docker run -d --name mantecato-frontend -p 4180:80 mantecato-frontend:latest
 ```
 
-> First build takes ~5 minutes. Subsequent builds use layer caching.
-
-### Run the dashboard
+### Backend
 
 ```bash
-container run -d --name mantecato-web \
-  -p 3000:3000 \
-  --env-file .env \
-  mantecato:latest
+docker build -t mantecato-backend:latest ./backend
+docker run -d --name mantecato-backend -p 8100:8100 --env-file .env mantecato-backend:latest
 ```
 
-### Run CLI commands
+### CLI / MCP
 
 ```bash
-container run --rm \
-  --env-file .env \
-  --entrypoint "npx" \
-  mantecato:latest \
-  tsx src/cli/index.ts stats --site kerykeion.net --period 30d
-```
+docker build -t mantecato-cli:latest -f Dockerfile.cli .
 
-### Run the MCP server
+docker run --rm --env-file .env mantecato-cli:latest \
+  npx tsx src/cli/index.ts stats --site kerykeion.net --period 30d
 
-```bash
-container run --rm -i \
-  --env-file .env \
-  --entrypoint "npx" \
-  mantecato:latest \
-  tsx src/mcp/server.ts
-```
-
-### Manage containers
-
-```bash
-container logs mantecato-web    # View logs
-container stop mantecato-web    # Stop
-container rm mantecato-web      # Remove
-container ls                    # List running
-container stats                 # Resource usage
+docker run --rm -i --env-file .env mantecato-cli:latest \
+  npx tsx src/mcp/server.ts
 ```
 
 ---
@@ -108,16 +84,14 @@ container stats                 # Resource usage
 | `DATABASE_URL` | Yes | PostgreSQL connection string (your Umami database) |
 | `SESSION_SECRET` | Yes | Secret for JWT session tokens (any random string) |
 | `MANTECATO_API_KEY` | For CLI/MCP | API key for authentication |
-| `PORT` | No | Web server port (default: 3000) |
+| `FRONTEND_PORT` | No | Host port for the frontend container (default: 4180) |
+| `BACKEND_PORT` | No | Host port for the backend container (default: 8100) |
 
 ### Custom port
 
 ```bash
-# Apple Containers
-container run -d -p 8080:3000 --env-file .env mantecato:latest
-
 # Docker Compose
-PORT=8080 docker compose up -d
+FRONTEND_PORT=8080 BACKEND_PORT=8101 docker compose up -d
 ```
 
 ### Database
@@ -126,41 +100,36 @@ Mantecato connects to your existing Umami PostgreSQL database (e.g., Neon, Supab
 
 ---
 
-## How the Image Is Built
+## Images Included
 
-The Dockerfile uses a 3-stage build for minimal image size:
-
-| Stage | What it does |
-|-------|-------------|
-| `deps` | Installs npm dependencies |
-| `builder` | Generates Prisma client, builds Next.js |
-| `runner` | Production runtime with only the essentials |
-
-The final image contains the Next.js standalone server, static assets, Prisma client, and CLI/MCP source files.
+| Image | Purpose |
+|-------|---------|
+| `frontend/Dockerfile` | Builds the Vite app and serves it with nginx |
+| `backend/Dockerfile` | Runs FastAPI on port `8100` |
+| `Dockerfile.cli` | Runs the shared TypeScript CLI and MCP code with Prisma |
 
 ---
 
 ## Production Tips
 
-1. **HTTPS** — Use a reverse proxy (nginx, Caddy, Traefik) for TLS termination
-2. **Health checks** — The Docker Compose file includes a health check on port 3000
-3. **Auto-restart** — Set to `unless-stopped` for automatic recovery
-4. **Security** — The image runs as a non-root user (`nextjs`, UID 1001)
-5. **Database** — Mantecato is read-only except for the `report` table (API keys, saved views, etc.)
+1. **HTTPS** — Put a reverse proxy in front of the frontend container for TLS termination.
+2. **Backend secrets** — Keep `DATABASE_URL` and `SESSION_SECRET` only on the backend and CLI/MCP containers.
+3. **Auto-restart** — Both frontend and backend containers are configured with `unless-stopped` in Compose.
+4. **Database** — Mantecato is read-only except for the `report` table (API keys, saved views, dashboards, and exports).
 
 ## Multi-Architecture Builds
 
 ```bash
-# Apple Containers (ARM64 only)
-container build -t mantecato:latest .
+# Docker buildx (frontend)
+docker buildx build --platform linux/amd64,linux/arm64 -t mantecato-frontend ./frontend
 
-# Docker buildx (multi-arch)
-docker buildx build --platform linux/amd64,linux/arm64 -t mantecato .
+# Docker buildx (backend)
+docker buildx build --platform linux/amd64,linux/arm64 -t mantecato-backend ./backend
 ```
 
 ## Apple Containers Tips
 
-- **Memory**: Use `--memory 4096MB` — the build needs at least 2GB.
-- **CPU**: Use `--cpus 4` for faster builds.
-- **No Docker daemon**: Runs lightweight Linux VMs via Virtualization.framework.
-- **OCI compatible**: The same Dockerfile works with `container`, `docker`, and `podman`.
+- **Memory**: Give frontend builds at least 2GB.
+- **CPU**: Use `--cpus 4` for faster frontend bundle builds.
+- **No Docker daemon**: Apple Containers runs lightweight Linux VMs via Virtualization.framework.
+- **OCI compatible**: The Dockerfiles work with `container`, `docker`, and `podman`.

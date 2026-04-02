@@ -1,8 +1,14 @@
 # Mantecato — Claude Code Instructions
 
-## Next.js 16 Warning
+## Architecture
 
-This project uses Next.js 16 with breaking changes from your training data. Read `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+This project is no longer a Next.js monolith.
+
+- `frontend/` contains the Vite + React SPA.
+- `backend/` contains the FastAPI backend.
+- `src/` contains the CLI, MCP server, Prisma client, and shared TypeScript query code.
+
+Do not add or rely on `next/*` APIs unless you are explicitly working on historical migration material.
 
 ## What This Project Is
 

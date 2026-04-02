@@ -1,4 +1,6 @@
 node_modules
+frontend/node_modules
+frontend/dist
 .next
 .git
 .gitignore
@@ -8,6 +10,10 @@ node_modules
 .DS_Store
 *.png
 *.pem
+backend/venv
+backend/.venv
+.playwright-mcp
+.ruff_cache
 packages/tracker/dist
 packages/tracker/node_modules
 npm-debug.log*

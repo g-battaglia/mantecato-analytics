@@ -1,5 +1,6 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# Mantecato Architecture
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+- `frontend/` is the web app: Vite + React SPA.
+- `backend/` is the API: FastAPI on port `8100`.
+- `src/` is no longer the web app. It is kept only for the CLI, MCP server, Prisma client, and shared TypeScript query code.
+- Do not add new Next.js files or reintroduce `next/*` conventions.

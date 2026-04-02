@@ -2,7 +2,7 @@
 
 > ⚠️ **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
 
-Mantecato is an analytics platform that connects to your existing [Umami](https://umami.is) database. It provides a **web dashboard** with features that go beyond what Umami offers — funnels, retention, journeys, revenue tracking, session replay, real-time monitoring, custom dashboards with PDF/PNG export — plus a **38-command CLI** and a **41-tool MCP server**.
+Mantecato is an analytics platform that connects to your existing [Umami](https://umami.is) database. It provides a **Vite + React web dashboard** backed by a **FastAPI API**, plus a **38-command CLI** and a **41-tool MCP server**.
 
 It integrates directly with **Claude Code**, **OpenCode**, **OpenClaw**, **Cursor**, and **Cline**, so you can query your analytics in natural language from your coding agent without leaving the terminal.
 
@@ -51,17 +51,21 @@ Ask directly when you want a quick answer, then use the dashboard or CLI when yo
 ```bash
 git clone https://github.com/g-battaglia/mantecato-analytics.git
 cd mantecato-analytics
-npm install --legacy-peer-deps   # required, see Important Notes
+npm install
+npm --prefix frontend install
 
 cp .env.example .env   # add your DATABASE_URL and a random SESSION_SECRET
 
-npx prisma db pull
+python -m venv backend/venv
+./backend/venv/bin/pip install -r backend/requirements.txt
+
 npx prisma generate
 
 npm run dev
 ```
 
-Open `http://localhost:3000` and log in with your Umami credentials.
+Open `http://localhost:4180` and log in with your Umami credentials.
+The API runs on `http://localhost:8100`.
 
 > 💡 **Tip:** You can paste the steps above into Claude Code, OpenCode, Cursor, or Cline and let the agent handle the setup.
 
@@ -172,11 +176,10 @@ npm run cli -- devices --site mysite.com --dimension browser --filter country:eq
 
 ```bash
 # Docker Compose
-docker compose up -d
+docker compose up -d --build
 
 # Apple Containers (macOS Sequoia+)
-container build -t mantecato:latest --memory 4096MB --cpus 4 .
-container run -d --name mantecato -p 3000:3000 --env-file .env mantecato:latest
+docker build -t mantecato-cli:latest -f Dockerfile.cli .
 ```
 
 Full guide with production tips: **[docs/docker.md](docs/docker.md)**
@@ -198,7 +201,7 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 ## ⚠️ Important Notes
 
 - **Read-only database** — Umami remains the source of truth. Mantecato only writes to the `report` table (for API keys, saved views, and related app data). Never run Prisma migrations.
-- `npm install` requires `--legacy-peer-deps` because `react-simple-maps` is not yet aligned with React 19.
+- The root `package.json` is for the CLI, MCP server, and shared Prisma/query code. Frontend dependencies live in `frontend/package.json`.
 
 ---
 
@@ -207,7 +210,8 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 16 (Turbopack) + React 19 |
+| Frontend | Vite + React 19 |
+| Backend | FastAPI + Uvicorn |
 | Database | PostgreSQL via Prisma 7.5 |
 | UI | shadcn/ui + Radix primitives |
 | Charts | Recharts, react-simple-maps, d3-sankey |
@@ -223,15 +227,13 @@ Full guide with production tips: **[docs/docker.md](docs/docker.md)**
 <summary>📁 <strong>Project Structure</strong></summary>
 
 ```
+frontend/         # Vite + React SPA
+backend/          # FastAPI API
 src/
-  app/            # Next.js pages + API routes
   cli/            # CLI (38 commands)
   mcp/            # MCP server (41 tools)
-  components/     # React components
-  queries/        # SQL query modules
-  lib/            # Core utilities (auth, date, format, export)
-  hooks/          # React hooks
-  stores/         # Zustand stores
+  queries/        # Shared SQL query modules for CLI/MCP
+  lib/            # Shared Prisma/date/query utilities
 docs/             # Documentation
 .opencode/        # OpenCode agent + skills
 .openclaw/        # OpenClaw skills

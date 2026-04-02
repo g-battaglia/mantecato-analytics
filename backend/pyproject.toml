@@ -1,0 +1,17 @@
+[project]
+name = "mantecato-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "asyncpg>=0.30",
+    "python-jose[cryptography]>=3.3",
+    "bcrypt>=4.0",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "python-multipart>=0.0.20",
+]
+
+[tool.poe.tasks]
+dev = "uvicorn app.main:app --port 8100 --reload"
