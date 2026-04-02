@@ -81,6 +81,10 @@ async def get_stats(
             return await q_stats.get_country_breakdown(
                 site_id, start_date, end_date, 10, filters
             )
+        if section == "sections":
+            return await q_stats.get_top_sections(
+                site_id, start_date, end_date, 2, 10, filters
+            )
 
     # Full response — calculate previous period
     prev_range = get_comparison_range(
@@ -106,6 +110,7 @@ async def get_stats(
             site_id, start_date, end_date, "browser", 10, filters
         ),
         q_stats.get_country_breakdown(site_id, start_date, end_date, 10, filters),
+        q_stats.get_top_sections(site_id, start_date, end_date, 2, 10, filters),
     )
 
     return {
@@ -118,4 +123,5 @@ async def get_stats(
         "events": results[6],
         "browsers": results[7],
         "countries": results[8],
+        "sections": results[9],
     }

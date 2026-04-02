@@ -46,6 +46,12 @@ interface OverviewData {
   events: Array<{ eventName: string; count: number; visitors: number }>;
   browsers: Array<{ value: string; visitors: number }>;
   countries: Array<{ country: string; visitors: number; pageviews: number }>;
+  sections: Array<{
+    section: string;
+    views: number;
+    visitors: number;
+    pages: number;
+  }>;
 }
 
 function useOverviewData(siteId: string) {
@@ -162,6 +168,64 @@ export function OverviewPage() {
               annotations={annotationMarkers}
             />
           ) : null}
+        </CardContent>
+      </Card>
+
+      {/* Sections */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">
+            Top Sections
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Traffic grouped by URL path prefix
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-6 w-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-0">
+              <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <span>Section</span>
+                <div className="flex gap-4 text-right">
+                  <span className="w-16">Visitors</span>
+                  <span className="w-16">Views</span>
+                  <span className="w-12">Pages</span>
+                </div>
+              </div>
+              {data?.sections.map((s) => (
+                <div
+                  key={s.section}
+                  className="flex items-center justify-between py-1.5 text-sm"
+                >
+                  <span className="truncate font-mono text-xs">
+                    {s.section}
+                  </span>
+                  <div className="flex gap-4 text-right tabular-nums">
+                    <span className="w-16 text-muted-foreground">
+                      {s.visitors.toLocaleString()}
+                    </span>
+                    <span className="w-16 font-medium">
+                      {s.views.toLocaleString()}
+                    </span>
+                    <span className="w-12 text-muted-foreground">
+                      {s.pages.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {(!data?.sections || data.sections.length === 0) && (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  No section data
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

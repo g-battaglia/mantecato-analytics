@@ -170,6 +170,72 @@ async def get_top_pages(
     ]
 
 
+async def get_top_sections(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    depth: int = 2,
+    limit: int = 10,
+    filters: list[Filter] | None = None,
+) -> list[dict[str, Any]]:
+    """Group pages by the first `depth` path segments and aggregate stats."""
+    filters = filters or []
+    result = build_filter_sql(filters)
+    filter_where = result["where"]
+    filter_params = result["params"]
+    session_join = (
+        "JOIN session s ON s.session_id = we.session_id"
+        if result["needs_session_join"]
+        else ""
+    )
+
+    # depth+1 because string_to_array splits '/a/b' into ['','a','b']
+    slice_end = depth + 1
+
+    rows = await raw_query(
+        f"""SELECT
+      section,
+      SUM(views)::bigint AS views,
+      SUM(visitors)::bigint AS visitors,
+      COUNT(*)::bigint AS pages
+    FROM (
+      SELECT
+        COALESCE(
+          NULLIF(array_to_string((string_to_array(SPLIT_PART(we.url_path, '?', 1), '/'))[1:{slice_end}], '/'), ''),
+          '/'
+        ) AS section,
+        COUNT(*)::bigint AS views,
+        COUNT(DISTINCT we.session_id)::bigint AS visitors
+      FROM website_event we
+      {session_join}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        {filter_where}
+      GROUP BY we.url_path
+    ) sub
+    GROUP BY section
+    ORDER BY views DESC
+    LIMIT {limit}""",
+        {
+            "websiteId": website_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            **filter_params,
+        },
+    )
+
+    return [
+        {
+            "section": row["section"],
+            "views": int(row["views"] or 0),
+            "visitors": int(row["visitors"] or 0),
+            "pages": int(row["pages"] or 0),
+        }
+        for row in rows
+    ]
+
+
 async def get_top_referrers(
     website_id: str,
     start_date: datetime,
