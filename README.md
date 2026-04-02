@@ -1,109 +1,117 @@
-# 🧠 Mantecato
+# Mantecato
 
-> ⚠️ **Pre-alpha** — expect breaking changes. Functional but not battle-tested.
-
-Mantecato is an analytics platform that connects to your existing [Umami](https://umami.is) database. It provides a **Vite + React web dashboard** backed by a **FastAPI API**, plus a **38-command CLI** and a **41-tool MCP server**.
-
-It integrates directly with **Claude Code**, **OpenCode**, **OpenClaw**, **Cursor**, and **Cline**, so you can query your analytics in natural language from your coding agent without leaving the terminal.
+Analytics platform that connects directly to your [Umami](https://umami.is) PostgreSQL database. Provides a **Vite + React dashboard**, a **FastAPI API**, a **45-command CLI**, and a **41-tool MCP server** — so you can explore your data from the browser, the terminal, or your AI coding agent.
 
 ![Mantecato Dashboard](public/screenshot.png)
 
-## Table of Contents
-
-- [💬 Just Ask](#-just-ask)
-- [🚀 Get Started](#-get-started)
-- [🤖 Use with AI Agents](#-use-with-ai-agents)
-- [📊 Web Dashboard](#-web-dashboard)
-- [⌨️ CLI](#%EF%B8%8F-cli)
-- [🐳 Container Deployment](#-container-deployment)
-- [📚 Documentation](#-documentation)
-- [⚠️ Important Notes](#%EF%B8%8F-important-notes)
-
----
-
-## 💬 Just Ask
-
-```
-You:    "Analyze traffic for the last 30 days. Which pages are losing visitors?
-         Where is the best traffic coming from?"
-
-Agent:  "Traffic is up 12% (8,420 → 9,430 visitors). However, /blog/old-post
-         dropped 45% and accounts for most of the bounce rate increase.
-         Organic search drives 62% of quality traffic (3.2 pages/visit vs 1.4
-         from social). Recommendation: redirect /blog/old-post, double down
-         on SEO content."
-```
-
-Ask directly when you want a quick answer, then use the dashboard or CLI when you want to dig deeper.
-
----
-
-## 🚀 Get Started
-
-### What you need
-
-- **Node.js 22+**
-- A **PostgreSQL database** running [Umami](https://umami.is) (tested with Neon)
-- Your Umami database connection string
-
-### Install and run
+## Quick Start
 
 ```bash
 git clone https://github.com/g-battaglia/mantecato-analytics.git
 cd mantecato-analytics
+
+# Install dependencies
 npm install
 npm --prefix frontend install
-
-cp .env.example .env   # add your DATABASE_URL and a random SESSION_SECRET
-
-python -m venv backend/venv
+python3 -m venv backend/venv
 ./backend/venv/bin/pip install -r backend/requirements.txt
 
-npx prisma generate
+# Configure
+cp .env.example .env
+# Edit .env — add DATABASE_URL (your Umami DB) and SESSION_SECRET
 
-npm run dev
+# Generate Prisma client and start both servers
+npx prisma generate
+./dev.sh start
 ```
 
-Open `http://localhost:4180` and log in with your Umami credentials.
-The API runs on `http://localhost:8100`.
+The dashboard opens at **http://localhost:4180** (log in with your Umami credentials).
+The API runs on **http://localhost:8100**.
 
-> 💡 **Tip:** You can paste the steps above into Claude Code, OpenCode, Cursor, or Cline and let the agent handle the setup.
+### API Key
 
-### 🔑 Generate an API key
+Required for the CLI, MCP server, and AI agent integrations:
 
-API keys are needed for the CLI and AI agent integrations:
-
-1. Open the web dashboard
-2. Go to **Settings > API Keys**
-3. Click **New Key** and copy the generated key (`mtk_...`)
-4. Add it to your `.env` file: `MANTECATO_API_KEY=mtk_...`
+1. Open the dashboard → **Settings → API Keys**
+2. Click **New Key** and copy the key (`mtk_...`)
+3. Add it to `.env`: `MANTECATO_API_KEY=mtk_...`
 
 ---
 
-## 🤖 Use with AI Agents
+## Architecture
 
-Mantecato works with AI coding agents in two main ways:
+```
+frontend/          Vite + React 19 SPA (port 4180)
+backend/           FastAPI + Uvicorn (port 8100)
+src/
+  cli/             CLI — 45 commands
+  mcp/             MCP server — 41 tools
+  queries/         Shared SQL query modules (used by CLI + MCP)
+  lib/             Shared utilities (Prisma, dates, filters)
+prisma/            Prisma schema + generated client
+packages/tracker/  Lightweight tracking script
+```
 
-| Method | How it works | Best for |
-|--------|-------------|----------|
-| **🖥️ CLI** | The agent runs terminal commands to query your data | OpenCode, Claude Code, OpenClaw, Cline — any agent with shell access |
-| **🔌 MCP** | The agent calls structured tools via [Model Context Protocol](https://modelcontextprotocol.io/) | Claude Desktop, Cursor, OpenClaw, any MCP-compatible client |
+Mantecato is **read-only** against your Umami database. The only writes go to the `report` table (API keys, saved views, dashboards). Never run Prisma migrations.
 
-### Ready-to-use agent configs
+---
 
-This repo includes pre-built configurations for popular AI tools:
+## Web Dashboard
 
-| Tool | What's included | How to start |
-|------|----------------|-------------|
-| **OpenCode** | `site-analyst` agent + 3 analysis skills | Open the project with `opencode`, select **site-analyst** from the agent picker |
-| **Claude Code** | `CLAUDE.md` + 3 slash commands | Open the project with `claude`, use `/project:traffic-report` |
-| **OpenClaw** | 3 analysis skills | Install skills from `.openclaw/`, then ask questions or invoke skills |
-| **Cline** | `.clinerules` with full CLI reference | Open the project in VS Code with Cline installed |
-| **Cursor** | `.cursorrules` with full CLI reference | Open the project in Cursor |
+15 analytics pages plus a custom dashboard builder:
 
-### Add the MCP server (optional)
+| Page | Description |
+|------|-------------|
+| **Overview** | Pageviews, visitors, visits, bounce rate, avg duration, time series, annotations |
+| **Pages** | Per-page views, time-on-page, entries/exits, bounce rate |
+| **Sources** | Referrers, UTM parameters, channels, click IDs |
+| **Events** | Custom event metrics with property breakdown |
+| **Sessions** | Session list with full event-by-event replay |
+| **Devices** | Browser, OS, device type, screen size, language |
+| **Geo** | Country/region/city with interactive world map |
+| **Realtime** | Live active visitors and event stream |
+| **Compare** | Side-by-side period comparison |
+| **Retention** | Cohort retention matrix |
+| **Funnels** | Multi-step conversion with drop-off rates |
+| **Journeys** | Sankey diagram of user paths |
+| **Revenue** | Revenue summary, time series, breakdowns |
+| **Engagement** | Session duration distribution and percentiles |
+| **Dashboards** | Custom drag-and-drop widget dashboards with PDF/PNG export |
+| **Settings** | Site management, API key generation |
 
-For agents that support MCP, add this to your editor's MCP configuration:
+---
+
+## CLI
+
+```bash
+# Overview stats
+npm run cli -- stats --site mysite.com --period 30d
+
+# Top pages as JSON
+npm run cli -- pages --site mysite.com --limit 10 --format json
+
+# Funnel analysis
+npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
+
+# Filter by country
+npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
+```
+
+45 commands covering analytics queries, CRUD operations, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
+
+---
+
+## AI Agent Integrations
+
+Works with **Claude Code**, **OpenCode**, **OpenClaw**, **Cline**, **Cursor**, and any MCP-compatible client.
+
+### CLI mode (any agent with shell access)
+
+The agent runs `npm run cli -- <command>` to query your data. Works with OpenCode, Claude Code, Cline, Cursor — anything that can execute shell commands.
+
+### MCP mode (structured tool calls)
+
+Add to your editor's MCP configuration:
 
 ```json
 {
@@ -121,127 +129,63 @@ For agents that support MCP, add this to your editor's MCP configuration:
 }
 ```
 
-Where to put this config depends on your tool. See **[docs/ai-agents.md](docs/ai-agents.md)** for step-by-step instructions for each platform.
+### Ready-to-use configs
+
+| Tool | What's included |
+|------|----------------|
+| **OpenCode** | `site-analyst` agent + 3 analysis skills |
+| **Claude Code** | `CLAUDE.md` + 3 slash commands |
+| **OpenClaw** | 3 analysis skills in `.openclaw/` |
+| **Cline** | `.clinerules` with full CLI reference |
+| **Cursor** | `.cursorrules` with full CLI reference |
+
+See **[docs/ai-agents.md](docs/ai-agents.md)** for platform-specific setup instructions.
 
 ---
 
-## 📊 Web Dashboard
-
-The web dashboard includes 16 pages:
-
-| Page | What it shows |
-|------|-------------|
-| 📈 **Overview** | Pageviews, visitors, visits, bounce rate, avg duration with time series and annotations |
-| 📄 **Pages** | Per-page views, time-on-page, entries/exits, bounce rate |
-| 🔗 **Sources** | Referrers, UTM params, channels, click IDs |
-| ⚡ **Events** | Custom event metrics with property breakdown |
-| 👤 **Sessions** | Session list with full event-by-event replay |
-| 💻 **Devices** | Browser, OS, device type, screen size, language |
-| 🌍 **Geo** | Country/region/city with interactive world map |
-| 🔴 **Realtime** | Live active visitors and event stream |
-| ⚖️ **Compare** | Side-by-side period comparison |
-| 🔄 **Retention** | Cohort retention matrix |
-| 🔽 **Funnels** | Multi-step conversion with drop-off rates |
-| 🗺️ **Journeys** | Sankey diagram of user paths |
-| 💰 **Revenue** | Revenue summary, time series, breakdowns |
-| ⏱️ **Engagement** | Session duration distribution and percentiles |
-| 🎛️ **Dashboards** | Custom drag-and-drop widget dashboards with PDF/PNG export |
-| ⚙️ **Settings** | Site management, API key generation |
-
----
-
-## ⌨️ CLI
-
-All analytics commands are available in your terminal:
+## Docker
 
 ```bash
-# Overview stats
-npm run cli -- stats --site mysite.com --period 30d
-
-# Top pages as JSON
-npm run cli -- pages --site mysite.com --limit 10 --format json
-
-# Funnel analysis
-npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
-
-# Filter by country
-npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
-```
-
-38 commands covering analytics, CRUD, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
-
----
-
-## 🐳 Container Deployment
-
-```bash
-# Docker Compose
+# Full stack
 docker compose up -d --build
 
-# Apple Containers (macOS Sequoia+)
-docker build -t mantecato-cli:latest -f Dockerfile.cli .
+# CLI only (optional profile)
+docker compose --profile cli run --rm cli stats --site mysite.com
+
+# MCP server (optional profile)
+docker compose --profile mcp run --rm mcp
 ```
 
-Full guide with production tips: **[docs/docker.md](docs/docker.md)**
+Production guide: **[docs/docker.md](docs/docker.md)**
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-| Doc | What it covers |
-|-----|---------------|
-| 🤖 **[AI Agent Setup](docs/ai-agents.md)** | Step-by-step setup for OpenCode, Claude Code, Claude Desktop, OpenClaw, Cline, Cursor |
-| ⌨️ **[CLI Reference](docs/cli.md)** | All 38 commands, options, filters, examples |
-| 🔌 **[MCP Server](docs/mcp-server.md)** | All 41 tools, parameters, examples |
-| 🔑 **[Authentication](docs/authentication.md)** | API key generation, security, management |
-| 🐳 **[Docker](docs/docker.md)** | Container deployment, Docker Compose, production tips |
-
----
-
-## ⚠️ Important Notes
-
-- **Read-only database** — Umami remains the source of truth. Mantecato only writes to the `report` table (for API keys, saved views, and related app data). Never run Prisma migrations.
-- The root `package.json` is for the CLI, MCP server, and shared Prisma/query code. Frontend dependencies live in `frontend/package.json`.
+| Doc | Content |
+|-----|---------|
+| **[AI Agent Setup](docs/ai-agents.md)** | Step-by-step for each platform |
+| **[CLI Reference](docs/cli.md)** | All 45 commands, options, filters, examples |
+| **[MCP Server](docs/mcp-server.md)** | All 41 tools, parameters, examples |
+| **[Authentication](docs/authentication.md)** | API key generation and security |
+| **[Docker](docs/docker.md)** | Container deployment and production tips |
 
 ---
 
-<details>
-<summary>🛠️ <strong>Tech Stack</strong></summary>
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Vite + React 19 |
-| Backend | FastAPI + Uvicorn |
-| Database | PostgreSQL via Prisma 7.5 |
-| UI | shadcn/ui + Radix primitives |
+| Frontend | Vite 6 + React 19 + React Router 7 |
+| Styling | Tailwind CSS 4 + shadcn/ui + Radix |
 | Charts | Recharts, react-simple-maps, d3-sankey |
 | Data | TanStack Query + TanStack Table (virtualized) |
 | State | Zustand |
-| CLI | Commander.js v14 |
-| MCP | @modelcontextprotocol/sdk v1.27 |
+| Backend | FastAPI + Uvicorn + asyncpg |
+| Database | PostgreSQL via Prisma 7.5 |
+| CLI | Commander.js 14 |
+| MCP | @modelcontextprotocol/sdk |
 | Auth | JWT sessions (web), SHA-256 API keys (CLI/MCP) |
-
-</details>
-
-<details>
-<summary>📁 <strong>Project Structure</strong></summary>
-
-```
-frontend/         # Vite + React SPA
-backend/          # FastAPI API
-src/
-  cli/            # CLI (38 commands)
-  mcp/            # MCP server (41 tools)
-  queries/        # Shared SQL query modules for CLI/MCP
-  lib/            # Shared Prisma/date/query utilities
-docs/             # Documentation
-.opencode/        # OpenCode agent + skills
-.openclaw/        # OpenClaw skills
-.claude/          # Claude Code slash commands
-packages/tracker/ # Lightweight tracking script
-```
-
-</details>
 
 ## License
 
