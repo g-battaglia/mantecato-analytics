@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useParams } from "react-router";
+import { useParams, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { MetricCard } from "@/components/data/MetricCard";
 import { AreaChart } from "@/components/charts/AreaChart";
@@ -79,9 +79,23 @@ function derivedMetrics(s: StatsBlock | undefined) {
   };
 }
 
+function SkeletonRows({ count = 5 }: { count?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} className="h-6 w-full" />
+      ))}
+    </div>
+  );
+}
+
+const ROW =
+  "flex items-center justify-between py-1.5 text-sm cursor-pointer rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors";
+
 export function OverviewPage() {
   const params = useParams();
   const siteId = params.siteId as string;
+  const navigate = useNavigate();
   const { data, isLoading } = useOverviewData(siteId);
   const { data: annotations = [] } = useAnnotations();
 
@@ -97,6 +111,17 @@ export function OverviewPage() {
         : [],
     [annotations, data?.timeseries]
   );
+
+  const basePath = `/sites/${siteId}`;
+
+  const goWithFilter = (
+    page: string,
+    column: string,
+    operator: string,
+    value: string
+  ) => {
+    navigate(`${basePath}/${page}?f=${column}:${operator}:${encodeURIComponent(value)}`);
+  };
 
   return (
     <div className="space-y-4">
@@ -183,11 +208,7 @@ export function OverviewPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-6 w-full" />
-              ))}
-            </div>
+            <SkeletonRows />
           ) : (
             <div className="space-y-0">
               <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -201,7 +222,15 @@ export function OverviewPage() {
               {data?.sections.map((s) => (
                 <div
                   key={s.section}
-                  className="flex items-center justify-between py-1.5 text-sm"
+                  className={ROW}
+                  onClick={() =>
+                    goWithFilter(
+                      "pages",
+                      "url_path",
+                      "starts_with",
+                      s.section
+                    )
+                  }
                 >
                   <span className="truncate font-mono text-xs">
                     {s.section}
@@ -241,11 +270,7 @@ export function OverviewPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-6 w-full" />
-                ))}
-              </div>
+              <SkeletonRows />
             ) : (
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -258,7 +283,10 @@ export function OverviewPage() {
                 {data?.pages.map((page) => (
                   <div
                     key={page.urlPath}
-                    className="flex items-center justify-between py-1.5 text-sm"
+                    className={ROW}
+                    onClick={() =>
+                      goWithFilter("pages", "url_path", "eq", page.urlPath)
+                    }
                   >
                     <span className="truncate font-mono text-xs">
                       {page.urlPath}
@@ -290,11 +318,7 @@ export function OverviewPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-6 w-full" />
-                ))}
-              </div>
+              <SkeletonRows />
             ) : (
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -304,7 +328,15 @@ export function OverviewPage() {
                 {data?.referrers.map((ref) => (
                   <div
                     key={ref.referrerDomain}
-                    className="flex items-center justify-between py-1.5 text-sm"
+                    className={ROW}
+                    onClick={() =>
+                      goWithFilter(
+                        "sources",
+                        "referrer_domain",
+                        "eq",
+                        ref.referrerDomain
+                      )
+                    }
                   >
                     <span className="truncate">{ref.referrerDomain}</span>
                     <span className="tabular-nums font-medium">
@@ -332,11 +364,7 @@ export function OverviewPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-6 w-full" />
-                ))}
-              </div>
+              <SkeletonRows />
             ) : (
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -346,7 +374,15 @@ export function OverviewPage() {
                 {data?.events.map((evt) => (
                   <div
                     key={evt.eventName}
-                    className="flex items-center justify-between py-1.5 text-sm"
+                    className={ROW}
+                    onClick={() =>
+                      goWithFilter(
+                        "events",
+                        "event_name",
+                        "eq",
+                        evt.eventName
+                      )
+                    }
                   >
                     <span className="truncate font-mono text-xs">
                       {evt.eventName}
@@ -376,11 +412,7 @@ export function OverviewPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-6 w-full" />
-                ))}
-              </div>
+              <SkeletonRows />
             ) : (
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -390,7 +422,10 @@ export function OverviewPage() {
                 {data?.browsers.map((b) => (
                   <div
                     key={b.value}
-                    className="flex items-center justify-between py-1.5 text-sm"
+                    className={ROW}
+                    onClick={() =>
+                      goWithFilter("devices", "browser", "eq", b.value)
+                    }
                   >
                     <span className="truncate">{b.value}</span>
                     <span className="tabular-nums font-medium">

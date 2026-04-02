@@ -192,6 +192,9 @@ async def get_top_sections(
     # depth+1 because string_to_array splits '/a/b' into ['','a','b']
     slice_end = depth + 1
 
+    # Clean URL: strip query params, hash fragments, trailing slashes
+    clean_url = "REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(we.url_path, '?', 1), '#', 1), '/+$', '')"
+
     rows = await raw_query(
         f"""SELECT
       section,
@@ -201,7 +204,7 @@ async def get_top_sections(
     FROM (
       SELECT
         COALESCE(
-          NULLIF(array_to_string((string_to_array(SPLIT_PART(we.url_path, '?', 1), '/'))[1:{slice_end}], '/'), ''),
+          NULLIF(array_to_string((string_to_array({clean_url}, '/'))[1:{slice_end}], '/'), ''),
           '/'
         ) AS section,
         COUNT(*)::bigint AS views,
@@ -212,7 +215,7 @@ async def get_top_sections(
         AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
         AND we.event_type = 1
         {filter_where}
-      GROUP BY we.url_path
+      GROUP BY {clean_url}
     ) sub
     GROUP BY section
     ORDER BY views DESC
