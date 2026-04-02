@@ -20,11 +20,11 @@
 # backend
 /backend/venv
 /backend/.venv
-/backend/__pycache__
+__pycache__/
+*.pyc
 
 # legacy Next.js output
 /.next/
-/out/
 
 # production
 /build
@@ -45,8 +45,6 @@ yarn-error.log*
 .env*
 !.env.example
 
-# vercel
-.vercel
 
 # typescript
 *.tsbuildinfo
