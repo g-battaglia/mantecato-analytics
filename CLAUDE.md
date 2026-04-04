@@ -12,7 +12,7 @@ Do not add or rely on `next/*` APIs unless you are explicitly working on histori
 
 ## What This Project Is
 
-Mantecato is a standalone analytics dashboard that reads an existing Umami PostgreSQL database. It provides a web UI, a 38-command CLI, and a 41-tool MCP server.
+Mantecato is a standalone analytics dashboard that reads an existing Umami PostgreSQL database. It provides a web UI, a 39-command CLI, and a 41-tool MCP server.
 
 **You can analyze any site's traffic using the CLI.** The `DATABASE_URL` and `MANTECATO_API_KEY` environment variables are already configured.
 
@@ -34,13 +34,14 @@ All commands support these global options:
 | `-l, --limit <n>` | Max rows | `20` |
 | `-g, --granularity <g>` | `auto` `minute` `hour` `day` `week` `month` | `auto` |
 
-## All 38 Commands
+## All 39 Commands
 
 **Core:**
 - `sites` — list all tracked sites
 - `stats` — overview: pageviews, visitors, visits, bounce rate, avg duration, pages/visit
 - `timeseries` — pageview and visitor time series
 - `compare` — current vs previous period with deltas
+- `report` — full analytics report in one shot: stats, comparison, top pages, sources, events with properties, channels
 
 **Pages:**
 - `pages` — page analytics: views, time-on-page, bounce rate, entries/exits
@@ -99,15 +100,31 @@ Format: `column:operator:value` — repeatable with `--filter`.
 
 Examples:
 ```bash
-npx tsx src/cli/index.ts stats --site mysite.com --filter country:eq:US
-npx tsx src/cli/index.ts pages --site mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
+# Full report for the last 30 days
+npx tsx src/cli/index.ts report -s mysite.com -p 30d
+
+# Report for mobile traffic only
+npx tsx src/cli/index.ts report -s mysite.com -p 30d --filter device:eq:mobile
+
+# Report for Google organic traffic only
+npx tsx src/cli/index.ts report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
+
+# Report as JSON (for programmatic use)
+npx tsx src/cli/index.ts report -s mysite.com -p 90d -f json
+
+# Report for a custom date range
+npx tsx src/cli/index.ts report -s mysite.com --start 2026-03-01 --end 2026-04-01
+
+# Individual queries with filters
+npx tsx src/cli/index.ts stats -s mysite.com --filter country:eq:US
+npx tsx src/cli/index.ts pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
 ```
 
 ## Analysis Methodology
 
 When asked to analyze traffic, follow this approach:
 
-1. **Start with context.** Run `stats` and `compare` to understand the overall picture — total traffic, trends, period-over-period changes.
+1. **Start with context.** Run `report` for a full picture in one command, or `stats` and `compare` for just the numbers.
 
 2. **Go wide, then deep.** Start with high-level breakdowns (`top-pages`, `sources`, `devices`, `geo`), then drill into anomalies or interesting patterns.
 
