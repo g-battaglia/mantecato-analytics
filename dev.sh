@@ -122,15 +122,14 @@ do_start() {
     npm --prefix frontend install
   fi
 
-  if [[ ! -f backend/venv/bin/python ]]; then
-    printf "%bBackend venv not found at backend/venv.%b\n" "$RED" "$NC"
-    echo "Create it with:  python3 -m venv backend/venv && backend/venv/bin/pip install -e backend"
+  if ! command -v uv &>/dev/null; then
+    printf "%buv not found. Install it: https://docs.astral.sh/uv/%b\n" "$RED" "$NC"
     exit 1
   fi
 
   # Launch
   printf "%bStarting backend  → http://localhost:%s%b\n" "$CYAN" "$BACKEND_PORT" "$NC"
-  ./backend/venv/bin/python -m uvicorn app.main:app \
+  uv run --project backend uvicorn app.main:app \
     --app-dir backend --reload --port "$BACKEND_PORT" &
   PIDS+=($!)
 

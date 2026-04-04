@@ -11,10 +11,8 @@ git clone https://github.com/g-battaglia/mantecato-analytics.git
 cd mantecato-analytics
 
 # Install dependencies
-npm install
 npm --prefix frontend install
-python3 -m venv backend/.venv
-./backend/.venv/bin/pip install -r backend/requirements.txt
+uv sync --project backend
 
 # Configure
 cp .env.example .env
@@ -86,30 +84,26 @@ Mantecato is **read-only** against your Umami database. The only writes go to in
 
 ## CLI
 
+All CLI commands run via `uv`:
+
 ```bash
 # Full analytics report — stats, sources, pages, events, channels in one shot
-npm run cli -- report --site mysite.com --period 30d
+uv run --project backend python -m app.cli.main report --site mysite.com --period 30d
 
 # Human-friendly report with tables and bars
-npm run cli -- report --site mysite.com --period 30d -H
+uv run --project backend python -m app.cli.main report --site mysite.com --period 30d -H
 
 # Report filtered to organic search traffic only
-npm run cli -- report --site mysite.com --period 30d --filter referrer_domain:eq:google.com
+uv run --project backend python -m app.cli.main report --site mysite.com --period 30d --filter referrer_domain:eq:google.com
 
 # Report as JSON for programmatic use
-npm run cli -- report --site mysite.com --period 90d --format json
+uv run --project backend python -m app.cli.main report --site mysite.com --period 90d --format json
 
 # Individual queries
-npm run cli -- stats --site mysite.com --period 30d
-npm run cli -- pages --site mysite.com --limit 10 --format json
-npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
-npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
-```
-
-Or run directly with Python:
-
-```bash
-cd backend && .venv/bin/python -m app.cli.main report --site mysite.com --period 30d
+uv run --project backend python -m app.cli.main stats --site mysite.com --period 30d
+uv run --project backend python -m app.cli.main pages --site mysite.com --limit 10 --format json
+uv run --project backend python -m app.cli.main funnel --site mysite.com --steps "/,/pricing,/signup"
+uv run --project backend python -m app.cli.main devices --site mysite.com --dimension browser --filter country:eq:US
 ```
 
 45 commands covering analytics queries, CRUD operations, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
@@ -122,7 +116,7 @@ Works with **Claude Code**, **OpenCode**, **OpenClaw**, **Cline**, **Cursor**, a
 
 ### CLI mode (any agent with shell access)
 
-The agent runs `npm run cli -- <command>` to query your data. Works with Claude Code, OpenCode, Cline, Cursor — anything that can execute shell commands.
+The agent runs `uv run --project backend python -m app.cli.main <command>` to query your data. Works with Claude Code, OpenCode, Cline, Cursor — anything that can execute shell commands.
 
 ### MCP mode (structured tool calls)
 
@@ -132,9 +126,9 @@ Add to your editor's MCP configuration:
 {
   "mcpServers": {
     "mantecato": {
-      "command": "python",
-      "args": ["-m", "app.mcp.server"],
-      "cwd": "/path/to/mantecato-analytics/backend",
+      "command": "uv",
+      "args": ["run", "--project", "backend", "python", "-m", "app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://...",
         "MANTECATO_API_KEY": "mtk_..."

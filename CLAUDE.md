@@ -18,13 +18,7 @@ Mantecato is a standalone analytics dashboard that reads an existing Umami Postg
 ## Running CLI Commands
 
 ```bash
-python -m backend.app.cli.main <command> [options]
-```
-
-Or via npm:
-
-```bash
-npm run cli -- <command> [options]
+uv run --project backend python -m app.cli.main <command> [options]
 ```
 
 All commands support these global options:
@@ -106,23 +100,23 @@ Format: `column:operator:value` — repeatable with `--filter`.
 Examples:
 ```bash
 # Full report for the last 30 days
-python -m backend.app.cli.main report -s mysite.com -p 30d
+uv run --project backend python -m app.cli.main report -s mysite.com -p 30d
 
 # Report for mobile traffic only
-python -m backend.app.cli.main report -s mysite.com -p 30d --filter device:eq:mobile
+uv run --project backend python -m app.cli.main report -s mysite.com -p 30d --filter device:eq:mobile
 
 # Report for Google organic traffic only
-python -m backend.app.cli.main report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
+uv run --project backend python -m app.cli.main report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
 
 # Report as JSON (for programmatic use)
-python -m backend.app.cli.main report -s mysite.com -p 90d -f json
+uv run --project backend python -m app.cli.main report -s mysite.com -p 90d -f json
 
 # Report for a custom date range
-python -m backend.app.cli.main report -s mysite.com --start 2026-03-01 --end 2026-04-01
+uv run --project backend python -m app.cli.main report -s mysite.com --start 2026-03-01 --end 2026-04-01
 
 # Individual queries with filters
-python -m backend.app.cli.main stats -s mysite.com --filter country:eq:US
-python -m backend.app.cli.main pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
+uv run --project backend python -m app.cli.main stats -s mysite.com --filter country:eq:US
+uv run --project backend python -m app.cli.main pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
 ```
 
 ## Analysis Methodology
