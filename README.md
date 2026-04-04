@@ -1,6 +1,6 @@
 # Mantecato
 
-Analytics platform that connects directly to your [Umami](https://umami.is) PostgreSQL database. Provides a **Vite + React dashboard**, a **FastAPI API**, a **45-command CLI**, and a **41-tool MCP server** — so you can explore your data from the browser, the terminal, or your AI coding agent.
+Analytics platform that connects directly to your [Umami](https://umami.is) PostgreSQL database. Provides a **Vite + React dashboard**, a **FastAPI backend**, a **45-command Python CLI**, and a **41-tool MCP server** — so you can explore your data from the browser, the terminal, or your AI coding agent.
 
 ![Mantecato Dashboard](public/screenshot.png)
 
@@ -13,14 +13,14 @@ cd mantecato-analytics
 # Install dependencies
 npm install
 npm --prefix frontend install
-python3 -m venv backend/venv
-./backend/venv/bin/pip install -r backend/requirements.txt
+python3 -m venv backend/.venv
+./backend/.venv/bin/pip install -r backend/requirements.txt
 
 # Configure
 cp .env.example .env
 # Edit .env — add DATABASE_URL (your Umami DB) and SESSION_SECRET
 
-# Generate Prisma client and start both servers
+# Start both servers
 ./dev.sh start
 ```
 
@@ -41,17 +41,21 @@ Required for the CLI, MCP server, and AI agent integrations:
 
 ```
 frontend/          Vite + React 19 SPA (port 4180)
-backend/           FastAPI + Uvicorn (port 8100)
-src/
-  cli/             CLI — 45 commands
-  mcp/             MCP server — 41 tools
-  queries/         Shared SQL query modules (used by CLI + MCP)
-  lib/             Shared utilities (Prisma, dates, filters)
-prisma/            Prisma schema + generated client
+backend/
+  app/
+    routers/       FastAPI route handlers
+    queries/       Shared SQL query modules (used by API, CLI, and MCP)
+    cli/           Python CLI — 45 commands (Typer + Rich)
+    mcp/           Python MCP server — 41 tools
+    filters.py     Filter parsing and SQL building
+    database.py    asyncpg connection pool
+    date_utils.py  Date range resolution
 packages/tracker/  Lightweight tracking script
 ```
 
-Mantecato is **read-only** against your Umami database. The only writes go to the `report` table (API keys, saved views, dashboards). Never run Prisma migrations.
+The entire backend stack is Python. The CLI and MCP server share the same query modules as the API — no code duplication.
+
+Mantecato is **read-only** against your Umami database. The only writes go to internal tables (API keys, saved views, dashboards).
 
 ---
 
@@ -61,7 +65,7 @@ Mantecato is **read-only** against your Umami database. The only writes go to th
 
 | Page | Description |
 |------|-------------|
-| **Overview** | Pageviews, visitors, visits, bounce rate, avg duration, time series, annotations |
+| **Overview** | Pageviews, visitors, bounce rate, time series, top sections, channels, events with inline property breakdown |
 | **Pages** | Per-page views, time-on-page, entries/exits, bounce rate |
 | **Sources** | Referrers, UTM parameters, channels, click IDs |
 | **Events** | Custom event metrics with property breakdown |
@@ -86,8 +90,8 @@ Mantecato is **read-only** against your Umami database. The only writes go to th
 # Full analytics report — stats, sources, pages, events, channels in one shot
 npm run cli -- report --site mysite.com --period 30d
 
-# Human-friendly report with tables and sparklines
-npm run cli -- report --site mysite.com --period 30d -h
+# Human-friendly report with tables and bars
+npm run cli -- report --site mysite.com --period 30d -H
 
 # Report filtered to organic search traffic only
 npm run cli -- report --site mysite.com --period 30d --filter referrer_domain:eq:google.com
@@ -102,6 +106,12 @@ npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
 npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
 ```
 
+Or run directly with Python:
+
+```bash
+cd backend && .venv/bin/python -m app.cli.main report --site mysite.com --period 30d
+```
+
 45 commands covering analytics queries, CRUD operations, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
 
 ---
@@ -112,7 +122,7 @@ Works with **Claude Code**, **OpenCode**, **OpenClaw**, **Cline**, **Cursor**, a
 
 ### CLI mode (any agent with shell access)
 
-The agent runs `npm run cli -- <command>` to query your data. Works with OpenCode, Claude Code, Cline, Cursor — anything that can execute shell commands.
+The agent runs `npm run cli -- <command>` to query your data. Works with Claude Code, OpenCode, Cline, Cursor — anything that can execute shell commands.
 
 ### MCP mode (structured tool calls)
 
@@ -123,8 +133,8 @@ Add to your editor's MCP configuration:
   "mcpServers": {
     "mantecato": {
       "command": "python",
-      "args": ["-m", "backend.app.mcp.server"],
-      "cwd": "/path/to/mantecato-analytics",
+      "args": ["-m", "app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics/backend",
       "env": {
         "DATABASE_URL": "postgresql://...",
         "MANTECATO_API_KEY": "mtk_..."
@@ -155,7 +165,7 @@ See **[docs/ai-agents.md](docs/ai-agents.md)** for platform-specific setup instr
 docker compose up -d --build
 
 # CLI only (optional profile)
-docker compose --profile cli run --rm cli stats --site mysite.com
+docker compose --profile cli run --rm cli report --site mysite.com
 
 # MCP server (optional profile)
 docker compose --profile mcp run --rm mcp
@@ -187,9 +197,9 @@ Production guide: **[docs/docker.md](docs/docker.md)**
 | Data | TanStack Query + TanStack Table (virtualized) |
 | State | Zustand |
 | Backend | FastAPI + Uvicorn + asyncpg |
-| Database | PostgreSQL via Prisma 7.5 |
-| CLI | Commander.js 14 |
-| MCP | @modelcontextprotocol/sdk |
+| CLI | Typer + Rich |
+| MCP | mcp Python SDK |
+| Database | PostgreSQL (direct asyncpg) |
 | Auth | JWT sessions (web), SHA-256 API keys (CLI/MCP) |
 
 ## License
