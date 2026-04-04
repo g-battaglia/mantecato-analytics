@@ -40,12 +40,13 @@ import {
   DEFAULT_WIDGET_SIZES as SIZES,
   WIDGET_TYPE_LABELS as LABELS,
 } from "@/lib/dashboard-types";
+import { apiFetch } from "@/lib/api";
 
 function useDashboard(id: string) {
   return useQuery<Dashboard>({
     queryKey: ["dashboard", id],
     queryFn: async () => {
-      const res = await fetch(`/api/dashboards/${id}`);
+      const res = await apiFetch(`/api/dashboards/${id}`);
       if (!res.ok) throw new Error("Not found");
       return res.json();
     },
@@ -63,7 +64,7 @@ export function DashboardDetailPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (config: DashboardConfig) => {
-      const res = await fetch(`/api/dashboards/${dashboardId}`, {
+      const res = await apiFetch(`/api/dashboards/${dashboardId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config }),

@@ -1,47 +1,37 @@
 """
-Auth routes — POST /api/auth (login) and DELETE /api/auth (logout).
+Auth routes — POST /api/auth (login).
+
+Returns a JWT token in the response body. The client stores it and sends it
+as Authorization: Bearer <token> on subsequent requests.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, status
 
-from ..auth import COOKIE_NAME, COOKIE_MAX_AGE, verify_credentials, create_session_token
+from ..auth import verify_credentials, create_session_token
 from ..models import LoginRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("")
-async def login(body: LoginRequest, response: Response):
-    """Authenticate user and set session cookie."""
+async def login(body: LoginRequest):
+    """Authenticate user and return JWT token."""
     session = await verify_credentials(body.username, body.password)
     if not session:
-        return {"error": "Invalid username or password"}, 401
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password",
+        )
 
     token = create_session_token(session)
 
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=token,
-        max_age=COOKIE_MAX_AGE,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        path="/",
-    )
-
     return {
+        "token": token,
         "user": {
             "userId": session["userId"],
             "username": session["username"],
             "role": session["role"],
-        }
+        },
     }
-
-
-@router.delete("")
-async def logout(response: Response):
-    """Clear the session cookie."""
-    response.delete_cookie(key=COOKIE_NAME, path="/")
-    return {"success": True}

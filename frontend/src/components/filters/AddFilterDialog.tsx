@@ -27,6 +27,7 @@ import {
 } from "@/lib/constants";
 import { useFiltersStore } from "@/stores/filters";
 import { useDateParams } from "@/hooks/use-site-query";
+import { apiFetch } from "@/lib/api";
 
 export function AddFilterDialog() {
   const [open, setOpen] = useState(false);
@@ -51,7 +52,7 @@ export function AddFilterDialog() {
         const p = new URLSearchParams(dateParams);
         p.set("column", col);
         if (q) p.set("search", q);
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/sites/${siteId}/filter-values?${p}`
         );
         if (res.ok) {

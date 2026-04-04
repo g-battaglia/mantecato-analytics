@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Moon, Sun, LogOut, Share2, Check } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { useAuthStore } from "@/stores/auth";
 
 export function Header({
   title,
@@ -16,9 +17,10 @@ export function Header({
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
   const [copied, setCopied] = useState(false);
+  const clearToken = useAuthStore((s) => s.clearToken);
 
-  async function handleLogout() {
-    await fetch("/api/auth", { method: "DELETE" });
+  function handleLogout() {
+    clearToken();
     navigate("/login");
   }
 

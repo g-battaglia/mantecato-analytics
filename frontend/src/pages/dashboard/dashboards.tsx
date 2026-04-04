@@ -29,12 +29,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, LayoutDashboard, Trash2 } from "lucide-react";
 import type { Dashboard } from "@/lib/dashboard-types";
+import { apiFetch } from "@/lib/api";
 
 function useSites() {
   return useQuery<Array<{ websiteId: string; name: string; domain: string }>>({
     queryKey: ["sites"],
     queryFn: async () => {
-      const res = await fetch("/api/sites");
+      const res = await apiFetch("/api/sites");
       if (!res.ok) throw new Error("Failed to fetch sites");
       return res.json();
     },
@@ -45,7 +46,7 @@ function useDashboards() {
   return useQuery<Dashboard[]>({
     queryKey: ["dashboards"],
     queryFn: async () => {
-      const res = await fetch("/api/dashboards");
+      const res = await apiFetch("/api/dashboards");
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -64,7 +65,7 @@ export function DashboardsPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/dashboards", {
+      const res = await apiFetch("/api/dashboards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description, websiteId: siteId }),
@@ -83,7 +84,7 @@ export function DashboardsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/dashboards/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/dashboards/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
     },
     onSuccess: () => {

@@ -18,6 +18,7 @@ import {
 import { Bookmark, Plus, Trash2, Check } from "lucide-react";
 import type { DateRangePreset, Granularity } from "@/lib/constants";
 import type { Filter } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
 
 interface SavedViewConfig {
   preset: string;
@@ -66,7 +67,7 @@ export function SavedViewsMenu() {
   const { data: views = [] } = useQuery<SavedView[]>({
     queryKey: ["saved-views", siteId],
     queryFn: async () => {
-      const res = await fetch(`/api/sites/${siteId}/saved-views`);
+      const res = await apiFetch(`/api/sites/${siteId}/saved-views`);
       if (!res.ok) throw new Error("Failed to fetch saved views");
       return res.json();
     },
@@ -76,7 +77,7 @@ export function SavedViewsMenu() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (payload: { name: string; config: SavedViewConfig }) => {
-      const res = await fetch(`/api/sites/${siteId}/saved-views`, {
+      const res = await apiFetch(`/api/sites/${siteId}/saved-views`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -100,7 +101,7 @@ export function SavedViewsMenu() {
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      const res = await fetch(`/api/sites/${siteId}/saved-views/${viewId}`, {
+      const res = await apiFetch(`/api/sites/${siteId}/saved-views/${viewId}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete view");

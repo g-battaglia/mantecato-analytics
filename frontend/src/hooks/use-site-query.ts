@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useFiltersStore } from "@/stores/filters";
 import { resolveDateRange, resolveGranularity } from "@/lib/date";
+import { apiFetch } from "@/lib/api";
 
 export function useDateParams() {
   const { preset, customStart, customEnd, granularity, filters } =
@@ -80,7 +81,7 @@ export function useSiteQuery<T>(
       ...(extraParams ? Object.values(extraParams) : []),
     ],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${siteId}/${endpoint}?${finalParams}`
       );
       if (!res.ok) throw new Error(`Failed to fetch ${endpoint}`);

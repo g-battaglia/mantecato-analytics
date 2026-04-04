@@ -12,6 +12,7 @@ import { useSiteQuery, useDateParams } from "@/hooks/use-site-query";
 import { formatDuration } from "@/lib/format";
 import { format, differenceInSeconds } from "date-fns";
 import { ArrowLeft, Globe, Monitor, Clock, Timer, Search, X } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 interface SessionRow {
   sessionId: string;
@@ -114,7 +115,7 @@ function SessionDetail({
   const { data, isLoading } = useQuery<SessionActivity[]>({
     queryKey: ["session-activity", siteId, sessionId],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${siteId}/sessions?sessionId=${sessionId}`
       );
       if (!res.ok) throw new Error("Failed to fetch session");

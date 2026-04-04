@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Globe } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 interface Website {
   websiteId: string;
@@ -17,7 +18,7 @@ interface Website {
 }
 
 async function fetchWebsites(): Promise<Website[]> {
-  const res = await fetch("/api/sites");
+  const res = await apiFetch("/api/sites");
   if (!res.ok) throw new Error("Failed to fetch websites");
   return res.json();
 }

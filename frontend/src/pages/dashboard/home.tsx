@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Header } from "@/components/layout/Header";
 import { Globe, ArrowRight } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ export function HomePage() {
   >({
     queryKey: ["sites"],
     queryFn: async () => {
-      const res = await fetch("/api/sites");
+      const res = await apiFetch("/api/sites");
       if (!res.ok) throw new Error("Failed to fetch sites");
       return res.json();
     },

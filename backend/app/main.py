@@ -55,11 +55,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware — allow configured origins
+# CORS middleware — allow configured origins (JWT Bearer, no cookies)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

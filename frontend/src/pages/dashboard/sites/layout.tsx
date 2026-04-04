@@ -2,6 +2,7 @@ import { useParams, Outlet, Navigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/layout/Header";
 import { FilterBar } from "@/components/filters/FilterBar";
+import { apiFetch } from "@/lib/api";
 
 interface SiteInfo {
   websiteId: string;
@@ -21,7 +22,7 @@ export function SiteLayout() {
   const { data: sites, isLoading, isError } = useQuery<SiteInfo[]>({
     queryKey: ["sites"],
     queryFn: async () => {
-      const res = await fetch("/api/sites");
+      const res = await apiFetch("/api/sites");
       if (!res.ok) throw new Error("Failed to fetch sites");
       return res.json();
     },

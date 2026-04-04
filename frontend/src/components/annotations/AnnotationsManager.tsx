@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Flag, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
+import { apiFetch } from "@/lib/api";
 
 interface Annotation {
   id: string;
@@ -49,7 +50,7 @@ export function useAnnotations() {
   return useQuery<Annotation[]>({
     queryKey: ["annotations", siteId, params.toString()],
     queryFn: async () => {
-      const res = await fetch(`/api/sites/${siteId}/annotations?${params}`);
+      const res = await apiFetch(`/api/sites/${siteId}/annotations?${params}`);
       if (!res.ok) throw new Error("Failed to fetch annotations");
       return res.json();
     },
@@ -75,7 +76,7 @@ export function AnnotationsManager() {
       date: string;
       color: string;
     }) => {
-      const res = await fetch(`/api/sites/${siteId}/annotations`, {
+      const res = await apiFetch(`/api/sites/${siteId}/annotations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -97,7 +98,7 @@ export function AnnotationsManager() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${siteId}/annotations?id=${id}&${params}`,
         { method: "DELETE" }
       );

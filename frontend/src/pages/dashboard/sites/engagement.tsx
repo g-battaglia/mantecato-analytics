@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDuration, formatPercent } from "@/lib/format";
 import type { ColumnDef } from "@tanstack/react-table";
+import { apiFetch } from "@/lib/api";
 
 interface EngagementData {
   distribution: Array<{
@@ -61,7 +62,7 @@ function useEngagementData(siteId: string) {
   return useQuery<EngagementData>({
     queryKey: ["engagement", siteId, ...queryKeyParts],
     queryFn: async () => {
-      const res = await fetch(`/api/sites/${siteId}/engagement?${params}`);
+      const res = await apiFetch(`/api/sites/${siteId}/engagement?${params}`);
       if (!res.ok) throw new Error("Failed to fetch engagement data");
       return res.json();
     },

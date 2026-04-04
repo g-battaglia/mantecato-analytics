@@ -25,8 +25,7 @@ from .config import settings
 
 # -- Constants ----------------------------------------------------------------
 
-COOKIE_NAME = "mantecato-session"
-COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days in seconds
+TOKEN_MAX_AGE = 60 * 60 * 24 * 7  # 7 days in seconds
 ALGORITHM = "HS256"
 
 # -- Password hashing ---------------------------------------------------------
@@ -52,7 +51,7 @@ def create_session_token(payload: dict[str, Any]) -> str:
         {
             **payload,
             "iat": now,
-            "exp": now.timestamp() + COOKIE_MAX_AGE,
+            "exp": now.timestamp() + TOKEN_MAX_AGE,
         },
         settings.SESSION_SECRET,
         algorithm=ALGORITHM,

@@ -17,6 +17,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
 import { usePreferencesStore } from "@/stores/preferences";
+import { apiFetch } from "@/lib/api";
 import { DetailSheet, type DetailKind } from "@/components/overview/DetailSheet";
 
 interface StatsBlock {
@@ -76,7 +77,7 @@ function useOverviewData(siteId: string) {
     queryFn: async () => {
       const p = new URLSearchParams(params);
       p.set("mode", pageMode);
-      const res = await fetch(`/api/sites/${siteId}/stats?${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/stats?${p}`);
       if (!res.ok) throw new Error("Failed to fetch overview data");
       return res.json();
     },

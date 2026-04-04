@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BarChart3, Loader2 } from "lucide-react";
+import { useAuthStore } from "@/stores/auth";
+import { apiFetch } from "@/lib/api";
 
 function LoginForm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
+  const setToken = useAuthStore((s) => s.setToken);
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -21,7 +24,7 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth", {
+      const res = await apiFetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -29,10 +32,12 @@ function LoginForm() {
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Login failed");
+        setError(data.detail || "Login failed");
         return;
       }
 
+      const data = await res.json();
+      setToken(data.token);
       navigate(redirect);
     } catch {
       setError("Network error. Please try again.");

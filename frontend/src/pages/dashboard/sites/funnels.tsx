@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
 import { Plus, Trash2, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 
 interface FunnelStep {
   step: number;
@@ -106,7 +107,7 @@ export function FunnelsPage() {
       const p = new URLSearchParams(dateParams);
       p.set("steps", JSON.stringify(validSteps));
       p.set("window", String(windowMinutes));
-      const res = await fetch(`/api/sites/${siteId}/funnels?${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/funnels?${p}`);
       if (!res.ok) throw new Error("Failed to fetch funnel");
       return res.json();
     },

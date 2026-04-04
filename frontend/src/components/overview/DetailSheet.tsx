@@ -11,6 +11,7 @@ import { AreaChart } from "@/components/charts/AreaChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
 import { formatNumber } from "@/lib/format";
+import { apiFetch } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ function useDetailData(detail: DetailKind | null) {
     queryFn: async () => {
       const p = new URLSearchParams(params);
       p.set("page", detail!.value);
-      const res = await fetch(`/api/sites/${siteId}/pages?${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/pages?${p}`);
       if (!res.ok) throw new Error("fetch failed");
       return res.json() as Promise<{
         timeseries: Array<{ time: string; views: number; visitors: number }>;
@@ -107,7 +108,7 @@ function useDetailData(detail: DetailKind | null) {
     queryFn: async () => {
       const p = new URLSearchParams(params);
       p.set("event", detail!.value);
-      const res = await fetch(`/api/sites/${siteId}/events?${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/events?${p}`);
       if (!res.ok) throw new Error("fetch failed");
       return res.json() as Promise<{
         timeseries: Array<{ time: string; count: number; visitors: number }>;
@@ -124,7 +125,7 @@ function useDetailData(detail: DetailKind | null) {
       const p = new URLSearchParams(params);
       p.set("view", "referrer-pages");
       p.set("referrer", detail!.value);
-      const res = await fetch(`/api/sites/${siteId}/sources?${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/sources?${p}`);
       if (!res.ok) throw new Error("fetch failed");
       return res.json() as Promise<
         Array<{ urlPath: string; visitors: number; views: number }>
@@ -140,7 +141,7 @@ function useDetailData(detail: DetailKind | null) {
       const p = new URLSearchParams(params);
       p.append("f", `url_path:starts_with:${detail!.value}`);
       p.set("mode", "slug");
-      const res = await fetch(`/api/sites/${siteId}/pages?${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/pages?${p}`);
       if (!res.ok) throw new Error("fetch failed");
       return res.json() as Promise<
         Array<{
@@ -163,7 +164,7 @@ function useDetailData(detail: DetailKind | null) {
     queryFn: async () => {
       const p = new URLSearchParams(params);
       p.append("f", `browser:eq:${detail!.value}`);
-      const res = await fetch(`/api/sites/${siteId}/stats?section=pages&${p}`);
+      const res = await apiFetch(`/api/sites/${siteId}/stats?section=pages&${p}`);
       if (!res.ok) throw new Error("fetch failed");
       return res.json() as Promise<
         Array<{ urlPath: string; views: number; visitors: number }>

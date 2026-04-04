@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { apiFetch } from "@/lib/api";
 
 const DATE_PRESETS = [
   { value: "24h", label: "Last 24 hours" },
@@ -89,7 +90,7 @@ export function SharePage() {
   const { data, isLoading, error } = useQuery<ShareData>({
     queryKey: ["share", shareId, range],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/share/${shareId}/stats?range=${range}&granularity=${granularity}`
       );
       if (!res.ok) {

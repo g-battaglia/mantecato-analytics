@@ -1,55 +1,56 @@
 """
 FastAPI dependencies for authentication and authorization.
 
-- get_current_user: reads JWT from the mantecato-session cookie
+- get_current_user: reads JWT or API key from Authorization: Bearer header
 - require_site_access: additionally checks website access
-- get_api_key_user: validates Bearer API key
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Cookie, Depends, HTTPException, Query, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .auth import COOKIE_NAME, verify_session_token, can_access_website
+from .auth import verify_session_token, can_access_website
 from .queries import api_keys as q_api_keys
 
 
-_bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_scheme = HTTPBearer()
 
 
 async def get_current_user(
-    request: Request,
-    access_token: str | None = Cookie(default=None, alias=COOKIE_NAME),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
 ) -> dict[str, Any]:
     """
-    Extract the current user either from a session cookie or a Bearer API key.
-    Returns the session payload dict with userId, username, role.
+    Extract the current user from Authorization: Bearer header.
+    The token can be either a JWT session token or an API key (mtk_...).
     """
-    # Try session cookie first
-    if access_token:
-        payload = verify_session_token(access_token)
-        if payload:
-            return payload
+    token = credentials.credentials
 
-    # Try Bearer API key
-    if credentials:
-        result = await q_api_keys.validate_api_key(credentials.credentials)
+    # Try API key first (prefixed with mtk_)
+    if token.startswith("mtk_"):
+        result = await q_api_keys.validate_api_key(token)
         if result:
-            # API-key auth doesn't have username/role — synthesise a minimal payload
             return {
                 "userId": result["userId"],
                 "username": "__api_key__",
                 "role": "api_key",
                 "scopes": result["scopes"],
             }
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+
+    # Try JWT session token
+    payload = verify_session_token(token)
+    if payload:
+        return payload
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Unauthorized",
+        detail="Invalid or expired token",
     )
 
 

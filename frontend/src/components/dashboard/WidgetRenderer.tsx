@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CHART_COLORS } from "@/lib/constants";
 import { formatNumber, formatPercent, percentChange } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 import type {
   DashboardWidget,
   MetricWidgetConfig,
@@ -76,7 +77,7 @@ function MetricWidget({
   const { data, isLoading } = useQuery({
     queryKey: ["widget-metric", config.siteId, config.metric, dateRange],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/stats?range=${dateRange}&section=metrics`
       );
       if (!res.ok) throw new Error("Failed");
@@ -138,7 +139,7 @@ function TimeSeriesWidget({
   const { data, isLoading } = useQuery({
     queryKey: ["widget-timeseries", config.siteId, dateRange],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/stats?range=${dateRange}&section=timeseries`
       );
       if (!res.ok) throw new Error("Failed");
@@ -194,7 +195,7 @@ function TableWidget({
     queryKey: ["widget-table", config.siteId, config.dataSource, dateRange],
     queryFn: async () => {
       const section = sectionMap[config.dataSource] ?? "pages";
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/stats?range=${dateRange}&section=${section}`
       );
       if (!res.ok) throw new Error("Failed");
@@ -267,7 +268,7 @@ function PieWidget({
     queryKey: ["widget-pie", config.siteId, config.dataSource, dateRange],
     queryFn: async () => {
       const section = sectionMap[config.dataSource] ?? "browsers";
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/stats?range=${dateRange}&section=${section}`
       );
       if (!res.ok) throw new Error("Failed");
@@ -324,7 +325,7 @@ function BarWidget({
     queryKey: ["widget-bar", config.siteId, config.dataSource, dateRange],
     queryFn: async () => {
       const section = sectionMap[config.dataSource] ?? "pages";
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/stats?range=${dateRange}&section=${section}`
       );
       if (!res.ok) throw new Error("Failed");
@@ -404,7 +405,7 @@ function MapWidget({
   const { data, isLoading } = useQuery({
     queryKey: ["widget-map", config.siteId, dateRange],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/geo?range=${dateRange}`
       );
       if (!res.ok) throw new Error("Failed");
@@ -480,7 +481,7 @@ function FunnelWidget({
         window: String(config.window),
       });
       config.steps.forEach((s) => params.append("step", s));
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/funnels?${params}`
       );
       if (!res.ok) throw new Error("Failed");
@@ -572,7 +573,7 @@ function RetentionWidget({
   const { data, isLoading } = useQuery({
     queryKey: ["widget-retention", config.siteId, config.period, dateRange],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/retention?range=${dateRange}&period=${config.period}`
       );
       if (!res.ok) throw new Error("Failed");
@@ -670,7 +671,7 @@ function ComparisonWidget({
   const { data, isLoading } = useQuery({
     queryKey: ["widget-comparison", config.siteId, config.metric, dateRange],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sites/${config.siteId}/compare?range=${dateRange}`
       );
       if (!res.ok) throw new Error("Failed");

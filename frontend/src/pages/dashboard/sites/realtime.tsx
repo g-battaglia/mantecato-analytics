@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { STALE_TIME } from "@/lib/constants";
 import { format } from "date-fns";
 import { Radio, Globe, Eye } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 interface ActiveVisitor {
   sessionId: string;
@@ -42,7 +43,7 @@ export function RealtimePage() {
   const { data } = useQuery<RealtimeData>({
     queryKey: ["realtime", siteId],
     queryFn: async () => {
-      const res = await fetch(`/api/sites/${siteId}/realtime`);
+      const res = await apiFetch(`/api/sites/${siteId}/realtime`);
       if (!res.ok) throw new Error("Failed to fetch realtime data");
       return res.json();
     },

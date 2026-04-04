@@ -44,6 +44,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import type { ScheduledExport, ScheduledExportConfig } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
 
 const COMMON_TIMEZONES = [
   "UTC",
@@ -389,7 +390,7 @@ function ApiKeysSection() {
   const { data: keys, isLoading } = useQuery<ApiKeyInfo[]>({
     queryKey: ["api-keys"],
     queryFn: async () => {
-      const res = await fetch("/api/api-keys");
+      const res = await apiFetch("/api/api-keys");
       if (!res.ok) throw new Error("Failed to fetch API keys");
       return res.json();
     },
@@ -397,7 +398,7 @@ function ApiKeysSection() {
 
   const createMutation = useMutation({
     mutationFn: async (name: string) => {
-      const res = await fetch("/api/api-keys", {
+      const res = await apiFetch("/api/api-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -417,7 +418,7 @@ function ApiKeysSection() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch("/api/api-keys", {
+      const res = await apiFetch("/api/api-keys", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -633,7 +634,7 @@ function ScheduledExportsSection({
   const { data: exports, isLoading } = useQuery<ScheduledExport[]>({
     queryKey: ["scheduled-exports"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduled-exports");
+      const res = await apiFetch("/api/scheduled-exports");
       if (!res.ok) throw new Error("Failed to fetch scheduled exports");
       return res.json();
     },
@@ -641,7 +642,7 @@ function ScheduledExportsSection({
 
   const deleteMutation = useMutation({
     mutationFn: async (exportId: string) => {
-      const res = await fetch(`/api/scheduled-exports/${exportId}`, {
+      const res = await apiFetch(`/api/scheduled-exports/${exportId}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete");
@@ -659,7 +660,7 @@ function ScheduledExportsSection({
       exportId: string;
       enabled: boolean;
     }) => {
-      const res = await fetch(`/api/scheduled-exports/${exportId}`, {
+      const res = await apiFetch(`/api/scheduled-exports/${exportId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config: { enabled } }),
@@ -818,7 +819,7 @@ function CreateExportDialog({
   const { data: websites } = useQuery<Website[]>({
     queryKey: ["websites"],
     queryFn: async () => {
-      const res = await fetch("/api/sites");
+      const res = await apiFetch("/api/sites");
       if (!res.ok) throw new Error("Failed to fetch sites");
       return res.json();
     },
@@ -838,7 +839,7 @@ function CreateExportDialog({
         ...(schedule === "monthly" ? { monthDay } : {}),
       };
 
-      const res = await fetch("/api/scheduled-exports", {
+      const res = await apiFetch("/api/scheduled-exports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, config }),

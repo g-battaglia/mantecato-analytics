@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/data/MetricCard";
 import { useFiltersStore } from "@/stores/filters";
 import { format } from "date-fns";
+import { apiFetch } from "@/lib/api";
 
 interface ComparisonData {
   current: {
@@ -37,7 +38,7 @@ export function ComparePage() {
         range: preset,
         compare: compareMode,
       });
-      const res = await fetch(`/api/sites/${siteId}/compare?${params}`);
+      const res = await apiFetch(`/api/sites/${siteId}/compare?${params}`);
       if (!res.ok) throw new Error("Failed to fetch comparison");
       return res.json();
     },
