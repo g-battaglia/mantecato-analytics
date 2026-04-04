@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ..dependencies import get_current_user
+from ..dependencies import get_current_user, require_scope
 from ..models import ScheduledExportCreate, ScheduledExportUpdate
-from ..queries import scheduled_exports as q_scheduled_exports
+from mantecato_core.queries import scheduled_exports as q_scheduled_exports
 
 router = APIRouter(prefix="/api/scheduled-exports", tags=["scheduled-exports"])
 
@@ -25,6 +25,7 @@ async def list_scheduled_exports(
 async def create_scheduled_export(
     body: ScheduledExportCreate,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     config = body.config
     if (
@@ -59,6 +60,7 @@ async def update_scheduled_export(
     export_id: str,
     body: ScheduledExportUpdate,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     updates = {}
     if body.name is not None:
@@ -80,6 +82,7 @@ async def update_scheduled_export(
 async def delete_scheduled_export(
     export_id: str,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     deleted = await q_scheduled_exports.delete_scheduled_export(
         export_id, user["userId"]

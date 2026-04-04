@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from ..dependencies import get_current_user
+from ..dependencies import get_current_user, require_scope
 from ..models import DashboardCreate, DashboardUpdate
-from ..queries import dashboards as q_dashboards
+from mantecato_core.queries import dashboards as q_dashboards
 
 router = APIRouter(prefix="/api/dashboards", tags=["dashboards"])
 
@@ -33,6 +33,7 @@ async def list_dashboards(
 async def create_dashboard(
     body: DashboardCreate,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     dashboard = await q_dashboards.create_dashboard(
         user["userId"],
@@ -60,6 +61,7 @@ async def update_dashboard(
     dashboard_id: str,
     body: DashboardUpdate,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     updates = {}
     if body.name is not None:
@@ -81,6 +83,7 @@ async def update_dashboard(
 async def delete_dashboard(
     dashboard_id: str,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     deleted = await q_dashboards.delete_dashboard(dashboard_id, user["userId"])
     if not deleted:

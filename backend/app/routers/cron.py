@@ -6,9 +6,10 @@ Executes all due scheduled exports. Protected by CRON_SECRET.
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from ..config import settings
-from ..queries import scheduled_exports as q_scheduled_exports
+from mantecato_core.queries import scheduled_exports as q_scheduled_exports
 
 router = APIRouter(prefix="/api/cron", tags=["cron"])
 
@@ -16,11 +17,13 @@ router = APIRouter(prefix="/api/cron", tags=["cron"])
 @router.get("/exports")
 async def run_scheduled_exports(request: Request):
     """Execute all due scheduled exports. Protected by CRON_SECRET."""
-    # Check CRON_SECRET if configured
     if settings.CRON_SECRET:
-        auth_header = request.headers.get("authorization")
+        auth_header = request.headers.get("authorization", "")
         if auth_header != f"Bearer {settings.CRON_SECRET}":
-            return {"error": "Unauthorized"}
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized"},
+            )
 
     due_exports = await q_scheduled_exports.get_due_exports()
 

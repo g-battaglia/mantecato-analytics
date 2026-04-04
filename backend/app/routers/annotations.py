@@ -9,10 +9,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from ..date_utils import resolve_date_range
-from ..dependencies import require_site_access
+from mantecato_core.date_utils import resolve_date_range
+from ..dependencies import require_site_access, require_scope
 from ..models import AnnotationCreate
-from ..queries import annotations as q_annotations
+from mantecato_core.queries import annotations as q_annotations
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["annotations"])
 
@@ -46,6 +46,7 @@ async def create_annotation(
     site_id: str,
     body: AnnotationCreate,
     user: dict = Depends(require_site_access),
+    _scope=Depends(require_scope("write")),
 ):
     annotation = await q_annotations.create_annotation(
         user["userId"],
@@ -63,6 +64,7 @@ async def delete_annotation(
     site_id: str,
     id: str = Query(None),
     user: dict = Depends(require_site_access),
+    _scope=Depends(require_scope("write")),
 ):
     if not id:
         return {"error": "Missing id"}

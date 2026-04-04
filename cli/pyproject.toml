@@ -1,0 +1,18 @@
+[project]
+name = "mantecato-cli"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mantecato-core>=0.1.0",
+    "typer>=0.15",
+    "rich>=13.0",
+    "textual>=3.0",
+    "tomli-w>=1.0",
+]
+
+[project.scripts]
+mantecato = "mantecato_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

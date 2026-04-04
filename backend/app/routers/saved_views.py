@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ..dependencies import get_current_user, require_site_access
+from ..dependencies import get_current_user, require_site_access, require_scope
 from ..models import SavedViewCreate, SavedViewUpdate
-from ..queries import saved_views as q_saved_views
+from mantecato_core.queries import saved_views as q_saved_views
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["saved-views"])
 
@@ -27,6 +27,7 @@ async def create_saved_view(
     site_id: str,
     body: SavedViewCreate,
     user: dict = Depends(require_site_access),
+    _scope=Depends(require_scope("write")),
 ):
     view = await q_saved_views.create_saved_view(
         user["userId"], site_id, body.name, body.description, body.config
@@ -50,6 +51,7 @@ async def update_saved_view(
     view_id: str,
     body: SavedViewUpdate,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     updates = {}
     if body.name is not None:
@@ -69,6 +71,7 @@ async def update_saved_view(
 async def delete_saved_view(
     view_id: str,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     deleted = await q_saved_views.delete_saved_view(view_id, user["userId"])
     if not deleted:

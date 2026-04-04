@@ -10,7 +10,7 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from ..dependencies import require_site_access
-from ..queries import realtime as q_realtime
+from mantecato_core.queries import realtime as q_realtime
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["realtime"])
 

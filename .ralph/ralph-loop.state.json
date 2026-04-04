@@ -1,0 +1,13 @@
+{
+  "active": true,
+  "iteration": 1,
+  "minIterations": 1,
+  "maxIterations": 0,
+  "completionPromise": "COMPLETE",
+  "tasksMode": false,
+  "taskPromise": "READY_FOR_NEXT_TASK",
+  "prompt": "Implemnet PLAN.md - afther that check that is all ok and super sicure and all working",
+  "startedAt": "2026-04-04T14:45:47.595Z",
+  "model": "",
+  "agent": "opencode"
+}

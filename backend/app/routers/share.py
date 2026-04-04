@@ -10,9 +10,9 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 
-from ..database import raw_query_one
-from ..date_utils import resolve_date_range, get_comparison_range
-from ..queries import stats as q_stats
+from mantecato_core.database import raw_query_one
+from mantecato_core.date_utils import resolve_date_range, get_comparison_range
+from mantecato_core.queries import stats as q_stats
 
 router = APIRouter(prefix="/api/share", tags=["share"])
 

@@ -9,9 +9,9 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from ..date_utils import resolve_date_range
+from mantecato_core.date_utils import resolve_date_range
 from ..dependencies import require_site_access, parse_filters
-from ..queries import sources as q_sources
+from mantecato_core.queries import sources as q_sources
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["sources"])
 

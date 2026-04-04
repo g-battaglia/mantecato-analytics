@@ -7,9 +7,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ..dependencies import get_current_user
+from ..dependencies import get_current_user, require_scope
 from ..models import ApiKeyCreate
-from ..queries import api_keys as q_api_keys
+from mantecato_core.queries import api_keys as q_api_keys
 
 router = APIRouter(prefix="/api/api-keys", tags=["api-keys"])
 
@@ -29,6 +29,7 @@ async def list_api_keys(
 async def create_api_key(
     body: ApiKeyCreate,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     result = await q_api_keys.create_api_key(user["userId"], body.name, body.scopes)
     return result
@@ -38,6 +39,7 @@ async def create_api_key(
 async def delete_api_key(
     body: ApiKeyDelete,
     user: dict = Depends(get_current_user),
+    _scope=Depends(require_scope("write")),
 ):
     deleted = await q_api_keys.delete_api_key(body.id, user["userId"])
     if not deleted:

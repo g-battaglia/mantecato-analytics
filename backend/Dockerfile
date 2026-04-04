@@ -2,13 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install uv for fast dependency resolution
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml uv.lock ./
+COPY core/ /app/core/
+RUN uv pip install --system /app/core
+
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY . .
+COPY backend/ .
 
 EXPOSE 8100
 

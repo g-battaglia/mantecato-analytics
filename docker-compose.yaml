@@ -10,33 +10,32 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "${BACKEND_PORT:-8100}:8100"
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - SESSION_SECRET=${SESSION_SECRET:-mantecato-secret}
+      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET must be set}
     restart: unless-stopped
 
   cli:
     build:
       context: .
-      dockerfile: Dockerfile.cli
+      dockerfile: cli/Dockerfile
     profiles: ["cli"]
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - MANTECATO_API_KEY=${MANTECATO_API_KEY}
-    entrypoint: ["python", "-m", "app.cli.main"]
-    working_dir: /app/backend
+    entrypoint: ["mantecato"]
 
   mcp:
     build:
       context: .
-      dockerfile: Dockerfile.cli
+      dockerfile: mcp/Dockerfile
     profiles: ["mcp"]
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - MANTECATO_API_KEY=${MANTECATO_API_KEY}
-    entrypoint: ["python", "-m", "app.mcp.server"]
-    working_dir: /app/backend
+    entrypoint: ["mantecato-mcp"]
     stdin_open: true

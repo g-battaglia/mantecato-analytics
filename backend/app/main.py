@@ -1,17 +1,10 @@
-"""
-FastAPI application entry point.
-
-Assembles all routers, configures CORS middleware, and manages the database
-connection pool lifespan.
-"""
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import get_pool, close_pool
+from mantecato_core.database import create_pool, close_pool
 from .routers import (
     auth_router,
     sites_router,
@@ -43,8 +36,7 @@ from .routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize DB pool on startup, close on shutdown."""
-    await get_pool()
+    await create_pool(dsn=settings.DATABASE_URL)
     yield
     await close_pool()
 
@@ -55,7 +47,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware — allow configured origins (JWT Bearer, no cookies)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -64,7 +55,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register all routers
 app.include_router(auth_router)
 app.include_router(sites_router)
 app.include_router(stats_router)

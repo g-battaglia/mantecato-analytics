@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from ..date_utils import resolve_date_range, get_comparison_range
+from mantecato_core.date_utils import resolve_date_range, get_comparison_range
 from ..dependencies import require_site_access
-from ..queries import compare as q_compare
+from mantecato_core.queries import compare as q_compare
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["compare"])
 
