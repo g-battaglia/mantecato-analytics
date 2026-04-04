@@ -21,6 +21,20 @@ Mantecato becomes a complete, modular analytics platform for Umami databases. Fo
 
 Plus a companion npm package (`@mantecato/tracker`) as a drop-in Umami-compatible tracker.
 
+## Hard Constraint: Umami Database Compatibility
+
+**Mantecato MUST NOT modify the Umami database schema.** This is non-negotiable.
+
+- Mantecato reads the same PostgreSQL database that Umami writes to. Users run both Umami and Mantecato side by side against the same DB.
+- **No migrations.** Mantecato never creates, alters, or drops Umami tables (`website`, `website_event`, `session`, `event_data`).
+- **No writes to Umami tables.** Mantecato is read-only against all Umami-owned tables. The only tables Mantecato writes to are its own internal tables (API keys, saved views, dashboards, annotations) which live in a separate `mantecato_` prefixed namespace.
+- **Schema follows Umami.** When Umami releases a new version that changes its schema, Mantecato adapts — not the other way around. Queries must work against Umami v2.x schema.
+- **The tracker (`@mantecato/tracker`)** sends events in the exact Umami wire format (`POST /api/send`). Events land in the standard Umami tables and are readable by both Umami's UI and Mantecato.
+- **If you need new tables** for Mantecato-specific features (saved views, dashboards, scheduled exports, API keys), they MUST use the `mantecato_` prefix and MUST NOT conflict with any Umami table.
+- **Test against a real Umami DB.** Every query change must be validated against an actual Umami PostgreSQL instance to ensure compatibility.
+
+Breaking Umami compatibility breaks the entire value proposition. Mantecato is an enhancement layer, not a replacement.
+
 ---
 
 ## Current State
