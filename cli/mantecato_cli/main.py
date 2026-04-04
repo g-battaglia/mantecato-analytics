@@ -1256,6 +1256,12 @@ def config_get(key: str = typer.Argument(..., help="Config key (e.g. database.ur
         console.print(f"[dim]{key} not set[/]")
 
 
+def _mask_value(key: str, value: str) -> str:
+    if any(s in key.lower() for s in ("password", "secret", "token", "url")):
+        return value[:8] + "****" if len(value) > 8 else "****"
+    return value
+
+
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(..., help="Config key (e.g. database.url)"),
@@ -1265,7 +1271,7 @@ def config_set(
     from mantecato_cli.config import set_value
 
     set_value(key, value)
-    console.print(f"[green]Set {key} = {value}[/]")
+    console.print(f"[green]Set {key} = {_mask_value(key, value)}[/]")
 
 
 @config_app.command("list")
@@ -1281,9 +1287,10 @@ def config_list():
         console.print(f"[bold]{section}[/]")
         if isinstance(values, dict):
             for k, v in values.items():
-                console.print(f"  {k} = {v}")
+                full_key = f"{section}.{k}"
+                console.print(f"  {k} = {_mask_value(full_key, str(v))}")
         else:
-            console.print(f"  {values}")
+            console.print(f"  {_mask_value(section, str(values))}")
 
 
 # ── TUI ─────────────────────────────────────────────────────────────────

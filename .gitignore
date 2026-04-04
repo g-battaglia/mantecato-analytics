@@ -20,6 +20,11 @@
 # backend
 /backend/venv
 /backend/.venv
+/cli/.venv
+/mcp/.venv
+/core/*.egg-info
+/cli/*.egg-info
+/mcp/*.egg-info
 __pycache__/
 *.pyc
 

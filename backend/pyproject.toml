@@ -14,5 +14,8 @@ dependencies = [
     "python-multipart>=0.0.20",
 ]
 
+[tool.uv.sources]
+mantecato-core = { path = "../core" }
+
 [tool.poe.tasks]
 dev = "uvicorn app.main:app --port 8100 --reload"

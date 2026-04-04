@@ -579,9 +579,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _dispatch(name, arguments)
     except Exception as e:
         return _err(str(e))
-    finally:
-        if not _REMOTE_MODE:
-            await close_pool()
 
 
 async def _dispatch(name: str, args: dict[str, Any]) -> list[TextContent]:
@@ -1381,11 +1378,16 @@ async def main():
             print("Error: DATABASE_URL or MANTECATO_API_URL required", file=sys.stderr)
             sys.exit(1)
         print("Mantecato MCP server (direct DB mode)", file=sys.stderr)
+        await create_pool(dsn=db_url)
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream, write_stream, server.create_initialization_options()
-        )
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
+    finally:
+        if not _REMOTE_MODE:
+            await close_pool()
 
 
 if __name__ == "__main__":
