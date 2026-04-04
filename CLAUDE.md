@@ -18,7 +18,8 @@ Mantecato is a standalone analytics dashboard that reads an existing Umami Postg
 ## Running CLI Commands
 
 ```bash
-uv run --project backend python -m app.cli.main <command> [options]
+cd backend
+uv run python -m app.cli.main <command> [options]
 ```
 
 All commands support these global options:
@@ -100,23 +101,23 @@ Format: `column:operator:value` — repeatable with `--filter`.
 Examples:
 ```bash
 # Full report for the last 30 days
-uv run --project backend python -m app.cli.main report -s mysite.com -p 30d
+uv run python -m app.cli.main report -s mysite.com -p 30d
 
 # Report for mobile traffic only
-uv run --project backend python -m app.cli.main report -s mysite.com -p 30d --filter device:eq:mobile
+uv run python -m app.cli.main report -s mysite.com -p 30d --filter device:eq:mobile
 
 # Report for Google organic traffic only
-uv run --project backend python -m app.cli.main report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
+uv run python -m app.cli.main report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
 
 # Report as JSON (for programmatic use)
-uv run --project backend python -m app.cli.main report -s mysite.com -p 90d -f json
+uv run python -m app.cli.main report -s mysite.com -p 90d -f json
 
 # Report for a custom date range
-uv run --project backend python -m app.cli.main report -s mysite.com --start 2026-03-01 --end 2026-04-01
+uv run python -m app.cli.main report -s mysite.com --start 2026-03-01 --end 2026-04-01
 
 # Individual queries with filters
-uv run --project backend python -m app.cli.main stats -s mysite.com --filter country:eq:US
-uv run --project backend python -m app.cli.main pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
+uv run python -m app.cli.main stats -s mysite.com --filter country:eq:US
+uv run python -m app.cli.main pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
 ```
 
 ## Analysis Methodology

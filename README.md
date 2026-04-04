@@ -84,26 +84,28 @@ Mantecato is **read-only** against your Umami database. The only writes go to in
 
 ## CLI
 
-All CLI commands run via `uv`:
+All CLI commands run from the `backend/` directory via `uv`:
 
 ```bash
+cd backend
+
 # Full analytics report — stats, sources, pages, events, channels in one shot
-uv run --project backend python -m app.cli.main report --site mysite.com --period 30d
+uv run python -m app.cli.main report --site mysite.com --period 30d
 
 # Human-friendly report with tables and bars
-uv run --project backend python -m app.cli.main report --site mysite.com --period 30d -H
+uv run python -m app.cli.main report --site mysite.com --period 30d -H
 
 # Report filtered to organic search traffic only
-uv run --project backend python -m app.cli.main report --site mysite.com --period 30d --filter referrer_domain:eq:google.com
+uv run python -m app.cli.main report --site mysite.com --period 30d --filter referrer_domain:eq:google.com
 
 # Report as JSON for programmatic use
-uv run --project backend python -m app.cli.main report --site mysite.com --period 90d --format json
+uv run python -m app.cli.main report --site mysite.com --period 90d --format json
 
 # Individual queries
-uv run --project backend python -m app.cli.main stats --site mysite.com --period 30d
-uv run --project backend python -m app.cli.main pages --site mysite.com --limit 10 --format json
-uv run --project backend python -m app.cli.main funnel --site mysite.com --steps "/,/pricing,/signup"
-uv run --project backend python -m app.cli.main devices --site mysite.com --dimension browser --filter country:eq:US
+uv run python -m app.cli.main stats --site mysite.com --period 30d
+uv run python -m app.cli.main pages --site mysite.com --limit 10 --format json
+uv run python -m app.cli.main funnel --site mysite.com --steps "/,/pricing,/signup"
+uv run python -m app.cli.main devices --site mysite.com --dimension browser --filter country:eq:US
 ```
 
 45 commands covering analytics queries, CRUD operations, and data export. Full reference: **[docs/cli.md](docs/cli.md)**
@@ -116,7 +118,7 @@ Works with **Claude Code**, **OpenCode**, **OpenClaw**, **Cline**, **Cursor**, a
 
 ### CLI mode (any agent with shell access)
 
-The agent runs `uv run --project backend python -m app.cli.main <command>` to query your data. Works with Claude Code, OpenCode, Cline, Cursor — anything that can execute shell commands.
+From the `backend/` directory, the agent runs `uv run python -m app.cli.main <command>` to query your data. Works with Claude Code, OpenCode, Cline, Cursor — anything that can execute shell commands.
 
 ### MCP mode (structured tool calls)
 
