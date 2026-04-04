@@ -84,16 +84,22 @@ Mantecato is **read-only** against your Umami database. The only writes go to th
 ## CLI
 
 ```bash
-# Overview stats
+# Full analytics report — stats, sources, pages, events, channels in one shot
+npm run cli -- report --site mysite.com --period 30d
+
+# Human-friendly report with tables and sparklines
+npm run cli -- report --site mysite.com --period 30d -h
+
+# Report filtered to organic search traffic only
+npm run cli -- report --site mysite.com --period 30d --filter referrer_domain:eq:google.com
+
+# Report as JSON for programmatic use
+npm run cli -- report --site mysite.com --period 90d --format json
+
+# Individual queries
 npm run cli -- stats --site mysite.com --period 30d
-
-# Top pages as JSON
 npm run cli -- pages --site mysite.com --limit 10 --format json
-
-# Funnel analysis
 npm run cli -- funnel --site mysite.com --steps "/,/pricing,/signup"
-
-# Filter by country
 npm run cli -- devices --site mysite.com --dimension browser --filter country:eq:US
 ```
 

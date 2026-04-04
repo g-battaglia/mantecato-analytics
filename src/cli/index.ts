@@ -802,7 +802,8 @@ addCommonOptions(
   program
     .command("report")
     .description("Generate a comprehensive analytics report in a single command")
-).action(async (opts: CommonOpts) => {
+    .option("-H, --human", "Human-friendly output with tables and bars")
+).action(async (opts: CommonOpts & { human?: boolean }) => {
   const siteId = await requireSite(opts);
   const range = parseDateArgs(opts.period, opts.start, opts.end);
   const filters = parseFilterArgs(opts.filter || []);
@@ -833,13 +834,14 @@ addCommonOptions(
   const channels = channelsResult.status === "fulfilled" ? channelsResult.value : null;
 
   // Fetch event properties for each top event (second pass, in parallel)
-  let eventDetails: Array<{ eventName: string; visitors: number; properties: Awaited<ReturnType<typeof getEventProperties>> }> = [];
+  let eventDetails: Array<{ eventName: string; count: number; visitors: number; properties: Awaited<ReturnType<typeof getEventProperties>> }> = [];
   if (events && events.length > 0) {
     const detailResults = await Promise.allSettled(
       events.map((e) => getEventProperties(siteId, e.eventName, range.startDate, range.endDate, limit))
     );
     eventDetails = events.map((e, i) => ({
       eventName: e.eventName,
+      count: e.count,
       visitors: e.visitors,
       properties: detailResults[i].status === "fulfilled" ? detailResults[i].value : [],
     }));
@@ -869,7 +871,153 @@ addCommonOptions(
     return;
   }
 
-  // --- Table output (custom formatted) ---
+  // --- Human-friendly output (-H flag) ---
+  if (opts.human) {
+    const B = "█"; // full bar char
+    const b = "░"; // empty bar char
+    const BAR_W = 20;
+
+    function bar(value: number, max: number): string {
+      const filled = max > 0 ? Math.round((value / max) * BAR_W) : 0;
+      return B.repeat(filled) + b.repeat(BAR_W - filled);
+    }
+
+    function heading(title: string): string {
+      return `\n  ┌${"─".repeat(title.length + 2)}┐\n  │ ${title} │\n  └${"─".repeat(title.length + 2)}┘`;
+    }
+
+    function tableRow(cols: string[], widths: number[]): string {
+      return "  │ " + cols.map((c, i) => i < cols.length - 1 ? c.padEnd(widths[i]) : c.padStart(widths[i])).join(" │ ") + " │";
+    }
+
+    function tableSep(widths: number[]): string {
+      return "  ├" + widths.map((w) => "─".repeat(w + 2)).join("┼") + "┤";
+    }
+
+    function tableTop(widths: number[]): string {
+      return "  ┌" + widths.map((w) => "─".repeat(w + 2)).join("┬") + "┐";
+    }
+
+    function tableBottom(widths: number[]): string {
+      return "  └" + widths.map((w) => "─".repeat(w + 2)).join("┴") + "┘";
+    }
+
+    const L: string[] = [];
+    L.push(`\n  📊 ${siteName} — ${opts.period}`);
+
+    // Overview metrics
+    if (stats) {
+      const d = computeDerivedStats(stats);
+      const cur = compare?.find((r) => r.period === "current");
+      const prev = compare?.find((r) => r.period === "previous");
+      L.push(heading("Overview"));
+      const mW = [18, 12, 12];
+      L.push(tableTop(mW));
+      L.push(tableRow(["Metric", "Value", "vs Prev"], mW));
+      L.push(tableSep(mW));
+      const metrics = [
+        ["Pageviews", num(d.pageviews), cur && prev ? pctChange(cur.pageviews, prev.pageviews) : ""],
+        ["Visitors", num(d.visitors), cur && prev ? pctChange(cur.visitors, prev.visitors) : ""],
+        ["Visits", num(d.visits), cur && prev ? pctChange(cur.visits, prev.visits) : ""],
+        ["Bounce Rate", d.bounceRate, (() => {
+          if (!cur || !prev) return "";
+          const cb = cur.visits > 0 ? (cur.bounces / cur.visits) * 100 : 0;
+          const pb = prev.visits > 0 ? (prev.bounces / prev.visits) * 100 : 0;
+          const diff = cb - pb;
+          return `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}pp`;
+        })()],
+        ["Avg Duration", d.avgDuration, ""],
+        ["Pages/Visit", d.pagesPerVisit, ""],
+      ];
+      for (const m of metrics) L.push(tableRow(m, mW));
+      L.push(tableBottom(mW));
+    }
+
+    // Channels
+    if (channels && channels.length > 0) {
+      L.push(heading("Channels"));
+      const maxVis = Math.max(...channels.map((c) => c.visitors));
+      const cW = [20, BAR_W, 10, 8];
+      L.push(tableTop(cW));
+      L.push(tableRow(["Channel", "Distribution", "Visitors", "Bounce"], cW));
+      L.push(tableSep(cW));
+      for (const c of channels) {
+        L.push(tableRow([
+          c.channel,
+          bar(c.visitors, maxVis),
+          num(c.visitors),
+          c.bounceRate.toFixed(1) + "%",
+        ], cW));
+      }
+      L.push(tableBottom(cW));
+    }
+
+    // Top Pages
+    if (pages && pages.length > 0) {
+      L.push(heading("Top Pages"));
+      const maxVis = Math.max(...pages.map((p) => p.visitors));
+      const pW = [40, BAR_W, 10, 10];
+      L.push(tableTop(pW));
+      L.push(tableRow(["Page", "", "Visitors", "Views"], pW));
+      L.push(tableSep(pW));
+      for (const p of pages.slice(0, 15)) {
+        const path = p.urlPath.length > 40 ? p.urlPath.slice(0, 37) + "..." : p.urlPath;
+        L.push(tableRow([path, bar(p.visitors, maxVis), num(p.visitors), num(p.views)], pW));
+      }
+      L.push(tableBottom(pW));
+    }
+
+    // Top Sources
+    if (sources && sources.length > 0) {
+      L.push(heading("Top Sources"));
+      const maxVis = Math.max(...sources.map((s) => s.visitors));
+      const sW = [25, BAR_W, 10, 10];
+      L.push(tableTop(sW));
+      L.push(tableRow(["Source", "", "Visitors", "Views"], sW));
+      L.push(tableSep(sW));
+      for (const s of sources.slice(0, 15)) {
+        const ref = s.referrerDomain.length > 25 ? s.referrerDomain.slice(0, 22) + "..." : s.referrerDomain;
+        L.push(tableRow([ref, bar(s.visitors, maxVis), num(s.visitors), num(s.pageviews)], sW));
+      }
+      L.push(tableBottom(sW));
+    }
+
+    // Top Events
+    if (eventDetails.length > 0) {
+      L.push(heading("Top Events"));
+      const maxVis = Math.max(...eventDetails.map((e) => e.visitors));
+      const eW = [35, BAR_W, 8, 10];
+      L.push(tableTop(eW));
+      L.push(tableRow(["Event", "", "Count", "Visitors"], eW));
+      L.push(tableSep(eW));
+      for (const ev of eventDetails.slice(0, 15)) {
+        const name = ev.eventName.length > 35 ? ev.eventName.slice(0, 32) + "..." : ev.eventName;
+        L.push(tableRow([name, bar(ev.visitors, maxVis), num(ev.count), num(ev.visitors)], eW));
+        // Inline properties (top 3 per key, max 2 keys)
+        if (ev.properties.length > 0) {
+          const grouped = new Map<string, Array<{ value: string; count: number }>>();
+          for (const prop of ev.properties) {
+            const existing = grouped.get(prop.dataKey) || [];
+            existing.push({ value: prop.value, count: prop.count });
+            grouped.set(prop.dataKey, existing);
+          }
+          let keyCount = 0;
+          for (const [key, values] of grouped) {
+            if (keyCount++ >= 2) break;
+            const top3 = values.slice(0, 3).map((v) => `${v.value} (${num(v.count)})`).join(", ");
+            L.push(`  │ ${"  ↳ " + key + ": " + top3}${" ".repeat(Math.max(0, eW[0] + eW[1] + eW[2] + eW[3] + 6 - ("  ↳ " + key + ": " + top3).length))}│`);
+          }
+        }
+      }
+      L.push(tableBottom(eW));
+    }
+
+    L.push("");
+    console.log(L.join("\n"));
+    return;
+  }
+
+  // --- Default compact output ---
   const lines: string[] = [];
 
   lines.push(`\n${"═".repeat(3)} REPORT: ${siteName} — ${opts.period} ${"═".repeat(3)}`);
@@ -934,7 +1082,6 @@ addCommonOptions(
     for (const ev of eventDetails) {
       lines.push(`  ${ev.eventName}  ${num(ev.visitors).padStart(8)} visitors`);
       if (ev.properties.length > 0) {
-        // Group properties by dataKey
         const grouped = new Map<string, Array<{ value: string; count: number }>>();
         for (const prop of ev.properties) {
           const existing = grouped.get(prop.dataKey) || [];
