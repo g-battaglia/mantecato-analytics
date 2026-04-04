@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from ..date_utils import resolve_date_range, get_comparison_range
 from ..dependencies import get_current_user, require_site_access, parse_filters
 from ..queries import stats as q_stats
+from ..queries import sources as q_sources
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["stats"])
 
@@ -105,12 +106,13 @@ async def get_stats(
         ),
         q_stats.get_top_pages(site_id, start_date, end_date, 10, filters, "slug" if mode == "slug" else "path"),
         q_stats.get_top_referrers(site_id, start_date, end_date, 10, filters),
-        q_stats.get_top_events(site_id, start_date, end_date, 10, filters),
+        q_stats.get_top_events_with_properties(site_id, start_date, end_date, 10, 3, filters),
         q_stats.get_device_breakdown(
             site_id, start_date, end_date, "browser", 10, filters
         ),
         q_stats.get_country_breakdown(site_id, start_date, end_date, 10, filters),
         q_stats.get_top_sections(site_id, start_date, end_date, 2, 10, filters),
+        q_sources.get_channel_metrics(site_id, start_date, end_date, filters),
     )
 
     return {
@@ -124,4 +126,5 @@ async def get_stats(
         "browsers": results[7],
         "countries": results[8],
         "sections": results[9],
+        "channels": results[10],
     }

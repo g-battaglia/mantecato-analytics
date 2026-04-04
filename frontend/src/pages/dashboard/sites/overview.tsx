@@ -44,7 +44,12 @@ interface OverviewData {
     visitors: number;
     pageviews: number;
   }>;
-  events: Array<{ eventName: string; count: number; visitors: number }>;
+  events: Array<{
+    eventName: string;
+    count: number;
+    visitors: number;
+    properties: Array<{ key: string; value: string; count: number }>;
+  }>;
   browsers: Array<{ value: string; visitors: number }>;
   countries: Array<{ country: string; visitors: number; pageviews: number }>;
   sections: Array<{
@@ -52,6 +57,13 @@ interface OverviewData {
     views: number;
     visitors: number;
     pages: number;
+  }>;
+  channels: Array<{
+    channel: string;
+    visitors: number;
+    pageviews: number;
+    bounceRate: number;
+    avgDuration: number;
   }>;
 }
 
@@ -328,6 +340,52 @@ export function OverviewPage() {
           </CardContent>
         </Card>
 
+        {/* Channels */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Channels</CardTitle>
+            <CardDescription className="text-xs">
+              Traffic channels breakdown
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <SkeletonRows />
+            ) : (
+              <div className="space-y-0">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Channel</span>
+                  <div className="flex gap-4 text-right">
+                    <span className="w-16">Visitors</span>
+                    <span className="w-16">Bounce</span>
+                  </div>
+                </div>
+                {data?.channels?.map((ch) => (
+                  <div
+                    key={ch.channel}
+                    className={ROW}
+                  >
+                    <span className="truncate">{ch.channel}</span>
+                    <div className="flex gap-4 text-right tabular-nums">
+                      <span className="w-16 font-medium">
+                        {ch.visitors.toLocaleString()}
+                      </span>
+                      <span className="w-16 text-muted-foreground">
+                        {ch.bounceRate.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {(!data?.channels || data.channels.length === 0) && (
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    No channel data
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Top Events */}
         <Card>
           <CardHeader className="pb-2">
@@ -348,15 +406,40 @@ export function OverviewPage() {
                 {data?.events.map((evt) => (
                   <div
                     key={evt.eventName}
-                    className={ROW}
+                    className="cursor-pointer rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors"
                     onClick={() => setDetail({ type: "event", value: evt.eventName })}
                   >
-                    <span className="truncate font-mono text-xs">
-                      {evt.eventName}
-                    </span>
-                    <span className="tabular-nums font-medium">
-                      {evt.count.toLocaleString()}
-                    </span>
+                    <div className="flex items-center justify-between py-1.5 text-sm">
+                      <span className="truncate font-mono text-xs">
+                        {evt.eventName}
+                      </span>
+                      <span className="tabular-nums font-medium">
+                        {evt.count.toLocaleString()}
+                      </span>
+                    </div>
+                    {evt.properties && evt.properties.length > 0 && (
+                      <div className="pb-1.5 pl-2 text-[11px] text-muted-foreground leading-tight">
+                        {Object.entries(
+                          evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
+                            (acc, p) => {
+                              if (!acc[p.key]) acc[p.key] = [];
+                              acc[p.key].push({ value: p.value, count: p.count });
+                              return acc;
+                            },
+                            {},
+                          ),
+                        ).map(([key, values]) => (
+                          <div key={key}>
+                            {key}: {values.map((v, i) => (
+                              <span key={i}>
+                                {i > 0 && ", "}
+                                {v.value} ({v.count.toLocaleString()})
+                              </span>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {(!data?.events || data.events.length === 0) && (

@@ -340,6 +340,80 @@ async def get_top_events(
     ]
 
 
+async def get_top_events_with_properties(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    limit: int = 10,
+    properties_limit: int = 3,
+    filters: list[Filter] | None = None,
+) -> list[dict[str, Any]]:
+    """Get top events with their top property values inlined.
+
+    1. Fetches the top N events (same as get_top_events).
+    2. For each event, fetches the top `properties_limit` property key:value pairs
+       from the event_data table in a single batched query.
+    3. Returns events with a `properties` list attached.
+    """
+    events = await get_top_events(
+        website_id, start_date, end_date, limit, filters
+    )
+    if not events:
+        return events
+
+    event_names = [e["eventName"] for e in events]
+
+    # Single query to get top properties for all top events at once.
+    # We use ROW_NUMBER to pick the top N per event name.
+    rows = await raw_query(
+        f"""SELECT event_name, data_key, value, count
+    FROM (
+      SELECT
+        we.event_name,
+        ed.data_key,
+        COALESCE(ed.string_value, ed.number_value::text) AS value,
+        COUNT(*)::bigint AS count,
+        ROW_NUMBER() OVER (
+          PARTITION BY we.event_name
+          ORDER BY COUNT(*) DESC
+        ) AS rn
+      FROM event_data ed
+      JOIN website_event we ON ed.website_event_id = we.event_id
+      WHERE ed.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_name = ANY({{eventNames::text[]}})
+      GROUP BY we.event_name, ed.data_key, value
+    ) sub
+    WHERE rn <= {properties_limit}
+    ORDER BY event_name, count DESC""",
+        {
+            "websiteId": website_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            "eventNames": event_names,
+        },
+    )
+
+    # Group properties by event name
+    props_by_event: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        name = row["event_name"]
+        if name not in props_by_event:
+            props_by_event[name] = []
+        props_by_event[name].append(
+            {
+                "key": row["data_key"],
+                "value": row["value"],
+                "count": int(row["count"] or 0),
+            }
+        )
+
+    for event in events:
+        event["properties"] = props_by_event.get(event["eventName"], [])
+
+    return events
+
+
 async def get_device_breakdown(
     website_id: str,
     start_date: datetime,

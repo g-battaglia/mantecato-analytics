@@ -797,6 +797,186 @@ program
     console.log(ok ? "Scheduled export deleted." : "Scheduled export not found or not owned by you.");
   });
 
+// --- report ---
+addCommonOptions(
+  program
+    .command("report")
+    .description("Generate a comprehensive analytics report in a single command")
+).action(async (opts: CommonOpts) => {
+  const siteId = await requireSite(opts);
+  const range = parseDateArgs(opts.period, opts.start, opts.end);
+  const filters = parseFilterArgs(opts.filter || []);
+  const limit = +opts.limit;
+  const prevRange = getComparisonRange(range, "previous_period");
+
+  // Resolve the site display name
+  const sites = await listSites();
+  const siteInfo = sites.find((s) => s.websiteId === siteId);
+  const siteName = siteInfo ? `${siteInfo.name} (${siteInfo.domain})` : siteId;
+
+  // Run all queries in parallel
+  const [statsResult, compareResult, pagesResult, sourcesResult, eventsResult, channelsResult] =
+    await Promise.allSettled([
+      getWebsiteStats(siteId, range.startDate, range.endDate, filters),
+      getComparisonStats(siteId, range.startDate, range.endDate, prevRange.startDate, prevRange.endDate),
+      getTopPages(siteId, range.startDate, range.endDate, limit, filters),
+      getTopReferrers(siteId, range.startDate, range.endDate, limit, filters),
+      getTopEvents(siteId, range.startDate, range.endDate, limit, filters),
+      getChannelMetrics(siteId, range.startDate, range.endDate, filters),
+    ]);
+
+  const stats = statsResult.status === "fulfilled" ? statsResult.value : null;
+  const compare = compareResult.status === "fulfilled" ? compareResult.value : null;
+  const pages = pagesResult.status === "fulfilled" ? pagesResult.value : null;
+  const sources = sourcesResult.status === "fulfilled" ? sourcesResult.value : null;
+  const events = eventsResult.status === "fulfilled" ? eventsResult.value : null;
+  const channels = channelsResult.status === "fulfilled" ? channelsResult.value : null;
+
+  // Fetch event properties for each top event (second pass, in parallel)
+  let eventDetails: Array<{ eventName: string; visitors: number; properties: Awaited<ReturnType<typeof getEventProperties>> }> = [];
+  if (events && events.length > 0) {
+    const detailResults = await Promise.allSettled(
+      events.map((e) => getEventProperties(siteId, e.eventName, range.startDate, range.endDate, limit))
+    );
+    eventDetails = events.map((e, i) => ({
+      eventName: e.eventName,
+      visitors: e.visitors,
+      properties: detailResults[i].status === "fulfilled" ? detailResults[i].value : [],
+    }));
+  }
+
+  // --- JSON output ---
+  if (opts.format === "json") {
+    const derived = stats ? computeDerivedStats(stats) : null;
+    const current = compare?.find((d) => d.period === "current");
+    const previous = compare?.find((d) => d.period === "previous");
+    out(
+      {
+        site: siteName,
+        period: opts.period,
+        overview: derived,
+        comparison: {
+          current: current ? computeDerivedStats(current) : null,
+          previous: previous ? computeDerivedStats(previous) : null,
+        },
+        topPages: pages,
+        topSources: sources,
+        topEvents: eventDetails,
+        channels,
+      },
+      "json",
+    );
+    return;
+  }
+
+  // --- Table output (custom formatted) ---
+  const lines: string[] = [];
+
+  lines.push(`\n${"═".repeat(3)} REPORT: ${siteName} — ${opts.period} ${"═".repeat(3)}`);
+
+  // Overview
+  if (stats) {
+    const d = computeDerivedStats(stats);
+    lines.push("");
+    lines.push(`${"─".repeat(2)} Overview ${"─".repeat(2)}`);
+    lines.push(
+      `  Pageviews: ${num(d.pageviews)}  |  Visitors: ${num(d.visitors)}  |  Visits: ${num(d.visits)}`
+    );
+    lines.push(
+      `  Bounce Rate: ${d.bounceRate}  |  Avg Duration: ${d.avgDuration}  |  Pages/Visit: ${d.pagesPerVisit}`
+    );
+  }
+
+  // Comparison
+  if (compare) {
+    const current = compare.find((d) => d.period === "current");
+    const previous = compare.find((d) => d.period === "previous");
+    if (current && previous) {
+      lines.push("");
+      lines.push(`${"─".repeat(2)} vs Previous Period ${"─".repeat(2)}`);
+      const pvChange = pctChange(current.pageviews, previous.pageviews);
+      const visChange = pctChange(current.visitors, previous.visitors);
+      const curBounce = current.visits > 0 ? (current.bounces / current.visits) * 100 : 0;
+      const prevBounce = previous.visits > 0 ? (previous.bounces / previous.visits) * 100 : 0;
+      const bounceDiff = curBounce - prevBounce;
+      lines.push(
+        `  Pageviews: ${pvChange}  |  Visitors: ${visChange}  |  Bounce Rate: ${bounceDiff >= 0 ? "+" : ""}${bounceDiff.toFixed(1)}pp`
+      );
+    }
+  }
+
+  // Top Pages
+  if (pages && pages.length > 0) {
+    lines.push("");
+    lines.push(`${"─".repeat(2)} Top Pages ${"─".repeat(2)}`);
+    const maxPath = Math.min(Math.max(...pages.map((p) => p.urlPath.length), 4), 40);
+    for (const p of pages) {
+      const path = p.urlPath.length > 40 ? p.urlPath.slice(0, 37) + "..." : p.urlPath.padEnd(maxPath);
+      lines.push(`  ${path}  ${num(p.visitors).padStart(8)} visitors  ${num(p.views).padStart(8)} views`);
+    }
+  }
+
+  // Top Sources
+  if (sources && sources.length > 0) {
+    lines.push("");
+    lines.push(`${"─".repeat(2)} Top Sources ${"─".repeat(2)}`);
+    const maxRef = Math.min(Math.max(...sources.map((s) => s.referrerDomain.length), 4), 30);
+    for (const s of sources) {
+      const ref = s.referrerDomain.length > 30 ? s.referrerDomain.slice(0, 27) + "..." : s.referrerDomain.padEnd(maxRef);
+      lines.push(`  ${ref}  ${num(s.visitors).padStart(8)} visitors  ${num(s.pageviews).padStart(8)} views`);
+    }
+  }
+
+  // Top Events with properties
+  if (eventDetails.length > 0) {
+    lines.push("");
+    lines.push(`${"─".repeat(2)} Top Events ${"─".repeat(2)}`);
+    for (const ev of eventDetails) {
+      lines.push(`  ${ev.eventName}  ${num(ev.visitors).padStart(8)} visitors`);
+      if (ev.properties.length > 0) {
+        // Group properties by dataKey
+        const grouped = new Map<string, Array<{ value: string; count: number }>>();
+        for (const prop of ev.properties) {
+          const existing = grouped.get(prop.dataKey) || [];
+          existing.push({ value: prop.value, count: prop.count });
+          grouped.set(prop.dataKey, existing);
+        }
+        for (const [key, values] of grouped) {
+          const summary = values.map((v) => `${v.value} (${num(v.count)})`).join(", ");
+          lines.push(`    ${key}: ${summary}`);
+        }
+      }
+    }
+  }
+
+  // Channels
+  if (channels && channels.length > 0) {
+    lines.push("");
+    lines.push(`${"─".repeat(2)} Channels ${"─".repeat(2)}`);
+    const maxCh = Math.min(Math.max(...channels.map((c) => c.channel.length), 4), 25);
+    for (const c of channels) {
+      const ch = c.channel.padEnd(maxCh);
+      const bounce = c.bounceRate.toFixed(1) + "% bounce";
+      lines.push(`  ${ch}  ${num(c.visitors).padStart(8)} visitors  ${bounce.padStart(13)}`);
+    }
+  }
+
+  lines.push("");
+  console.log(lines.join("\n"));
+});
+
+/** Format a number with locale-aware separators for the report. */
+function num(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+/** Format a percentage change as "+23.4%" or "-5.1%". */
+function pctChange(current: number, previous: number): string {
+  if (previous === 0) return current > 0 ? "+100.0%" : "0.0%";
+  const change = ((current - previous) / previous) * 100;
+  return `${change >= 0 ? "+" : ""}${change.toFixed(1)}%`;
+}
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
