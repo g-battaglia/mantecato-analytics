@@ -59,3 +59,4 @@ packages/tracker/node_modules
 *.png
 !public/screenshot.png
 neondb-dump.backup
+/backup_mantecato_2026-04-04.dump
