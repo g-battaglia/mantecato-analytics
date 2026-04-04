@@ -12,7 +12,7 @@ Mantecato works with any AI coding agent that can run terminal commands or conne
 
 There are two ways an AI agent can talk to Mantecato:
 
-**CLI** — The agent runs shell commands like `npx tsx src/cli/index.ts stats --site mysite.com` and reads the output. Works with any agent that has terminal access. No extra configuration needed — just open the project folder.
+**CLI** — The agent runs shell commands like `python -m backend.app.cli.main stats --site mysite.com` and reads the output. Works with any agent that has terminal access. No extra configuration needed — just open the project folder.
 
 **MCP** — The agent calls structured tools directly via [Model Context Protocol](https://modelcontextprotocol.io/). Returns typed JSON, no output parsing. Requires adding Mantecato to your editor's MCP configuration.
 
@@ -58,8 +58,8 @@ The skills are loaded automatically — you can reference them from any agent:
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
       "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
@@ -104,7 +104,7 @@ Ask questions directly or use slash commands:
 claude mcp add mantecato \
   -e DATABASE_URL="postgresql://user:pass@host/dbname" \
   -e MANTECATO_API_KEY="mtk_your-key-here" \
-  -- npx tsx /path/to/mantecato-analytics/src/mcp/server.ts
+  -- python -m backend.app.mcp.server
 ```
 
 Or add to `~/.claude.json`:
@@ -113,8 +113,9 @@ Or add to `~/.claude.json`:
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -138,8 +139,9 @@ Add to your config file:
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -200,8 +202,9 @@ Then ask OpenClaw questions or invoke skills directly:
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -241,8 +244,9 @@ All MCP-compatible tools use the same configuration. Replace the paths and crede
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://user:pass@host/dbname",
         "MANTECATO_API_KEY": "mtk_your-key-here"
@@ -254,7 +258,7 @@ All MCP-compatible tools use the same configuration. Replace the paths and crede
 
 ### Docker alternative
 
-If you prefer not to install Node.js locally, run the MCP server via Docker:
+If you prefer to run the MCP server via Docker:
 
 ```json
 {
@@ -348,7 +352,7 @@ Add a file at `.claude/commands/my-command.md`:
 Analyze $ARGUMENTS using the Mantecato CLI.
 
 Steps:
-1. Run `npx tsx src/cli/index.ts ...`
+1. Run `python -m backend.app.cli.main ...`
 2. ...
 ```
 

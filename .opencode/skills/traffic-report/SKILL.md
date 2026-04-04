@@ -10,7 +10,7 @@ Generate a full traffic report using the Mantecato CLI. The user will specify a 
 
 Always use:
 ```bash
-npx tsx src/cli/index.ts <command> [options]
+python -m backend.app.cli.main <command> [options]
 ```
 
 The working directory is the mantecato project root. `DATABASE_URL` and `MANTECATO_API_KEY` are already configured.

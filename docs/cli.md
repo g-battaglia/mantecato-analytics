@@ -9,8 +9,6 @@ The Mantecato CLI gives you full analytics access from the terminal. Everything 
 ```bash
 # Install (if you haven't already)
 git clone https://github.com/g-battaglia/mantecato-analytics.git && cd mantecato-analytics
-npm install --legacy-peer-deps
-npx prisma generate
 
 # Set your API key
 export DATABASE_URL="postgresql://..."
@@ -23,8 +21,8 @@ export MANTECATO_API_KEY="mtk_your-key-here"
 # Via npm script
 npm run cli -- <command> [options]
 
-# Via npx (equivalent)
-npx tsx src/cli/index.ts <command> [options]
+# Via Python directly
+python -m backend.app.cli.main <command> [options]
 
 # Via Docker
 docker compose --profile cli run --rm cli <command> [options]

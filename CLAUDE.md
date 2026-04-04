@@ -5,21 +5,26 @@
 This project is no longer a Next.js monolith.
 
 - `frontend/` contains the Vite + React SPA.
-- `backend/` contains the FastAPI backend.
-- `src/` contains the CLI, MCP server, Prisma client, and shared TypeScript query code.
+- `backend/` contains the FastAPI backend, CLI, and MCP server (all Python).
 
 Do not add or rely on `next/*` APIs unless you are explicitly working on historical migration material.
 
 ## What This Project Is
 
-Mantecato is a standalone analytics dashboard that reads an existing Umami PostgreSQL database. It provides a web UI, a 39-command CLI, and a 41-tool MCP server.
+Mantecato is a standalone analytics dashboard that reads an existing Umami PostgreSQL database. It provides a web UI, a 45-command CLI, and a 41-tool MCP server.
 
 **You can analyze any site's traffic using the CLI.** The `DATABASE_URL` and `MANTECATO_API_KEY` environment variables are already configured.
 
 ## Running CLI Commands
 
 ```bash
-npx tsx src/cli/index.ts <command> [options]
+python -m backend.app.cli.main <command> [options]
+```
+
+Or via npm:
+
+```bash
+npm run cli -- <command> [options]
 ```
 
 All commands support these global options:
@@ -34,7 +39,7 @@ All commands support these global options:
 | `-l, --limit <n>` | Max rows | `20` |
 | `-g, --granularity <g>` | `auto` `minute` `hour` `day` `week` `month` | `auto` |
 
-## All 39 Commands
+## All 45 Commands
 
 **Core:**
 - `sites` — list all tracked sites
@@ -101,23 +106,23 @@ Format: `column:operator:value` — repeatable with `--filter`.
 Examples:
 ```bash
 # Full report for the last 30 days
-npx tsx src/cli/index.ts report -s mysite.com -p 30d
+python -m backend.app.cli.main report -s mysite.com -p 30d
 
 # Report for mobile traffic only
-npx tsx src/cli/index.ts report -s mysite.com -p 30d --filter device:eq:mobile
+python -m backend.app.cli.main report -s mysite.com -p 30d --filter device:eq:mobile
 
 # Report for Google organic traffic only
-npx tsx src/cli/index.ts report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
+python -m backend.app.cli.main report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
 
 # Report as JSON (for programmatic use)
-npx tsx src/cli/index.ts report -s mysite.com -p 90d -f json
+python -m backend.app.cli.main report -s mysite.com -p 90d -f json
 
 # Report for a custom date range
-npx tsx src/cli/index.ts report -s mysite.com --start 2026-03-01 --end 2026-04-01
+python -m backend.app.cli.main report -s mysite.com --start 2026-03-01 --end 2026-04-01
 
 # Individual queries with filters
-npx tsx src/cli/index.ts stats -s mysite.com --filter country:eq:US
-npx tsx src/cli/index.ts pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
+python -m backend.app.cli.main stats -s mysite.com --filter country:eq:US
+python -m backend.app.cli.main pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
 ```
 
 ## Analysis Methodology
@@ -156,5 +161,5 @@ Always include actual numbers — not "traffic increased" but "traffic increased
 
 - **Never guess data** — always run the CLI command to get real numbers
 - **Always specify the period** — don't rely on defaults without stating them
-- **Read-only database** — never run Prisma migrations or write to the DB directly
+- **Read-only database** — never run migrations or write to the DB directly
 - **Present insights, not data dumps** — the user wants to understand what's happening and what to do about it

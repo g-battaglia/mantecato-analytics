@@ -1,6 +1,6 @@
 Produce a comprehensive traffic report for the site and period specified in $ARGUMENTS (format: `<site> <period>`, e.g. `kerykeion.net 30d`).
 
-Run these commands using `npx tsx src/cli/index.ts <command>`:
+Run these commands using `python -m backend.app.cli.main <command>`:
 
 ## Step 1: Overall metrics and trends
 

@@ -67,10 +67,10 @@ docker run -d --name mantecato-backend -p 8100:8100 --env-file .env mantecato-ba
 docker build -t mantecato-cli:latest -f Dockerfile.cli .
 
 docker run --rm --env-file .env mantecato-cli:latest \
-  npx tsx src/cli/index.ts stats --site kerykeion.net --period 30d
+  python -m backend.app.cli.main stats --site kerykeion.net --period 30d
 
 docker run --rm -i --env-file .env mantecato-cli:latest \
-  npx tsx src/mcp/server.ts
+  python -m backend.app.mcp.server
 ```
 
 ---
@@ -106,7 +106,7 @@ Mantecato connects to your existing Umami PostgreSQL database (e.g., Neon, Supab
 |-------|---------|
 | `frontend/Dockerfile` | Builds the Vite app and serves it with nginx |
 | `backend/Dockerfile` | Runs FastAPI on port `8100` |
-| `Dockerfile.cli` | Runs the shared TypeScript CLI and MCP code with Prisma |
+| `Dockerfile.cli` | Runs the Python CLI and MCP server |
 
 ---
 

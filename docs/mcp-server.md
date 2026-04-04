@@ -26,8 +26,9 @@ Add this to your editor's MCP config (see [AI Agent Setup](ai-agents.md) for exa
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/mantecato-analytics/src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
+      "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://...",
         "MANTECATO_API_KEY": "mtk_your-key-here"

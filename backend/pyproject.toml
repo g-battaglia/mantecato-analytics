@@ -11,7 +11,13 @@ dependencies = [
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
     "python-multipart>=0.0.20",
+    "typer>=0.15",
+    "rich>=13.0",
+    "mcp>=1.0",
 ]
+
+[project.scripts]
+mantecato = "app.cli.main:app"
 
 [tool.poe.tasks]
 dev = "uvicorn app.main:app --port 8100 --reload"

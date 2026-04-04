@@ -5,7 +5,7 @@ permission:
   edit: deny
   bash:
     "*": deny
-    "npx tsx src/cli/index.ts *": allow
+    "python -m backend.app.cli.main *": allow
     "npm run cli -- *": allow
   webfetch: deny
 ---
@@ -20,7 +20,7 @@ You have access to the Mantecato CLI which connects directly to the Umami Postgr
 
 Always use the CLI via:
 ```bash
-npx tsx src/cli/index.ts <command> [options]
+python -m backend.app.cli.main <command> [options]
 ```
 
 The working directory is the mantecato project root. The `DATABASE_URL` and `MANTECATO_API_KEY` environment variables are already configured.
@@ -116,7 +116,7 @@ The most valuable insights come from combining dimensions:
 
 Use filters to slice data across dimensions:
 ```bash
-npx tsx src/cli/index.ts stats --site mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
+python -m backend.app.cli.main stats --site mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
 ```
 
 ### 5. Compare Periods

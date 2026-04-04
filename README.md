@@ -21,7 +21,6 @@ cp .env.example .env
 # Edit .env — add DATABASE_URL (your Umami DB) and SESSION_SECRET
 
 # Generate Prisma client and start both servers
-npx prisma generate
 ./dev.sh start
 ```
 
@@ -123,8 +122,8 @@ Add to your editor's MCP configuration:
 {
   "mcpServers": {
     "mantecato": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp/server.ts"],
+      "command": "python",
+      "args": ["-m", "backend.app.mcp.server"],
       "cwd": "/path/to/mantecato-analytics",
       "env": {
         "DATABASE_URL": "postgresql://...",

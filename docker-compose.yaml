@@ -26,8 +26,8 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - MANTECATO_API_KEY=${MANTECATO_API_KEY}
-    entrypoint: ["npx", "tsx", "src/cli/index.ts"]
-    working_dir: /app
+    entrypoint: ["python", "-m", "app.cli.main"]
+    working_dir: /app/backend
 
   mcp:
     build:
@@ -37,6 +37,6 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - MANTECATO_API_KEY=${MANTECATO_API_KEY}
-    entrypoint: ["npx", "tsx", "src/mcp/server.ts"]
-    working_dir: /app
+    entrypoint: ["python", "-m", "app.mcp.server"]
+    working_dir: /app/backend
     stdin_open: true
