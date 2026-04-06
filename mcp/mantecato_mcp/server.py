@@ -10,7 +10,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from mantecato_cli.helpers import (
+from mantecato_core.helpers import (
     compute_derived_stats,
     parse_date_args,
     parse_filter_args,
@@ -584,7 +584,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 async def _dispatch(name: str, args: dict[str, Any]) -> list[TextContent]:
     # ── List Sites ──────────────────────────────────────────────────
     if name == "list_sites":
-        from mantecato_cli.helpers import list_sites
+        from mantecato_core.helpers import list_sites
 
         return _ok(await list_sites())
 

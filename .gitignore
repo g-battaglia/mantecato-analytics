@@ -22,6 +22,7 @@
 /backend/.venv
 /cli/.venv
 /mcp/.venv
+/backend/*.egg-info
 /core/*.egg-info
 /cli/*.egg-info
 /mcp/*.egg-info
@@ -56,9 +57,9 @@ yarn-error.log*
 
 /src/generated/prisma
 
-# tracker package build artifacts
-packages/tracker/dist
-packages/tracker/node_modules
+# tracker packages build artifacts
+packages/*/dist
+packages/*/node_modules
 
 # screenshots
 *.png

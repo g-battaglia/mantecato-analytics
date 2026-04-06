@@ -33,6 +33,15 @@ export interface TrackerConfig {
   hostname?: string;
   /** Tag to identify this tracker instance */
   tag?: string;
+  /** Enable session replay data collection — click coordinates, scroll depth (default: false) */
+  sessionReplay?: boolean;
+}
+
+export interface RevenueData {
+  /** Revenue amount */
+  amount: number;
+  /** ISO 4217 currency code (e.g. "USD", "EUR") */
+  currency: string;
 }
 
 export interface EventPayload {
@@ -46,6 +55,8 @@ export interface EventPayload {
   title?: string;
   /** Override referrer */
   referrer?: string;
+  /** Revenue data for this event */
+  revenue?: RevenueData;
 }
 
 interface UmamiPayload {
@@ -59,6 +70,7 @@ interface UmamiPayload {
   name?: string;
   data?: Record<string, string | number | boolean>;
   tag?: string;
+  revenue?: RevenueData;
 }
 
 interface SendBody {
@@ -71,6 +83,8 @@ export interface Tracker {
   pageview: (options?: Pick<EventPayload, "url" | "title" | "referrer">) => void;
   /** Track a custom event */
   event: (name: string, data?: Record<string, string | number | boolean>) => void;
+  /** Track a revenue event */
+  revenue: (amount: number, currency: string, data?: Record<string, string | number | boolean>) => void;
   /** Send a raw payload (advanced) */
   send: (payload: EventPayload) => void;
   /** Identify the current visitor with custom properties */
@@ -148,6 +162,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     domains,
     hostname: customHostname,
     tag,
+    sessionReplay = false,
   } = config;
 
   let enabled = true;
@@ -191,6 +206,7 @@ export function createTracker(config: TrackerConfig): Tracker {
         referrer,
         ...(eventPayload.name ? { name: eventPayload.name } : {}),
         ...(eventPayload.data ? { data: eventPayload.data } : {}),
+        ...(eventPayload.revenue ? { revenue: eventPayload.revenue } : {}),
         ...(tag ? { tag } : {}),
       },
     };
@@ -267,6 +283,57 @@ export function createTracker(config: TrackerConfig): Tracker {
     });
   }
 
+  // Session replay: collect click coordinates and scroll depth
+  function setupSessionReplay(): void {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (!sessionReplay) return;
+
+    const onClick = (e: MouseEvent) => {
+      if (!shouldTrack()) return;
+      const target = e.target as HTMLElement | null;
+      const selector = target?.tagName?.toLowerCase() || "unknown";
+      sendPayload({
+        name: "_replay_click",
+        data: {
+          x: e.clientX,
+          y: e.clientY,
+          target: selector,
+          ...(target?.id ? { id: target.id } : {}),
+        },
+      });
+    };
+
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (!shouldTrack()) return;
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => {
+        const scrollTop = window.scrollY || document.documentElement.scrollTop;
+        const docHeight = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+        );
+        const winHeight = window.innerHeight;
+        const depth = docHeight > winHeight
+          ? Math.round((scrollTop / (docHeight - winHeight)) * 100)
+          : 100;
+        sendPayload({
+          name: "_replay_scroll",
+          data: { depth, scrollTop: Math.round(scrollTop) },
+        });
+      }, 300);
+    };
+
+    document.addEventListener("click", onClick);
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    cleanupFns.push(() => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("scroll", onScroll);
+      if (scrollTimer) clearTimeout(scrollTimer);
+    });
+  }
+
   // Initialize auto-tracking
   if (autoTrack) {
     if (typeof document !== "undefined" && document.readyState === "complete") {
@@ -274,6 +341,20 @@ export function createTracker(config: TrackerConfig): Tracker {
     } else if (typeof window !== "undefined") {
       const onLoad = () => {
         setupAutoTrack();
+        window.removeEventListener("load", onLoad);
+      };
+      window.addEventListener("load", onLoad);
+      cleanupFns.push(() => window.removeEventListener("load", onLoad));
+    }
+  }
+
+  // Initialize session replay
+  if (sessionReplay) {
+    if (typeof document !== "undefined" && document.readyState === "complete") {
+      setupSessionReplay();
+    } else if (typeof window !== "undefined") {
+      const onLoad = () => {
+        setupSessionReplay();
         window.removeEventListener("load", onLoad);
       };
       window.addEventListener("load", onLoad);
@@ -296,6 +377,14 @@ export function createTracker(config: TrackerConfig): Tracker {
 
     event(name, data) {
       sendPayload({ name, data });
+    },
+
+    revenue(amount, currency, data) {
+      sendPayload({
+        name: "revenue",
+        data: data || {},
+        revenue: { amount, currency },
+      });
     },
 
     send(payload) {

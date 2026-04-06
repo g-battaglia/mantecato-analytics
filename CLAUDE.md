@@ -2,10 +2,14 @@
 
 ## Architecture
 
-This project is no longer a Next.js monolith.
+The project is split into four Python packages and a frontend SPA:
 
-- `frontend/` contains the Vite + React SPA.
-- `backend/` contains the FastAPI backend, CLI, and MCP server (all Python).
+- `core/` — `mantecato-core`: shared query engine, database, filters, date utils, helpers (no framework deps)
+- `cli/` — `mantecato-cli`: standalone CLI (depends on core, typer, rich, textual)
+- `mcp/` — `mantecato-mcp`: standalone MCP server (depends on core, mcp, httpx)
+- `backend/` — `mantecato-backend`: FastAPI API server (depends on core)
+- `frontend/` — Vite + React SPA
+- `packages/tracker/` — `@mantecato/tracker`: JS tracking script (npm)
 
 Do not add or rely on `next/*` APIs unless you are explicitly working on historical migration material.
 
@@ -17,6 +21,12 @@ Mantecato is a standalone analytics dashboard that reads an existing Umami Postg
 
 ## Running CLI Commands
 
+```bash
+cd cli
+uv run mantecato <command> [options]
+```
+
+Legacy invocation (still works from the backend directory):
 ```bash
 cd backend
 uv run python -m app.cli.main <command> [options]
@@ -90,6 +100,12 @@ All commands support these global options:
 - `dashboards` / `dashboard --id <uuid>` / `dashboard-delete --id <uuid>`
 - `scheduled-exports` / `scheduled-export --id <uuid>` / `scheduled-export-delete --id <uuid>`
 
+**Config & TUI:**
+- `config get <key>` — read a config value (e.g. `database.url`, `defaults.site`)
+- `config set <key> <value>` — write a config value
+- `config list` — show all config values
+- `tui` — launch the terminal dashboard UI
+
 ## Filter Syntax
 
 Format: `column:operator:value` — repeatable with `--filter`.
@@ -101,23 +117,23 @@ Format: `column:operator:value` — repeatable with `--filter`.
 Examples:
 ```bash
 # Full report for the last 30 days
-uv run python -m app.cli.main report -s mysite.com -p 30d
+uv run mantecato report -s mysite.com -p 30d
 
 # Report for mobile traffic only
-uv run python -m app.cli.main report -s mysite.com -p 30d --filter device:eq:mobile
+uv run mantecato report -s mysite.com -p 30d --filter device:eq:mobile
 
 # Report for Google organic traffic only
-uv run python -m app.cli.main report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
+uv run mantecato report -s mysite.com -p 30d --filter referrer_domain:eq:google.com
 
 # Report as JSON (for programmatic use)
-uv run python -m app.cli.main report -s mysite.com -p 90d -f json
+uv run mantecato report -s mysite.com -p 90d -f json
 
 # Report for a custom date range
-uv run python -m app.cli.main report -s mysite.com --start 2026-03-01 --end 2026-04-01
+uv run mantecato report -s mysite.com --start 2026-03-01 --end 2026-04-01
 
 # Individual queries with filters
-uv run python -m app.cli.main stats -s mysite.com --filter country:eq:US
-uv run python -m app.cli.main pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
+uv run mantecato stats -s mysite.com --filter country:eq:US
+uv run mantecato pages -s mysite.com --filter device:eq:mobile --filter referrer_domain:contains:google
 ```
 
 ## Analysis Methodology
