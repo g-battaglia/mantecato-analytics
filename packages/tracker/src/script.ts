@@ -2,9 +2,9 @@
  * Drop-in script for <script> tag usage.
  *
  * Usage:
- *   <script defer src="https://your-umami.com/mantecato.js"
+ *   <script defer src="https://your-instance.com/api/script"
  *     data-website-id="your-uuid"
- *     data-host-url="https://your-umami.com"
+ *     data-host-url="https://your-instance.com"
  *     data-domains="example.com,www.example.com"
  *     data-tag="production"
  *     data-auto-track="true"
@@ -13,6 +13,9 @@
  *
  * All data-* attributes are optional except data-website-id.
  * data-host-url defaults to the script's origin.
+ *
+ * Supports Umami-compatible data-umami-event click tracking:
+ *   <button data-umami-event="signup" data-umami-event-plan="pro">Sign up</button>
  */
 
 import { createTracker, type Tracker } from "./tracker";
@@ -46,7 +49,6 @@ import { createTracker, type Tracker } from "./tracker";
       baseUrl = location.origin;
     }
   }
-  // Remove trailing slash
   baseUrl = baseUrl.replace(/\/+$/, "");
 
   const domains = script.getAttribute("data-domains")
@@ -67,11 +69,37 @@ import { createTracker, type Tracker } from "./tracker";
     tag,
   });
 
+  // Umami-compatible data-umami-event click tracking
+  // <button data-umami-event="signup" data-umami-event-plan="pro">
+  function setupEventAttributeTracking() {
+    document.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement)?.closest("[data-umami-event]") as HTMLElement | null;
+      if (!target) return;
+
+      const eventName = target.getAttribute("data-umami-event");
+      if (!eventName) return;
+
+      // Collect data-umami-event-* attributes as event data
+      const data: Record<string, string> = {};
+      const prefix = "data-umami-event-";
+      for (const attr of Array.from(target.attributes)) {
+        if (attr.name.startsWith(prefix) && attr.name.length > prefix.length) {
+          const key = attr.name.slice(prefix.length);
+          data[key] = attr.value;
+        }
+      }
+
+      tracker.event(eventName, Object.keys(data).length > 0 ? data : undefined);
+    });
+  }
+
+  setupEventAttributeTracking();
+
   // Expose on window for manual usage: mantecato.event('click', { button: 'cta' })
   const w = window as unknown as Record<string, unknown>;
   w.mantecato = tracker;
 
-  // Also expose Umami-compatible global
+  // Umami-compatible global
   if (!w.umami) {
     w.umami = {
       track: (nameOrFn?: string | ((props: Record<string, unknown>) => Record<string, unknown>), data?: Record<string, string | number | boolean>) => {
@@ -90,8 +118,12 @@ import { createTracker, type Tracker } from "./tracker";
           tracker.pageview();
         }
       },
-      identify: (data: Record<string, string | number | boolean>) => {
-        tracker.identify(data);
+      identify: (idOrData: string | Record<string, string | number | boolean>, data?: Record<string, string | number | boolean>) => {
+        if (typeof idOrData === "string") {
+          tracker.identify(idOrData, data);
+        } else {
+          tracker.identify(idOrData);
+        }
       },
     };
   }

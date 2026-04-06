@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createTracker, type Tracker, type TrackerConfig } from "../tracker";
 
-// Capture all sendBeacon / fetch calls
-let sentPayloads: Array<{ url: string; body: string }> = [];
+// Capture all fetch calls
+let sentPayloads: Array<{ url: string; body: string; headers: Record<string, string> }> = [];
 
 function makeConfig(overrides: Partial<TrackerConfig> = {}): TrackerConfig {
   return {
@@ -19,22 +19,29 @@ function lastPayload() {
   return JSON.parse(last.body);
 }
 
+function lastHeaders() {
+  const last = sentPayloads[sentPayloads.length - 1];
+  if (!last) throw new Error("No payload sent");
+  return last.headers;
+}
+
 beforeEach(() => {
   sentPayloads = [];
 
-  // Make sendBeacon return false so we fall through to fetch
-  Object.defineProperty(navigator, "sendBeacon", {
-    value: vi.fn(() => false),
-    writable: true,
-    configurable: true,
-  });
-
-  // Override fetch to capture payloads
+  // Override fetch to capture payloads and return Umami-compatible response
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
-      sentPayloads.push({ url, body: (init?.body as string) || "" });
-      return new Response("ok");
+      const headers: Record<string, string> = {};
+      if (init?.headers) {
+        for (const [k, v] of Object.entries(init.headers as Record<string, string>)) {
+          headers[k] = v;
+        }
+      }
+      sentPayloads.push({ url, body: (init?.body as string) || "", headers });
+      return new Response(JSON.stringify({ cache: "test-cache-token" }), {
+        headers: { "Content-Type": "application/json" },
+      });
     }),
   );
 
@@ -79,6 +86,22 @@ beforeEach(() => {
     writable: true,
     configurable: true,
   });
+
+  // Reset window.doNotTrack (tests that set it pollute global state)
+  Object.defineProperty(window, "doNotTrack", {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
+
+  // Mock localStorage
+  const store: Record<string, string> = {};
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { for (const k in store) delete store[k]; },
+  });
 });
 
 afterEach(() => {
@@ -106,7 +129,7 @@ describe("createTracker", () => {
 });
 
 describe("pageview", () => {
-  it("sends a pageview with correct payload", () => {
+  it("sends a pageview with correct payload structure", () => {
     const tracker = createTracker(makeConfig());
     tracker.pageview();
 
@@ -142,6 +165,14 @@ describe("pageview", () => {
 
     expect(sentPayloads[0].url).toBe("https://analytics.example.com/custom/track");
   });
+
+  it("sends credentials: omit on fetch", () => {
+    const tracker = createTracker(makeConfig());
+    tracker.pageview();
+
+    const fetchCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(fetchCall[1].credentials).toBe("omit");
+  });
 });
 
 describe("event", () => {
@@ -150,6 +181,7 @@ describe("event", () => {
     tracker.event("signup", { plan: "pro" });
 
     const payload = lastPayload();
+    expect(payload.type).toBe("event");
     expect(payload.payload.name).toBe("signup");
     expect(payload.payload.data).toEqual({ plan: "pro" });
   });
@@ -179,20 +211,56 @@ describe("revenue", () => {
     tracker.revenue(100, "EUR", { product: "widget" });
 
     const payload = lastPayload();
-    expect(payload.payload.name).toBe("revenue");
     expect(payload.payload.revenue).toEqual({ amount: 100, currency: "EUR" });
     expect(payload.payload.data).toEqual({ product: "widget" });
   });
 });
 
 describe("identify", () => {
-  it("sends identify event with data", () => {
+  it("sends type: identify (not event)", () => {
     const tracker = createTracker(makeConfig());
-    tracker.identify({ userId: "abc123", plan: "enterprise" });
+    tracker.identify({ userId: "abc123" });
 
     const payload = lastPayload();
-    expect(payload.payload.name).toBe("identify");
-    expect(payload.payload.data).toEqual({ userId: "abc123", plan: "enterprise" });
+    expect(payload.type).toBe("identify");
+    expect(payload.payload.data).toEqual({ userId: "abc123" });
+  });
+
+  it("supports (id, data) signature like Umami", () => {
+    const tracker = createTracker(makeConfig());
+    tracker.identify("user-42", { plan: "enterprise" });
+
+    const payload = lastPayload();
+    expect(payload.type).toBe("identify");
+    expect(payload.payload.id).toBe("user-42");
+    expect(payload.payload.data).toEqual({ plan: "enterprise" });
+  });
+
+  it("persists id across subsequent calls", () => {
+    const tracker = createTracker(makeConfig());
+    tracker.identify("user-42");
+
+    // Wait for fetch to complete, then send a pageview
+    tracker.pageview();
+
+    const pvPayload = JSON.parse(sentPayloads[1].body);
+    expect(pvPayload.payload.id).toBe("user-42");
+  });
+});
+
+describe("cache token (x-umami-cache)", () => {
+  it("sends x-umami-cache header after receiving cache from server", async () => {
+    const tracker = createTracker(makeConfig());
+    tracker.pageview();
+
+    // Wait for the fetch promise chain to resolve
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Second call should include the cache header
+    tracker.pageview();
+
+    const headers = sentPayloads[1].headers;
+    expect(headers["x-umami-cache"]).toBe("test-cache-token");
   });
 });
 
@@ -226,6 +294,16 @@ describe("enable/disable", () => {
   });
 });
 
+describe("localStorage umami.disabled", () => {
+  it("does not track when umami.disabled is set", () => {
+    localStorage.setItem("umami.disabled", "1");
+    const tracker = createTracker(makeConfig());
+    tracker.pageview();
+
+    expect(sentPayloads).toHaveLength(0);
+  });
+});
+
 describe("destroy", () => {
   it("disables tracking on destroy", () => {
     const tracker = createTracker(makeConfig());
@@ -237,8 +315,21 @@ describe("destroy", () => {
 });
 
 describe("DNT", () => {
-  it("respects Do-Not-Track when enabled", () => {
+  it("respects navigator.doNotTrack = 1", () => {
     Object.defineProperty(navigator, "doNotTrack", {
+      value: "1",
+      writable: true,
+      configurable: true,
+    });
+
+    const tracker = createTracker(makeConfig({ respectDNT: true }));
+    tracker.pageview();
+
+    expect(sentPayloads).toHaveLength(0);
+  });
+
+  it("respects window.doNotTrack", () => {
+    Object.defineProperty(window, "doNotTrack", {
       value: "1",
       writable: true,
       configurable: true,

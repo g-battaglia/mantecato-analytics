@@ -1,6 +1,6 @@
 # @mantecato/tracker-react
 
-React hooks and provider for [`@mantecato/tracker`](../tracker). Drop-in analytics for any React app.
+React hooks e provider per [`@mantecato/tracker`](../tracker). Analytics drop-in per qualsiasi app React.
 
 ## Installation
 

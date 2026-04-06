@@ -1,25 +1,25 @@
 /**
  * @mantecato/tracker
  *
- * Lightweight analytics tracker compatible with Umami.
- * Sends pageviews and custom events to your Umami instance.
+ * Analytics tracking script for Mantecato.
+ * Wire-compatible with the Umami /api/send endpoint.
  *
  * Usage (npm):
  *   import { createTracker } from '@mantecato/tracker';
- *   const tracker = createTracker({ websiteId: '...', baseUrl: 'https://your-umami.com' });
+ *   const tracker = createTracker({ websiteId: '...', baseUrl: 'https://your-instance.com' });
  *   tracker.pageview();
  *   tracker.event('signup', { plan: 'pro' });
  *
  * Usage (script tag):
- *   <script defer src="https://your-umami.com/script.js" data-website-id="..."></script>
+ *   <script defer src="https://your-instance.com/api/script" data-website-id="..."></script>
  */
 
 // --- Types ---
 
 export interface TrackerConfig {
-  /** The website UUID from Umami */
+  /** The website UUID */
   websiteId: string;
-  /** Base URL of your Umami instance (no trailing slash) */
+  /** Base URL of your Mantecato / Umami instance (no trailing slash) */
   baseUrl: string;
   /** Override the API endpoint path (default: "/api/send") */
   endpoint?: string;
@@ -71,10 +71,11 @@ interface UmamiPayload {
   data?: Record<string, string | number | boolean>;
   tag?: string;
   revenue?: RevenueData;
+  id?: string;
 }
 
 interface SendBody {
-  type: "event";
+  type: "event" | "identify";
   payload: UmamiPayload;
 }
 
@@ -87,8 +88,11 @@ export interface Tracker {
   revenue: (amount: number, currency: string, data?: Record<string, string | number | boolean>) => void;
   /** Send a raw payload (advanced) */
   send: (payload: EventPayload) => void;
-  /** Identify the current visitor with custom properties */
-  identify: (data: Record<string, string | number | boolean>) => void;
+  /** Identify the current visitor — accepts data object or (id, data) like Umami */
+  identify: {
+    (data: Record<string, string | number | boolean>): void;
+    (id: string, data?: Record<string, string | number | boolean>): void;
+  };
   /** Enable tracking (if it was disabled) */
   enable: () => void;
   /** Disable tracking */
@@ -132,8 +136,10 @@ function getTitle(): string {
 }
 
 function isDNT(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return navigator.doNotTrack === "1" || (navigator as unknown as Record<string, unknown>).globalPrivacyControl === true;
+  const w = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : {};
+  const n = typeof navigator !== "undefined" ? (navigator as unknown as Record<string, unknown>) : {};
+  const dnt = w.doNotTrack || n.doNotTrack || n.msDoNotTrack || n.globalPrivacyControl;
+  return dnt === 1 || dnt === "1" || dnt === "yes" || dnt === true;
 }
 
 function isBot(): boolean {
@@ -150,7 +156,17 @@ function isLocalhost(): boolean {
   );
 }
 
+function isDisabledByUser(): boolean {
+  try {
+    return localStorage.getItem("umami.disabled") === "1";
+  } catch {
+    return false;
+  }
+}
+
 // --- Core ---
+
+const SPA_DELAY = 300;
 
 export function createTracker(config: TrackerConfig): Tracker {
   const {
@@ -166,17 +182,21 @@ export function createTracker(config: TrackerConfig): Tracker {
   } = config;
 
   let enabled = true;
+  let disabled = false; // server-side disable flag
   let currentUrl = "";
   let currentReferrer = "";
+  let cache = ""; // session token from server (x-umami-cache)
+  let identity = ""; // persistent visitor ID from identify()
   let cleanupFns: Array<() => void> = [];
 
-  // Check if we should track
   function shouldTrack(): boolean {
     if (!enabled) return false;
+    if (disabled) return false;
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
     if (respectDNT && isDNT()) return false;
     if (isLocalhost()) return false;
+    if (isDisabledByUser()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();
       if (!domains.some((d) => host === d || host.endsWith(`.${d}`))) {
@@ -186,51 +206,57 @@ export function createTracker(config: TrackerConfig): Tracker {
     return true;
   }
 
-  // Send data to Umami API
-  function sendPayload(eventPayload: EventPayload = {}): void {
-    if (!shouldTrack()) return;
-
+  function buildPayload(eventPayload: EventPayload = {}): UmamiPayload {
     const url = eventPayload.url || getUrl();
     const referrer = eventPayload.referrer || currentReferrer || getReferrer();
     const title = eventPayload.title || getTitle();
 
-    const body: SendBody = {
-      type: "event",
-      payload: {
-        website: websiteId,
-        hostname: customHostname || getHostname(),
-        screen: getScreen(),
-        language: getLanguage(),
-        title,
-        url,
-        referrer,
-        ...(eventPayload.name ? { name: eventPayload.name } : {}),
-        ...(eventPayload.data ? { data: eventPayload.data } : {}),
-        ...(eventPayload.revenue ? { revenue: eventPayload.revenue } : {}),
-        ...(tag ? { tag } : {}),
-      },
+    return {
+      website: websiteId,
+      hostname: customHostname || getHostname(),
+      screen: getScreen(),
+      language: getLanguage(),
+      title,
+      url,
+      referrer,
+      ...(eventPayload.name ? { name: eventPayload.name } : {}),
+      ...(eventPayload.data ? { data: eventPayload.data } : {}),
+      ...(eventPayload.revenue ? { revenue: eventPayload.revenue } : {}),
+      ...(tag ? { tag } : {}),
+      ...(identity ? { id: identity } : {}),
     };
+  }
 
-    // Use sendBeacon when available (doesn't block navigation), fall back to fetch
+  // Send via fetch (primary) — reads response for cache token and disabled flag
+  function send(payload: UmamiPayload, type: "event" | "identify" = "event"): void {
+    if (!shouldTrack()) return;
+
     const apiUrl = `${baseUrl}${endpoint}`;
-    const payload = JSON.stringify(body);
+    const body: SendBody = { type, payload };
+    const jsonBody = JSON.stringify(body);
 
-    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: "application/json" });
-      const sent = navigator.sendBeacon(apiUrl, blob);
-      if (sent) return;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (cache) {
+      headers["x-umami-cache"] = cache;
     }
 
-    // Fallback to fetch
     fetch(apiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
+      headers,
+      body: jsonBody,
       keepalive: true,
-      mode: "cors",
-    }).catch(() => {
-      // Silently ignore tracking failures
-    });
+      credentials: "omit",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          if (data.cache) cache = data.cache;
+          if (data.disabled) disabled = true;
+        }
+      })
+      .catch(() => {
+        // Silently ignore tracking failures
+      });
   }
 
   // Handle route changes for SPAs
@@ -239,7 +265,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     if (newUrl === currentUrl) return;
     currentReferrer = currentUrl;
     currentUrl = newUrl;
-    sendPayload({ url: currentUrl, referrer: currentReferrer });
+    send(buildPayload({ url: currentUrl, referrer: currentReferrer }));
   }
 
   // Set up auto-tracking
@@ -251,7 +277,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     currentReferrer = getReferrer();
 
     // Track initial pageview
-    sendPayload();
+    send(buildPayload());
 
     // Listen for pushState / replaceState / popstate for SPA navigation
     const originalPushState = history.pushState;
@@ -259,22 +285,18 @@ export function createTracker(config: TrackerConfig): Tracker {
 
     history.pushState = function (...args) {
       originalPushState.apply(this, args);
-      // Use setTimeout to let the browser update location
-      setTimeout(handleRouteChange, 0);
+      setTimeout(handleRouteChange, SPA_DELAY);
     };
 
     history.replaceState = function (...args) {
       originalReplaceState.apply(this, args);
-      setTimeout(handleRouteChange, 0);
+      setTimeout(handleRouteChange, SPA_DELAY);
     };
 
     const onPopState = () => {
-      setTimeout(handleRouteChange, 0);
+      setTimeout(handleRouteChange, SPA_DELAY);
     };
     window.addEventListener("popstate", onPopState);
-
-    // Track visibility change (user comes back to tab)
-    // Not a pageview, but useful for session keepalive
 
     cleanupFns.push(() => {
       history.pushState = originalPushState;
@@ -292,7 +314,7 @@ export function createTracker(config: TrackerConfig): Tracker {
       if (!shouldTrack()) return;
       const target = e.target as HTMLElement | null;
       const selector = target?.tagName?.toLowerCase() || "unknown";
-      sendPayload({
+      send(buildPayload({
         name: "_replay_click",
         data: {
           x: e.clientX,
@@ -300,7 +322,7 @@ export function createTracker(config: TrackerConfig): Tracker {
           target: selector,
           ...(target?.id ? { id: target.id } : {}),
         },
-      });
+      }));
     };
 
     let scrollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -317,10 +339,10 @@ export function createTracker(config: TrackerConfig): Tracker {
         const depth = docHeight > winHeight
           ? Math.round((scrollTop / (docHeight - winHeight)) * 100)
           : 100;
-        sendPayload({
+        send(buildPayload({
           name: "_replay_scroll",
           data: { depth, scrollTop: Math.round(scrollTop) },
-        });
+        }));
       }, 300);
     };
 
@@ -368,31 +390,45 @@ export function createTracker(config: TrackerConfig): Tracker {
       const url = options?.url || getUrl();
       currentReferrer = currentUrl || getReferrer();
       currentUrl = url;
-      sendPayload({
+      send(buildPayload({
         url,
         title: options?.title,
         referrer: options?.referrer || currentReferrer,
-      });
+      }));
     },
 
     event(name, data) {
-      sendPayload({ name, data });
+      send(buildPayload({ name, data }));
     },
 
     revenue(amount, currency, data) {
-      sendPayload({
+      send(buildPayload({
         name: "revenue",
         data: data || {},
         revenue: { amount, currency },
-      });
+      }));
     },
 
     send(payload) {
-      sendPayload(payload);
+      send(buildPayload(payload));
     },
 
-    identify(data) {
-      sendPayload({ name: "identify", data });
+    identify(idOrData: string | Record<string, string | number | boolean>, data?: Record<string, string | number | boolean>) {
+      // Match Umami signature: identify(data) or identify(id, data)
+      if (typeof idOrData === "string") {
+        identity = idOrData;
+        cache = ""; // clear cache to force re-identification, like Umami
+        send(
+          buildPayload({ data: data ?? undefined }),
+          "identify",
+        );
+      } else {
+        cache = "";
+        send(
+          buildPayload({ data: idOrData }),
+          "identify",
+        );
+      }
     },
 
     enable() {
