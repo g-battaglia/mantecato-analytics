@@ -112,7 +112,7 @@ function useDetailData(detail: DetailKind | null) {
       if (!res.ok) throw new Error("fetch failed");
       return res.json() as Promise<{
         timeseries: Array<{ time: string; count: number; visitors: number }>;
-        properties: Array<{ property: string; value: string; count: number }>;
+        properties: Array<{ dataKey: string; value: string; count: number }>;
       }>;
     },
   });
@@ -237,7 +237,7 @@ function EventDetail({ data }: { data: NonNullable<ReturnType<typeof useDetailDa
             Properties
           </h4>
           {data.properties.map((prop, i) => (
-            <StatRow key={i} label={`${prop.property}: ${prop.value}`} value={prop.count} />
+            <StatRow key={i} label={`${prop.dataKey}: ${prop.value}`} value={prop.count} />
           ))}
         </div>
       )}
