@@ -29,6 +29,7 @@ import {
   SidebarMenuItem,
   SidebarFooter,
   SidebarSeparator,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { SiteSelector } from "./SiteSelector";
 
@@ -60,35 +61,14 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="h-[60px] justify-center">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link to="/">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <BarChart3 className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">Mantecato</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    Analytics
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarHeader className="flex flex-row items-center gap-1 h-auto py-2 px-2">
+        <SidebarTrigger className="shrink-0" />
+        <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
+          <SiteSelector />
+        </div>
       </SidebarHeader>
 
-      <SidebarSeparator />
-
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Site</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SiteSelector />
-          </SidebarGroupContent>
-        </SidebarGroup>
 
         {siteId && (
           <>

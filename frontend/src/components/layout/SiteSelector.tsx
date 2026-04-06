@@ -8,7 +8,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Globe } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 interface Website {
@@ -51,8 +50,7 @@ export function SiteSelector() {
         navigate(`/sites/${value}`);
       }}
     >
-      <SelectTrigger className="w-full h-14 py-2 text-left">
-        <Globe className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+      <SelectTrigger className="h-9 w-full border-0 bg-transparent px-2 py-1 text-left shadow-none hover:bg-transparent focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent dark:hover:bg-transparent">
         <SelectValue placeholder="Select a site" />
       </SelectTrigger>
       <SelectContent>

@@ -19,6 +19,7 @@ async def get_geo_metrics(
     level: str = "country",
     country_filter: str | None = None,
     region_filter: str | None = None,
+    url_path: str | None = None,
     limit: int = 50,
     filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
@@ -33,6 +34,11 @@ async def get_geo_metrics(
         "endDate": end_date,
         **filter_params,
     }
+
+    page_filter = ""
+    if url_path:
+        page_filter = " AND we.url_path = {{urlPath}}"
+        params["urlPath"] = url_path
 
     # Build inner/outer GROUP BY and SELECT expressions based on level
     if level == "city":
@@ -70,6 +76,7 @@ async def get_geo_metrics(
         AND we.created_at BETWEEN {{{{startDate::timestamptz}}}} AND {{{{endDate::timestamptz}}}}
         AND we.event_type = 1
         AND s.country IS NOT NULL
+        {page_filter}
         {extra_filter}
         {filter_where}
       GROUP BY {inner_group_by}, we.visit_id

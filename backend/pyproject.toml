@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-mantecato-core = { path = "../core" }
+mantecato-core = { path = "../core", editable = true }
 
 [tool.poe.tasks]
 dev = "uvicorn app.main:app --port 8100 --reload"

@@ -21,6 +21,26 @@ interface BarChartProps {
   showGrid?: boolean;
   stacked?: boolean;
   horizontal?: boolean;
+  onBarClick?: (payload: Record<string, unknown>) => void;
+}
+
+function getActivePayload(data: unknown): Record<string, unknown> | null {
+  const activePayload = (
+    data as {
+      activePayload?: Array<{ payload?: Record<string, unknown> }>;
+      payload?: Record<string, unknown>;
+    }
+  )?.activePayload;
+
+  if (activePayload?.[0]?.payload) {
+    return activePayload[0].payload;
+  }
+
+  return (
+    data as {
+      payload?: Record<string, unknown>;
+    }
+  )?.payload ?? null;
 }
 
 function formatXAxis(value: string): string {
@@ -42,6 +62,7 @@ export function BarChart({
   showGrid = true,
   stacked = false,
   horizontal = false,
+  onBarClick,
 }: BarChartProps) {
   if (!data || data.length === 0) {
     return (
@@ -62,6 +83,16 @@ export function BarChart({
         data={data}
         layout={layout}
         margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+        onClick={
+          onBarClick
+            ? (state) => {
+                const payload = getActivePayload(state);
+                if (payload) {
+                  onBarClick(payload);
+                }
+              }
+            : undefined
+        }
       >
         {showGrid && (
           <CartesianGrid
@@ -109,6 +140,11 @@ export function BarChart({
           </>
         )}
         <Tooltip
+          cursor={
+            onBarClick
+              ? { fill: "var(--color-accent)", fillOpacity: 0.08 }
+              : false
+          }
           contentStyle={{
             backgroundColor: "var(--color-popover)",
             border: "1px solid var(--color-border)",
@@ -129,6 +165,17 @@ export function BarChart({
             radius={stacked ? 0 : [2, 2, 0, 0]}
             stackId={stacked ? "stack" : undefined}
             name={labels[key] || key}
+            cursor={onBarClick ? "pointer" : undefined}
+            onClick={
+              onBarClick
+                ? (barState) => {
+                    const payload = getActivePayload(barState);
+                    if (payload) {
+                      onBarClick(payload);
+                    }
+                  }
+                : undefined
+            }
           />
         ))}
       </RechartsBarChart>

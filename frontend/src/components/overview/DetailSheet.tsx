@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { AreaChart } from "@/components/charts/AreaChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
@@ -320,17 +320,17 @@ export function DetailSheet({ detail, onClose }: Props) {
     (detail?.type === "browser" && queries.browser.isLoading);
 
   return (
-    <Sheet open={detail !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <Dialog open={detail !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
             {detail ? TITLES[detail.type] : ""}
-          </SheetTitle>
-          <SheetDescription className="font-mono text-xs break-all">
+          </DialogTitle>
+          <DialogDescription className="font-mono text-xs break-all">
             {detail?.value}
-          </SheetDescription>
-        </SheetHeader>
-        <div className="px-4 pb-6">
+          </DialogDescription>
+        </DialogHeader>
+        <div className="pb-2">
           {isLoading ? (
             <div className="space-y-4 pt-2">
               <Skeleton className="h-[180px] w-full" />
@@ -358,7 +358,7 @@ export function DetailSheet({ detail, onClose }: Props) {
             </>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

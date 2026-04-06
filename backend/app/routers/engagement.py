@@ -63,3 +63,23 @@ async def get_engagement(
         "bounceByPage": bounce_by_page,
         "bounceBySource": bounce_by_source,
     }
+
+
+@router.get("/engagement/bucket-sessions")
+async def get_bucket_sessions(
+    site_id: str,
+    user: dict = Depends(require_site_access),
+    bucket: str = Query(..., description="Duration bucket name, e.g. '30m+'"),
+    entry_page: str | None = Query(None, alias="entryPage"),
+    range: str = Query("30d", alias="range"),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+    filters: list = Depends(parse_filters),
+):
+    preset = range
+    start_date, end_date = _resolve_dates(preset, start, end)
+    return await q_engagement.get_sessions_for_bucket(
+        site_id, start_date, end_date, bucket, limit, offset, filters, entry_page
+    )

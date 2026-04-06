@@ -35,10 +35,11 @@ async def get_geo(
     level: str = Query("country"),
     country: str | None = Query(None),
     region: str | None = Query(None),
+    page: str | None = Query(None, alias="page"),
     filters: list = Depends(parse_filters),
 ):
     preset = range
     start_date, end_date = _resolve_dates(preset, start, end)
     return await q_geo.get_geo_metrics(
-        site_id, start_date, end_date, level, country, region, 50, filters
+        site_id, start_date, end_date, level, country, region, page, 50, filters
     )

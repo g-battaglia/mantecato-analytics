@@ -10,7 +10,7 @@ import { AreaChart } from "@/components/charts/AreaChart";
 import { useSiteQuery, useDateParams } from "@/hooks/use-site-query";
 import { usePreferencesStore } from "@/stores/preferences";
 import { formatDuration, formatPercent } from "@/lib/format";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, MapPin } from "lucide-react";
 
 interface PageRow {
   urlPath: string;
@@ -29,6 +29,17 @@ interface PageDetail {
   referrers: { referrerDomain: string; visitors: number; views: number }[];
   nextPages: { urlPath: string; count: number; percentage: number }[];
   timeDistribution: { bucket: string; count: number }[];
+}
+
+interface GeoRow {
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  visitors: number;
+  pageviews: number;
+  visits: number;
+  bounceRate: number;
+  avgDuration: number;
 }
 
 // --- Column definitions ---
@@ -435,12 +446,19 @@ function PageDetailView({
   page: PageRow;
   onBack: () => void;
 }) {
+  const [geoTab, setGeoTab] = useState("country");
   const { data, isLoading } = useSiteQuery<PageDetail>("pages", [
     "page-detail",
     page.urlPath,
   ], {
     page: page.urlPath,
   });
+
+  const { data: geoData, isLoading: geoLoading } = useSiteQuery<GeoRow[]>(
+    "geo",
+    ["page-geo", page.urlPath, geoTab],
+    { page: page.urlPath, level: geoTab }
+  );
 
   return (
     <div className="space-y-4">
@@ -593,7 +611,7 @@ function PageDetailView({
           </CardContent>
         </Card>
 
-        {/* Where visitors go next */}
+        {/* Next Pages */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
@@ -630,6 +648,68 @@ function PageDetailView({
           </CardContent>
         </Card>
       </div>
+
+      {/* Geographic breakdown */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <MapPin className="h-4 w-4" />
+            Geographic Breakdown
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={geoTab} onValueChange={setGeoTab}>
+            <TabsList>
+              <TabsTrigger value="country">Countries</TabsTrigger>
+              <TabsTrigger value="region">Regions</TabsTrigger>
+              <TabsTrigger value="city">Cities</TabsTrigger>
+            </TabsList>
+
+            {(["country", "region", "city"] as const).map((level) => (
+              <TabsContent key={level} value={level} className="mt-4">
+                {geoLoading ? (
+                  <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                    Loading...
+                  </div>
+                ) : geoData && geoData.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="grid grid-cols-[1fr_80px_80px_80px_80px] gap-2 text-xs font-medium text-muted-foreground pb-1 border-b">
+                      <span>{level === "country" ? "Country" : level === "region" ? "Region" : "City"}</span>
+                      <span className="text-right">Visitors</span>
+                      <span className="text-right">Views</span>
+                      <span className="text-right">Bounce</span>
+                      <span className="text-right">Avg Time</span>
+                    </div>
+                    {geoData.map((g, i) => {
+                      const label = level === "country"
+                        ? g.country
+                        : level === "region"
+                          ? g.region
+                          : g.city;
+                      return (
+                        <div
+                          key={i}
+                          className="grid grid-cols-[1fr_80px_80px_80px_80px] gap-2 text-xs py-1 border-b border-border/50"
+                        >
+                          <span className="truncate">{label ?? "Unknown"}</span>
+                          <span className="text-right tabular-nums">{g.visitors.toLocaleString()}</span>
+                          <span className="text-right tabular-nums">{g.pageviews.toLocaleString()}</span>
+                          <span className="text-right tabular-nums">{formatPercent(g.bounceRate)}</span>
+                          <span className="text-right tabular-nums">{formatDuration(g.avgDuration)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                    No geographic data
+                  </div>
+                )}
+              </TabsContent>
+            ))}
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }
