@@ -4,6 +4,8 @@ Lightweight analytics tracker compatible with [Umami](https://umami.is). Sends p
 
 - **~2 KB** minified (IIFE script)
 - Auto-tracks SPA route changes (pushState / popstate)
+- Revenue tracking (`tracker.revenue(amount, currency)`)
+- Optional session replay data (click coordinates, scroll depth)
 - Uses `sendBeacon` with `fetch` fallback
 - Respects Do-Not-Track, skips bots and localhost
 - ESM, CJS, and drop-in `<script>` tag builds
@@ -85,6 +87,7 @@ interface TrackerConfig {
   domains?: string[];       // Only track on these domains
   hostname?: string;        // Override hostname sent to API
   tag?: string;             // Tag identifier
+  sessionReplay?: boolean;  // Collect click coords + scroll depth (default: false)
 }
 ```
 
@@ -94,12 +97,35 @@ interface TrackerConfig {
 |---|---|
 | `tracker.pageview(options?)` | Track a pageview. Options: `{ url, title, referrer }` |
 | `tracker.event(name, data?)` | Track a custom event with optional key-value data |
+| `tracker.revenue(amount, currency, data?)` | Track a revenue event |
 | `tracker.identify(data)` | Identify the visitor with custom properties |
 | `tracker.send(payload)` | Send a raw event payload (advanced) |
 | `tracker.enable()` | Re-enable tracking after `disable()` |
 | `tracker.disable()` | Temporarily disable tracking |
 | `tracker.isEnabled()` | Check if tracking is active |
 | `tracker.destroy()` | Remove all event listeners, stop auto-tracking |
+
+### Revenue tracking
+
+```ts
+// Track a purchase
+tracker.revenue(29.99, 'USD');
+
+// With additional data
+tracker.revenue(100, 'EUR', { product: 'widget', plan: 'pro' });
+```
+
+### Session replay
+
+Enable optional collection of click coordinates and scroll depth:
+
+```ts
+const tracker = createTracker({
+  websiteId: '...',
+  baseUrl: '...',
+  sessionReplay: true, // sends _replay_click and _replay_scroll events
+});
+```
 
 ## Frameworks
 
@@ -125,22 +151,29 @@ export default function RootLayout({ children }) {
 }
 ```
 
-### React (programmatic)
+### React
+
+Use the companion [`@mantecato/tracker-react`](../tracker-react) package for a ready-made provider and hooks:
+
+```bash
+npm install @mantecato/tracker-react
+```
 
 ```tsx
-import { useEffect, useRef } from 'react';
-import { createTracker, type Tracker } from '@mantecato/tracker';
+import { TrackerProvider, useTracker, usePageview } from '@mantecato/tracker-react';
 
-export function useTracker(websiteId: string, baseUrl: string) {
-  const trackerRef = useRef<Tracker | null>(null);
+function App() {
+  return (
+    <TrackerProvider websiteId="..." baseUrl="https://your-mantecato.com">
+      <Page />
+    </TrackerProvider>
+  );
+}
 
-  useEffect(() => {
-    const tracker = createTracker({ websiteId, baseUrl });
-    trackerRef.current = tracker;
-    return () => tracker.destroy();
-  }, [websiteId, baseUrl]);
-
-  return trackerRef;
+function Page() {
+  usePageview(); // auto-tracks on mount
+  const { event, revenue } = useTracker();
+  return <button onClick={() => event('click', { target: 'cta' })}>CTA</button>;
 }
 ```
 
