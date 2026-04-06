@@ -5,6 +5,8 @@ Executes all due scheduled exports. Protected by CRON_SECRET.
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -17,13 +19,17 @@ router = APIRouter(prefix="/api/cron", tags=["cron"])
 @router.get("/exports")
 async def run_scheduled_exports(request: Request):
     """Execute all due scheduled exports. Protected by CRON_SECRET."""
-    if settings.CRON_SECRET:
-        auth_header = request.headers.get("authorization", "")
-        if auth_header != f"Bearer {settings.CRON_SECRET}":
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Unauthorized"},
-            )
+    if not settings.CRON_SECRET:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "CRON_SECRET is not configured"},
+        )
+    auth_header = request.headers.get("authorization", "")
+    if not hmac.compare_digest(auth_header, f"Bearer {settings.CRON_SECRET}"):
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Unauthorized"},
+        )
 
     due_exports = await q_scheduled_exports.get_due_exports()
 

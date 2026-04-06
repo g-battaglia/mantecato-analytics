@@ -13,7 +13,6 @@ standard $2b$ hashes fully compatible with the Python bcrypt library.
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 from typing import Any
 

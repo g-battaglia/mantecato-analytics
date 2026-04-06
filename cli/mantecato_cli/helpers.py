@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from mantecato_core.database import get_pool, raw_query
+from mantecato_core.database import get_pool
 from mantecato_core.date_utils import DateRange, resolve_date_range, resolve_granularity
 from mantecato_core.filters import Filter, parse_filters_from_params
 
@@ -119,7 +119,7 @@ def format_percent(value: float | None) -> str:
 
 def compute_derived_stats(raw: dict[str, Any]) -> dict[str, Any]:
     pageviews = raw.get("pageviews", 0) or 0
-    visitors = raw.get("visitors", 0) or 0
+    _visitors = raw.get("visitors", 0) or 0
     visits = raw.get("visits", 0) or 0
     bounces = raw.get("bounces", 0) or 0
     total_duration = raw.get("total_duration", 0) or 0

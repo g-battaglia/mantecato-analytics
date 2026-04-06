@@ -10,13 +10,11 @@ from rich.table import Table
 from mantecato_cli.helpers import (
     compute_derived_stats,
     format_duration,
-    format_output,
     format_percent,
     num,
     parse_date_args,
     parse_filter_args,
     pct_change,
-    resolve_granularity_arg,
     resolve_site_id,
 )
 
@@ -46,7 +44,6 @@ async def run_report(
     filters = parse_filter_args(filter_strs)
 
     from mantecato_core.date_utils import get_comparison_range
-    from mantecato_core.queries.events import get_event_properties
     from mantecato_core.queries.sources import get_channel_metrics
     from mantecato_core.queries.stats import (
         get_top_events_with_properties,
@@ -62,9 +59,15 @@ async def run_report(
         get_website_stats(site_id, date_range.start_date, date_range.end_date, filters),
         get_website_stats(site_id, prev_range.start_date, prev_range.end_date, filters),
         get_top_pages(site_id, date_range.start_date, date_range.end_date, 10, filters),
-        get_top_referrers(site_id, date_range.start_date, date_range.end_date, 10, filters),
-        get_top_events_with_properties(site_id, date_range.start_date, date_range.end_date, 5, 3, filters),
-        get_channel_metrics(site_id, date_range.start_date, date_range.end_date, filters),
+        get_top_referrers(
+            site_id, date_range.start_date, date_range.end_date, 10, filters
+        ),
+        get_top_events_with_properties(
+            site_id, date_range.start_date, date_range.end_date, 5, 3, filters
+        ),
+        get_channel_metrics(
+            site_id, date_range.start_date, date_range.end_date, filters
+        ),
         return_exceptions=True,
     )
 
@@ -98,11 +101,22 @@ async def run_report(
 
     # Human-friendly output with Rich tables
     if human:
-        _print_human_report(site, period, current, previous, top_pages, top_referrers, top_events, channels)
+        _print_human_report(
+            site,
+            period,
+            current,
+            previous,
+            top_pages,
+            top_referrers,
+            top_events,
+            channels,
+        )
         return
 
     # Default compact output
-    _print_compact_report(site, period, current, previous, top_pages, top_referrers, top_events, channels)
+    _print_compact_report(
+        site, period, current, previous, top_pages, top_referrers, top_events, channels
+    )
 
 
 def _print_human_report(
@@ -146,7 +160,13 @@ def _print_human_report(
             formatted = num(val)
             delta = pct_change(val, prev_val)
 
-        delta_style = "green" if delta.startswith("+") else "red" if delta.startswith("-") else "dim"
+        delta_style = (
+            "green"
+            if delta.startswith("+")
+            else "red"
+            if delta.startswith("-")
+            else "dim"
+        )
         table.add_row(label, formatted, f"[{delta_style}]{delta}[/]")
 
     console.print(table)
@@ -197,7 +217,11 @@ def _print_human_report(
         table.add_column("Visitors", justify="right")
         table.add_column("", width=BAR_WIDTH + 2)
 
-        max_v = max((s.get("visitors", 0) or 0) for s in top_referrers) if top_referrers else 1
+        max_v = (
+            max((s.get("visitors", 0) or 0) for s in top_referrers)
+            if top_referrers
+            else 1
+        )
         for s in top_referrers:
             v = s.get("visitors", 0) or 0
             table.add_row(
@@ -232,8 +256,13 @@ def _print_human_report(
                 for prop in props[:2]:  # Max 2 keys per event
                     key = prop.get("key", "")
                     values = prop.get("values", [])
-                    val_strs = [f"{pv.get('value', '?')} ({pv.get('count', 0)})" for pv in values[:3]]
-                    console.print(f"    [dim]{e.get('event_name', '')}.{key}: {', '.join(val_strs)}[/]")
+                    val_strs = [
+                        f"{pv.get('value', '?')} ({pv.get('count', 0)})"
+                        for pv in values[:3]
+                    ]
+                    console.print(
+                        f"    [dim]{e.get('event_name', '')}.{key}: {', '.join(val_strs)}[/]"
+                    )
         console.print()
 
 
@@ -284,8 +313,7 @@ def _print_compact_report(
         lines.append("-" * 40)
         for p in top_pages[:10]:
             lines.append(
-                f"  {p.get('url_path', '-'):<50} "
-                f"{num(p.get('visitors')):>10} visitors"
+                f"  {p.get('url_path', '-'):<50} {num(p.get('visitors')):>10} visitors"
             )
 
     # Top Sources
@@ -306,14 +334,16 @@ def _print_compact_report(
         lines.append("-" * 40)
         for e in top_events:
             lines.append(
-                f"  {e.get('event_name', '-'):<40} "
-                f"{num(e.get('count')):>10} events"
+                f"  {e.get('event_name', '-'):<40} {num(e.get('count')):>10} events"
             )
             props = e.get("properties", [])
             for prop in props[:2]:
                 key = prop.get("key", "")
                 values = prop.get("values", [])
-                val_strs = [f"{pv.get('value', '?')} ({pv.get('count', 0)})" for pv in values[:3]]
+                val_strs = [
+                    f"{pv.get('value', '?')} ({pv.get('count', 0)})"
+                    for pv in values[:3]
+                ]
                 lines.append(f"    {key}: {', '.join(val_strs)}")
 
     # Channels
@@ -323,8 +353,7 @@ def _print_compact_report(
         lines.append("-" * 40)
         for c in channels:
             lines.append(
-                f"  {c.get('channel', '-'):<20} "
-                f"{num(c.get('visitors')):>10} visitors"
+                f"  {c.get('channel', '-'):<20} {num(c.get('visitors')):>10} visitors"
             )
 
     console.print("\n".join(lines))

@@ -5,12 +5,12 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY core/ /app/core/
-RUN uv pip install --system /app/core
+COPY backend/pyproject.toml backend/uv.lock /app/backend/
 
-COPY backend/pyproject.toml backend/uv.lock ./
+WORKDIR /app/backend
 RUN uv sync --frozen --no-dev
 
-COPY backend/ .
+COPY backend/ /app/backend/
 
 EXPOSE 8100
 

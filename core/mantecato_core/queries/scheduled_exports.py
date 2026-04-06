@@ -59,8 +59,6 @@ def compute_next_run(config: dict[str, Any]) -> datetime:
         return next_run
 
     elif schedule == "weekly":
-        import calendar
-
         target_day = config.get("weekDay", 1)  # Default Monday
         current_day = now.weekday()  # Monday=0, Sunday=6
         # Convert JS day (0=Sun) to Python weekday (0=Mon)

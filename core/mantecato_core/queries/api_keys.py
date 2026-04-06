@@ -171,12 +171,15 @@ async def validate_api_key(key: str) -> dict[str, Any] | None:
     import asyncio
 
     async def _update_last_used() -> None:
-        await raw_query(
-            """UPDATE report
-               SET parameters = {{params}}::jsonb, updated_at = NOW()
-               WHERE report_id = {{reportId::uuid}}""",
-            {"params": json.dumps(updated_params), "reportId": row["report_id"]},
-        )
+        try:
+            await raw_query(
+                """UPDATE report
+                   SET parameters = {{params}}::jsonb, updated_at = NOW()
+                   WHERE report_id = {{reportId::uuid}}""",
+                {"params": json.dumps(updated_params), "reportId": row["report_id"]},
+            )
+        except Exception:
+            pass
 
     asyncio.ensure_future(_update_last_used())
 

@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
 
 import typer
 from rich.console import Console
 
 from mantecato_cli.helpers import (
     compute_derived_stats,
-    format_duration,
     format_output,
-    format_percent,
-    num,
     parse_date_args,
     parse_filter_args,
-    pct_change,
     resolve_granularity_arg,
     resolve_site_id,
     resolve_user_id,

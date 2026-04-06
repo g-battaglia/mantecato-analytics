@@ -2,18 +2,15 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any
 
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, Static
-from textual.worker import Worker, get_current_worker
 
-from mantecato_core.database import create_pool, close_pool, raw_query
+from mantecato_core.database import create_pool, close_pool
 from mantecato_core.filters import Filter
-from mantecato_core.date_utils import resolve_date_range
 
 from mantecato_cli.config import get_database_url, get_default_site, get_default_period
 from mantecato_cli.helpers import (

@@ -11,7 +11,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 
 from mantecato_core.date_utils import resolve_date_range, get_comparison_range
-from ..dependencies import get_current_user, require_site_access, parse_filters
+from ..dependencies import require_site_access, parse_filters
 from mantecato_core.queries import stats as q_stats
 from mantecato_core.queries import sources as q_sources
 
@@ -104,9 +104,18 @@ async def get_stats(
         q_stats.get_pageview_time_series(
             site_id, prev_range.start_date, prev_range.end_date, granularity, filters
         ),
-        q_stats.get_top_pages(site_id, start_date, end_date, 10, filters, "slug" if mode == "slug" else "path"),
+        q_stats.get_top_pages(
+            site_id,
+            start_date,
+            end_date,
+            10,
+            filters,
+            "slug" if mode == "slug" else "path",
+        ),
         q_stats.get_top_referrers(site_id, start_date, end_date, 10, filters),
-        q_stats.get_top_events_with_properties(site_id, start_date, end_date, 10, 3, filters),
+        q_stats.get_top_events_with_properties(
+            site_id, start_date, end_date, 10, 3, filters
+        ),
         q_stats.get_device_breakdown(
             site_id, start_date, end_date, "browser", 10, filters
         ),

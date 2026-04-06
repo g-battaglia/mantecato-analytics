@@ -4,4 +4,3 @@ from mantecato_core.database import (  # noqa: F401
     paged_raw_query,
     get_date_trunc,
 )
-from mantecato_core.database import get_pool, close_pool, create_pool

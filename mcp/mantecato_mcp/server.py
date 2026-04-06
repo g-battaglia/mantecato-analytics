@@ -18,7 +18,7 @@ from mantecato_cli.helpers import (
     resolve_site_id,
     resolve_user_id,
 )
-from mantecato_core.database import close_pool, get_pool
+from mantecato_core.database import close_pool, create_pool, get_pool
 
 server = Server("mantecato")
 
