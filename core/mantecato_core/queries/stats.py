@@ -1,42 +1,26 @@
 from __future__ import annotations
 
+import re as _re
 from datetime import datetime
 from typing import Any
 
 from mantecato_core.database import raw_query
 from mantecato_core.filters import Filter, build_filter_sql
 
+# Patterns for normalizing dynamic URL segments to `:id`
+_NORMALIZE_PATTERNS = [
+    (_re.compile(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", _re.I), "/:id"),  # UUID
+    (_re.compile(r"/[0-9a-f]{12,}", _re.I), "/:id"),  # long hex (ObjectId, SHA)
+    (_re.compile(r"/\d+"), "/:id"),                    # numeric ID
+    (_re.compile(r"/[A-Za-z0-9_-]{20,}"), "/:id"),     # long alphanumeric blob
+]
 
-def _normalize_url_sql(url_expr: str) -> str:
-    """Wrap a SQL expression to normalize dynamic URL segments.
 
-    Replaces UUIDs, numeric IDs, hex hashes, and base64-ish slugs with
-    ``:id`` so that pages like ``/subjects/65c8…`` group under ``/subjects/:id``.
-
-    Patterns replaced (in order):
-    1. UUID v4:  ``/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx``
-    2. Long hex: ``/[0-9a-f]{12,}``  (MongoDB ObjectId, SHA fragments)
-    3. Pure numeric: ``/12345``
-    4. Mixed alphanumeric blobs >=20 chars (base64 tokens, Firestore IDs)
-    """
-    # fmt: off
-    uuid_pat  = r"'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'"
-    hex_pat   = r"'/[0-9a-f]{12,}'"
-    num_pat   = r"'/[0-9]+'"
-    blob_pat  = r"'/[A-Za-z0-9_-]{20,}'"
-    repl      = "'/:id'"
-    # fmt: on
-    return (
-        f"REGEXP_REPLACE("
-        f"REGEXP_REPLACE("
-        f"REGEXP_REPLACE("
-        f"REGEXP_REPLACE("
-        f"  {url_expr}"
-        f", {uuid_pat}, {repl}, 'gi')"
-        f", {hex_pat}, {repl}, 'gi')"
-        f", {num_pat}, {repl}, 'g')"
-        f", {blob_pat}, {repl}, 'g')"
-    )
+def _normalize_url(path: str) -> str:
+    """Replace dynamic URL segments (UUIDs, numeric IDs, etc.) with :id."""
+    for pat, repl in _NORMALIZE_PATTERNS:
+        path = pat.sub(repl, path)
+    return path
 
 
 async def get_website_stats(
@@ -188,8 +172,7 @@ async def get_top_pages(
     )
 
     if page_mode == "slug":
-        _stripped_pg = "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
-        url_expr = _normalize_url_sql(_stripped_pg)
+        url_expr = "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
         url_select = f"CASE WHEN {url_expr} = '' THEN '/' ELSE {url_expr} END"
     else:
         url_select = "we.url_path"
@@ -206,8 +189,7 @@ async def get_top_pages(
       AND we.event_type = 1
       {filter_where}
     GROUP BY url_path
-    ORDER BY views DESC
-    LIMIT {limit}""",
+    ORDER BY views DESC""",
         {
             "websiteId": website_id,
             "startDate": start_date,
@@ -216,13 +198,33 @@ async def get_top_pages(
         },
     )
 
+    if page_mode == "slug":
+        # Normalize dynamic segments and re-aggregate
+        merged: dict[str, dict[str, int]] = {}
+        for row in rows:
+            key = _normalize_url(row["url_path"])
+            if key in merged:
+                merged[key]["views"] += int(row["views"] or 0)
+                merged[key]["visitors"] += int(row["visitors"] or 0)
+            else:
+                merged[key] = {
+                    "views": int(row["views"] or 0),
+                    "visitors": int(row["visitors"] or 0),
+                }
+        result_list = [
+            {"urlPath": path, **vals}
+            for path, vals in merged.items()
+        ]
+        result_list.sort(key=lambda x: x["views"], reverse=True)
+        return result_list[:limit]
+
     return [
         {
             "urlPath": row["url_path"],
             "views": int(row["views"] or 0),
             "visitors": int(row["visitors"] or 0),
         }
-        for row in rows
+        for row in rows[:limit]
     ]
 
 
@@ -248,11 +250,9 @@ async def get_top_sections(
     # depth+1 because string_to_array splits '/a/b' into ['','a','b']
     slice_end = depth + 1
 
-    # Clean URL: strip query params, hash, trailing slashes, then normalize IDs
-    _stripped = "REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(we.url_path, '?', 1), '#', 1), '/+$', '')"
-    clean_url = _normalize_url_sql(_stripped)
+    # Clean URL in SQL: strip query params, hash, trailing slashes
+    clean_url = "REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(we.url_path, '?', 1), '#', 1), '/+$', '')"
 
-    # Build section expression from the normalized URL
     section_expr = (
         f"COALESCE(NULLIF(array_to_string("
         f"(string_to_array({clean_url}, '/'))[1:{slice_end}], '/'), ''), '/')"
@@ -271,8 +271,7 @@ async def get_top_sections(
       AND we.event_type = 1
       {filter_where}
     GROUP BY 1
-    ORDER BY views DESC
-    LIMIT {limit}""",
+    ORDER BY views DESC""",
         {
             "websiteId": website_id,
             "startDate": start_date,
@@ -281,15 +280,27 @@ async def get_top_sections(
         },
     )
 
-    return [
-        {
-            "section": row["section"],
-            "views": int(row["views"] or 0),
-            "visitors": int(row["visitors"] or 0),
-            "pages": int(row["pages"] or 0),
-        }
-        for row in rows
+    # Normalize dynamic segments (/uuid, /123, etc.) in Python and re-aggregate
+    merged: dict[str, dict[str, int]] = {}
+    for row in rows:
+        key = _normalize_url(row["section"])
+        if key in merged:
+            merged[key]["views"] += int(row["views"] or 0)
+            merged[key]["visitors"] += int(row["visitors"] or 0)
+            merged[key]["pages"] += int(row["pages"] or 0)
+        else:
+            merged[key] = {
+                "views": int(row["views"] or 0),
+                "visitors": int(row["visitors"] or 0),
+                "pages": int(row["pages"] or 0),
+            }
+
+    result_list = [
+        {"section": section, **vals}
+        for section, vals in merged.items()
     ]
+    result_list.sort(key=lambda x: x["views"], reverse=True)
+    return result_list[:limit]
 
 
 async def get_top_referrers(
