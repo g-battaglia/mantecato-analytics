@@ -252,29 +252,25 @@ async def get_top_sections(
     _stripped = "REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(we.url_path, '?', 1), '#', 1), '/+$', '')"
     clean_url = _normalize_url_sql(_stripped)
 
+    # Build section expression from the normalized URL
+    section_expr = (
+        f"COALESCE(NULLIF(array_to_string("
+        f"(string_to_array({clean_url}, '/'))[1:{slice_end}], '/'), ''), '/')"
+    )
+
     rows = await raw_query(
         f"""SELECT
-      section,
-      SUM(views)::bigint AS views,
-      SUM(visitors)::bigint AS visitors,
-      COUNT(*)::bigint AS pages
-    FROM (
-      SELECT
-        COALESCE(
-          NULLIF(array_to_string((string_to_array({clean_url}, '/'))[1:{slice_end}], '/'), ''),
-          '/'
-        ) AS section,
-        COUNT(*)::bigint AS views,
-        COUNT(DISTINCT we.session_id)::bigint AS visitors
-      FROM website_event we
-      {session_join}
-      WHERE we.website_id = {{websiteId::uuid}}
-        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-        AND we.event_type = 1
-        {filter_where}
-      GROUP BY {clean_url}
-    ) sub
-    GROUP BY section
+      {section_expr} AS section,
+      COUNT(*)::bigint AS views,
+      COUNT(DISTINCT we.session_id)::bigint AS visitors,
+      COUNT(DISTINCT we.url_path)::bigint AS pages
+    FROM website_event we
+    {session_join}
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      {filter_where}
+    GROUP BY 1
     ORDER BY views DESC
     LIMIT {limit}""",
         {
