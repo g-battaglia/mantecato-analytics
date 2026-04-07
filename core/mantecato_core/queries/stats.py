@@ -160,6 +160,7 @@ async def get_top_pages(
     limit: int = 10,
     filters: list[Filter] | None = None,
     page_mode: str = "path",
+    normalize_urls: bool = True,
 ) -> list[dict[str, Any]]:
     filters = filters or []
     result = build_filter_sql(filters)
@@ -189,7 +190,8 @@ async def get_top_pages(
       AND we.event_type = 1
       {filter_where}
     GROUP BY url_path
-    ORDER BY views DESC""",
+    ORDER BY views DESC
+    LIMIT {limit * 10 if (page_mode == "slug" and normalize_urls) else limit}""",
         {
             "websiteId": website_id,
             "startDate": start_date,
@@ -198,7 +200,7 @@ async def get_top_pages(
         },
     )
 
-    if page_mode == "slug":
+    if page_mode == "slug" and normalize_urls:
         # Normalize dynamic segments and re-aggregate
         merged: dict[str, dict[str, int]] = {}
         for row in rows:
@@ -235,6 +237,7 @@ async def get_top_sections(
     depth: int = 2,
     limit: int = 10,
     filters: list[Filter] | None = None,
+    normalize_urls: bool = True,
 ) -> list[dict[str, Any]]:
     """Group pages by the first `depth` path segments and aggregate stats."""
     filters = filters or []
@@ -271,7 +274,8 @@ async def get_top_sections(
       AND we.event_type = 1
       {filter_where}
     GROUP BY 1
-    ORDER BY views DESC""",
+    ORDER BY views DESC
+    LIMIT {limit * 10 if normalize_urls else limit}""",
         {
             "websiteId": website_id,
             "startDate": start_date,
@@ -279,6 +283,17 @@ async def get_top_sections(
             **filter_params,
         },
     )
+
+    if not normalize_urls:
+        return [
+            {
+                "section": row["section"],
+                "views": int(row["views"] or 0),
+                "visitors": int(row["visitors"] or 0),
+                "pages": int(row["pages"] or 0),
+            }
+            for row in rows
+        ]
 
     # Normalize dynamic segments (/uuid, /123, etc.) in Python and re-aggregate
     merged: dict[str, dict[str, int]] = {}

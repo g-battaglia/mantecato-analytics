@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFiltersStore } from "@/stores/filters";
 import { apiFetch } from "@/lib/api";
 
 interface Website {
@@ -26,6 +27,7 @@ export function SiteSelector() {
   const navigate = useNavigate();
   const params = useParams();
   const currentSiteId = params.siteId as string | undefined;
+  const clearFilters = useFiltersStore((s) => s.clearFilters);
 
   const { data: websites, isLoading } = useQuery({
     queryKey: ["websites"],
@@ -47,6 +49,7 @@ export function SiteSelector() {
     <Select
       value={currentSiteId ?? ""}
       onValueChange={(value) => {
+        if (value !== currentSiteId) clearFilters();
         navigate(`/sites/${value}`);
       }}
     >

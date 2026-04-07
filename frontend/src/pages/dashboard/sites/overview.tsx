@@ -238,7 +238,11 @@ export function OverviewPage() {
                 <div
                   key={s.section}
                   className={ROW}
-                  onClick={() => addFilter({ column: "url_path", operator: "starts_with", value: s.section })}
+                  onClick={() => {
+                    // Strip /:id placeholder to get the real path prefix
+                    const prefix = s.section.replace(/\/:id/g, "");
+                    addFilter({ column: "url_path", operator: "starts_with", value: prefix || "/" });
+                  }}
                 >
                   <span className="truncate font-mono text-sm">
                     {s.section}
