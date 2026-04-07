@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { MetricCard } from "@/components/data/MetricCard";
@@ -17,8 +17,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateParams } from "@/hooks/use-site-query";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useFiltersStore } from "@/stores/filters";
 import { apiFetch } from "@/lib/api";
-import { DetailSheet, type DetailKind } from "@/components/overview/DetailSheet";
 
 interface StatsBlock {
   pageviews: number;
@@ -111,7 +111,7 @@ export function OverviewPage() {
   const siteId = params.siteId as string;
   const { data, isLoading } = useOverviewData(siteId);
   const { data: annotations = [] } = useAnnotations();
-  const [detail, setDetail] = useState<DetailKind | null>(null);
+  const addFilter = useFiltersStore((s) => s.addFilter);
 
   const stats = data?.stats;
   const prev = data?.previousStats;
@@ -226,7 +226,7 @@ export function OverviewPage() {
                 <div
                   key={s.section}
                   className={ROW}
-                  onClick={() => setDetail({ type: "section", value: s.section })}
+                  onClick={() => addFilter({ column: "url_path", operator: "starts_with", value: s.section })}
                 >
                   <span className="truncate font-mono text-xs">
                     {s.section}
@@ -280,7 +280,7 @@ export function OverviewPage() {
                   <div
                     key={page.urlPath}
                     className={ROW}
-                    onClick={() => setDetail({ type: "page", value: page.urlPath })}
+                    onClick={() => addFilter({ column: "url_path", operator: "eq", value: page.urlPath })}
                   >
                     <span className="truncate font-mono text-xs">
                       {page.urlPath}
@@ -323,7 +323,7 @@ export function OverviewPage() {
                   <div
                     key={ref.referrerDomain}
                     className={ROW}
-                    onClick={() => setDetail({ type: "referrer", value: ref.referrerDomain })}
+                    onClick={() => addFilter({ column: "referrer_domain", operator: "eq", value: ref.referrerDomain })}
                   >
                     <span className="truncate">{ref.referrerDomain}</span>
                     <span className="tabular-nums font-medium">
@@ -408,7 +408,7 @@ export function OverviewPage() {
                   <div
                     key={evt.eventName}
                     className="cursor-pointer rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors"
-                    onClick={() => setDetail({ type: "event", value: evt.eventName })}
+                    onClick={() => addFilter({ column: "event_name", operator: "eq", value: evt.eventName })}
                   >
                     <div className="flex items-center justify-between py-1.5 text-sm">
                       <span className="truncate font-mono text-xs">
@@ -474,7 +474,7 @@ export function OverviewPage() {
                   <div
                     key={b.value}
                     className={ROW}
-                    onClick={() => setDetail({ type: "browser", value: b.value })}
+                    onClick={() => addFilter({ column: "browser", operator: "eq", value: b.value })}
                   >
                     <span className="truncate">{b.value}</span>
                     <span className="tabular-nums font-medium">
@@ -487,9 +487,6 @@ export function OverviewPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Detail slide-out panel */}
-      <DetailSheet detail={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
