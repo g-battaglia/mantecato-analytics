@@ -438,7 +438,7 @@ html.style-glass {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(160deg, oklch(0.88 0.05 270), oklch(0.92 0.04 300));
+  background: linear-gradient(160deg, oklch(0.91 0.04 270), oklch(0.94 0.03 300));
 }
 .dark .glass-bg::before {
   background: linear-gradient(160deg, oklch(0.12 0.03 270), oklch(0.14 0.02 280));
