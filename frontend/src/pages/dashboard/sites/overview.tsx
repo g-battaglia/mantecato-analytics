@@ -392,22 +392,23 @@ export function OverviewPage() {
         </Card>
       </div>
 
-      {/* World Map + Traffic Heatmap */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardContent className="pt-4">
-            {isLoading ? (
-              <Skeleton className="h-[400px] w-full" />
-            ) : data?.countries ? (
-              <WorldMap
-                data={data.countries}
-                height={400}
-                onCountryClick={(code) => addFilter({ column: "country", operator: "eq", value: code })}
-              />
-            ) : null}
-          </CardContent>
-        </Card>
+      {/* World Map — full width */}
+      <Card>
+        <CardContent className="pt-4">
+          {isLoading ? (
+            <Skeleton className="h-[400px] w-full" />
+          ) : data?.countries ? (
+            <WorldMap
+              data={data.countries}
+              height={400}
+              onCountryClick={(code) => addFilter({ column: "country", operator: "eq", value: code })}
+            />
+          ) : null}
+        </CardContent>
+      </Card>
 
+      {/* Events + Traffic Heatmap — side by side */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardContent className="pt-4">
             <div className="mb-3 text-sm font-medium">Traffic</div>
@@ -420,10 +421,8 @@ export function OverviewPage() {
             )}
           </CardContent>
         </Card>
-      </div>
 
-      {/* Events: Events / Properties */}
-      <Card>
+        <Card>
         <CardContent className="pt-4">
           <PanelTabs tabs={[
             { label: "Events", content: (
