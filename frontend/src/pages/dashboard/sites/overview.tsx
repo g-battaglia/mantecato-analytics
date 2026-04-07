@@ -423,80 +423,80 @@ export function OverviewPage() {
         </Card>
 
         <Card>
-        <CardContent className="pt-4">
-          <PanelTabs tabs={[
-            { label: "Events", content: (
-              <ListTable loading={isLoading}
-                headers={["Event", "Count", "Visitors", "%"]}
-                widths={["flex-1", "w-16", "w-16", "w-14"]}
-                rows={data?.events.map((evt) => ({
-                  key: evt.eventName, label: evt.eventName, mono: true,
-                  onClick: () => addFilter({ column: "event_name", operator: "eq", value: evt.eventName }),
-                  values: [
-                    { v: evt.count.toLocaleString(), bold: true },
-                    { v: evt.visitors.toLocaleString(), muted: true },
-                    { v: pct(evt.count, totalEventCount), muted: true },
-                  ],
-                })) ?? []}
-                empty="No event data"
-              />
-            )},
-            { label: "Properties", content: (
-              <div className="space-y-4">
-                {isLoading ? <SkeletonRows /> : (
-                  <>
-                    {data?.events.flatMap((evt) =>
-                      (evt.properties ?? []).length > 0 ? [evt] : []
-                    ).map((evt) => {
-                      const grouped = evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
-                        (acc, p) => { if (!acc[p.key]) acc[p.key] = []; acc[p.key].push({ value: p.value, count: p.count }); return acc; }, {},
-                      );
-                      return (
-                        <div key={evt.eventName} className="rounded-lg border p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium font-mono">{evt.eventName}</span>
-                            <span className="text-xs text-muted-foreground tabular-nums">{evt.count.toLocaleString()} total</span>
-                          </div>
-                          <div className="space-y-3">
-                            {Object.entries(grouped).map(([key, values]) => {
-                              const keyMax = Math.max(...values.map((v) => v.count));
-                              return (
-                                <div key={key}>
-                                  <div className="text-xs font-medium text-muted-foreground mb-1">{key}</div>
-                                  <div className="space-y-1">
-                                    {values.map((v) => (
-                                      <div key={v.value} className="flex items-center gap-2 text-sm">
-                                        <span className="min-w-[100px] truncate" title={v.value}>{v.value}</span>
-                                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                                          <div
-                                            className="h-full rounded-full bg-primary/60"
-                                            style={{ width: `${(v.count / keyMax) * 100}%` }}
-                                          />
+          <CardContent className="pt-4">
+            <PanelTabs tabs={[
+              { label: "Events", content: (
+                <ListTable loading={isLoading}
+                  headers={["Event", "Count", "Visitors", "%"]}
+                  widths={["flex-1", "w-16", "w-16", "w-14"]}
+                  rows={data?.events.map((evt) => ({
+                    key: evt.eventName, label: evt.eventName, mono: true,
+                    onClick: () => addFilter({ column: "event_name", operator: "eq", value: evt.eventName }),
+                    values: [
+                      { v: evt.count.toLocaleString(), bold: true },
+                      { v: evt.visitors.toLocaleString(), muted: true },
+                      { v: pct(evt.count, totalEventCount), muted: true },
+                    ],
+                  })) ?? []}
+                  empty="No event data"
+                />
+              )},
+              { label: "Properties", content: (
+                <div className="space-y-4">
+                  {isLoading ? <SkeletonRows /> : (
+                    <>
+                      {data?.events.flatMap((evt) =>
+                        (evt.properties ?? []).length > 0 ? [evt] : []
+                      ).map((evt) => {
+                        const grouped = evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
+                          (acc, p) => { if (!acc[p.key]) acc[p.key] = []; acc[p.key].push({ value: p.value, count: p.count }); return acc; }, {},
+                        );
+                        return (
+                          <div key={evt.eventName} className="rounded-lg border p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium font-mono">{evt.eventName}</span>
+                              <span className="text-xs text-muted-foreground tabular-nums">{evt.count.toLocaleString()} total</span>
+                            </div>
+                            <div className="space-y-3">
+                              {Object.entries(grouped).map(([key, values]) => {
+                                const keyMax = Math.max(...values.map((v) => v.count));
+                                return (
+                                  <div key={key}>
+                                    <div className="text-xs font-medium text-muted-foreground mb-1">{key}</div>
+                                    <div className="space-y-1">
+                                      {values.map((v) => (
+                                        <div key={v.value} className="flex items-center gap-2 text-sm">
+                                          <span className="min-w-[100px] truncate" title={v.value}>{v.value}</span>
+                                          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                            <div
+                                              className="h-full rounded-full bg-primary/60"
+                                              style={{ width: `${(v.count / keyMax) * 100}%` }}
+                                            />
+                                          </div>
+                                          <span className="w-12 text-right tabular-nums text-xs text-muted-foreground">
+                                            {v.count.toLocaleString()}
+                                          </span>
                                         </div>
-                                        <span className="w-12 text-right tabular-nums text-xs text-muted-foreground">
-                                          {v.count.toLocaleString()}
-                                        </span>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                    {(!data?.events.some((e) => e.properties?.length > 0)) && (
-                      <p className="py-4 text-center text-xs text-muted-foreground">No event properties</p>
-                    )}
-                  </>
-                )}
-              </div>
-            )},
-          ]} />
-        </CardContent>
-      </Card>
-    </div>
+                        );
+                      })}
+                      {(!data?.events.some((e) => e.properties?.length > 0)) && (
+                        <p className="py-4 text-center text-xs text-muted-foreground">No event properties</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )},
+            ]} />
+          </CardContent>
+        </Card>
+      </div>
   );
 }
 
