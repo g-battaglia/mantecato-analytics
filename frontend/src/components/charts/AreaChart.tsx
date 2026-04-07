@@ -50,12 +50,12 @@ function detectAxisFormat(data: ChartRow[], xKey: string): string {
   try {
     const a = new Date(data[0][xKey]).getTime();
     const b = new Date(data[1][xKey]).getTime();
-    const diffMs = Math.abs(b - a);
-    const diffHours = diffMs / (1000 * 60 * 60);
-    if (diffHours < 1) return "HH:mm"; // minute granularity
-    if (diffHours <= 24) return "HH:mm"; // hour granularity
-    if (diffHours <= 24 * 7) return "MMM d"; // day granularity
-    return "MMM d";
+    const diffHours = Math.abs(b - a) / (1000 * 60 * 60);
+    if (diffHours < 1) return "HH:mm";       // minute
+    if (diffHours < 24) return "HH:mm";      // hour (strict <, not <=)
+    if (diffHours < 24 * 7) return "MMM d";  // day
+    if (diffHours < 24 * 32) return "MMM d"; // week
+    return "MMM yyyy";                        // month
   } catch {
     return "MMM d";
   }

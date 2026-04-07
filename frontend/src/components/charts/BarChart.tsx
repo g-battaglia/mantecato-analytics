@@ -49,8 +49,10 @@ function detectAxisFormat(data: Array<Record<string, unknown>>, xKey: string): s
     const a = new Date(String(data[0][xKey])).getTime();
     const b = new Date(String(data[1][xKey])).getTime();
     const diffHours = Math.abs(b - a) / (1000 * 60 * 60);
-    if (diffHours <= 24) return "HH:mm";
-    return "MMM d";
+    if (diffHours < 1) return "HH:mm";
+    if (diffHours < 24) return "HH:mm";
+    if (diffHours < 24 * 32) return "MMM d";
+    return "MMM yyyy";
   } catch {
     return "MMM d";
   }
