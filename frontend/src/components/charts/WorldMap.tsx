@@ -4,7 +4,6 @@ import {
   ComposableMap,
   Geographies,
   Geography,
-  ZoomableGroup,
 } from "react-simple-maps";
 import {
   Tooltip,
@@ -59,16 +58,12 @@ const ALPHA2_TO_NUMERIC: Record<string, string> = {
 };
 
 interface WorldMapProps {
-  /** Array of { country: "US", visitors: 123 } */
   data: Array<{ country: string; visitors: number }>;
-  /** Height in pixels */
   height?: number;
-  /** Callback when a country is clicked */
   onCountryClick?: (countryCode: string) => void;
 }
 
-function WorldMapInner({ data, height = 340, onCountryClick }: WorldMapProps) {
-  // Build lookup: numeric ID → visitors
+function WorldMapInner({ data, height = 400, onCountryClick }: WorldMapProps) {
   const { countryMap, maxVisitors } = useMemo(() => {
     const map = new Map<string, { visitors: number; code: string }>();
     let max = 0;
@@ -85,78 +80,78 @@ function WorldMapInner({ data, height = 340, onCountryClick }: WorldMapProps) {
   function getColor(numericId: string): string {
     const entry = countryMap.get(numericId);
     if (!entry || maxVisitors === 0) return "var(--color-muted)";
-    // Logarithmic scale for better distribution
     const ratio = Math.log(entry.visitors + 1) / Math.log(maxVisitors + 1);
     const clamped = Math.max(0.08, Math.min(1, ratio));
-    // Use HSL with the primary blue
     return `hsl(221 83% 53% / ${clamped})`;
   }
+
+  // Use a wide aspect ratio: 800×420 matches natural world map proportions
+  const svgW = 800;
+  const svgH = 420;
 
   return (
     <TooltipProvider delayDuration={0}>
       <ComposableMap
         projectionConfig={{
           rotate: [-10, 0, 0],
-          scale: 147,
+          scale: 155,
         }}
-        width={800}
-        height={height}
-        style={{ width: "100%", height: "auto" }}
+        width={svgW}
+        height={svgH}
+        style={{ width: "100%", height }}
       >
-        <ZoomableGroup>
-          <Geographies geography={GEO_URL}>
-            {({ geographies }) =>
-              geographies.map((geo) => {
-                const numericId = geo.id;
-                const entry = countryMap.get(numericId);
-                const fill = getColor(numericId);
+        <Geographies geography={GEO_URL}>
+          {({ geographies }) =>
+            geographies.map((geo) => {
+              const numericId = geo.id;
+              const entry = countryMap.get(numericId);
+              const fill = getColor(numericId);
 
-                return (
-                  <Tooltip key={geo.rsmKey}>
-                    <TooltipTrigger asChild>
-                      <Geography
-                        geography={geo}
-                        fill={fill}
-                        stroke="var(--color-border)"
-                        strokeWidth={0.4}
-                        onClick={() => {
-                          if (entry && onCountryClick) {
-                            onCountryClick(entry.code);
-                          }
-                        }}
-                        style={{
-                          default: { outline: "none", cursor: entry ? "pointer" : "default" },
-                          hover: {
-                            outline: "none",
-                            fill: entry
-                              ? "hsl(221 83% 43%)"
-                              : "var(--color-accent)",
-                            cursor: entry ? "pointer" : "default",
-                          },
-                          pressed: { outline: "none" },
-                        }}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      <span className="font-medium">
-                        {geo.properties.name}
+              return (
+                <Tooltip key={geo.rsmKey}>
+                  <TooltipTrigger asChild>
+                    <Geography
+                      geography={geo}
+                      fill={fill}
+                      stroke="var(--color-border)"
+                      strokeWidth={0.4}
+                      onClick={() => {
+                        if (entry && onCountryClick) {
+                          onCountryClick(entry.code);
+                        }
+                      }}
+                      style={{
+                        default: { outline: "none", cursor: entry ? "pointer" : "default" },
+                        hover: {
+                          outline: "none",
+                          fill: entry
+                            ? "hsl(221 83% 43%)"
+                            : "var(--color-accent)",
+                          cursor: entry ? "pointer" : "default",
+                        },
+                        pressed: { outline: "none" },
+                      }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    <span className="font-medium">
+                      {geo.properties.name}
+                    </span>
+                    {entry ? (
+                      <span className="ml-1.5 tabular-nums">
+                        {entry.visitors.toLocaleString()} visitors
                       </span>
-                      {entry ? (
-                        <span className="ml-1.5 tabular-nums">
-                          {entry.visitors.toLocaleString()} visitors
-                        </span>
-                      ) : (
-                        <span className="ml-1.5 text-muted-foreground">
-                          No data
-                        </span>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })
-            }
-          </Geographies>
-        </ZoomableGroup>
+                    ) : (
+                      <span className="ml-1.5 text-muted-foreground">
+                        No data
+                      </span>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })
+          }
+        </Geographies>
       </ComposableMap>
     </TooltipProvider>
   );

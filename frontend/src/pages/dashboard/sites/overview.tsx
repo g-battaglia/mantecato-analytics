@@ -397,11 +397,11 @@ export function OverviewPage() {
         <Card>
           <CardContent className="pt-4">
             {isLoading ? (
-              <Skeleton className="h-[340px] w-full" />
+              <Skeleton className="h-[400px] w-full" />
             ) : data?.countries ? (
               <WorldMap
                 data={data.countries}
-                height={340}
+                height={400}
                 onCountryClick={(code) => addFilter({ column: "country", operator: "eq", value: code })}
               />
             ) : null}
