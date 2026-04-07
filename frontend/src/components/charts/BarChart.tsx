@@ -125,14 +125,14 @@ export function BarChart({
             <XAxis
               type="number"
               tickFormatter={(v: number) => formatNumber(v)}
-              tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+              tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
               type="category"
               dataKey={xKey}
-              tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+              tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
               axisLine={false}
               tickLine={false}
               width={100}
@@ -143,14 +143,14 @@ export function BarChart({
             <XAxis
               dataKey={xKey}
               tickFormatter={formatXAxis}
-              tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+              tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
               axisLine={false}
               tickLine={false}
               tickMargin={8}
             />
             <YAxis
               tickFormatter={(v: number) => formatNumber(v)}
-              tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+              tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
               axisLine={false}
               tickLine={false}
               tickMargin={4}

@@ -87,7 +87,7 @@ export function MetricCard({
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center gap-1">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
           {tooltip && (
             <TooltipProvider delayDuration={200}>
               <Tooltip>

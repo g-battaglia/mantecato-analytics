@@ -140,14 +140,14 @@ export function AreaChart({
         <XAxis
           dataKey={xKey}
           tickFormatter={formatXAxis}
-          tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+          tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
           axisLine={false}
           tickLine={false}
           tickMargin={8}
         />
         <YAxis
           tickFormatter={(v: number) => formatNumber(v)}
-          tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+          tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
           axisLine={false}
           tickLine={false}
           tickMargin={4}
@@ -225,7 +225,7 @@ export function AreaChart({
               value: ann.label,
               position: "top",
               fill: ann.color,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 500,
             }}
           />

@@ -180,7 +180,7 @@ export function OverviewPage() {
       {/* Time Series Chart */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Traffic</CardTitle>
+          <CardTitle>Traffic</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -202,7 +202,7 @@ export function OverviewPage() {
       {/* Sections */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">
+          <CardTitle>
             Top Sections
           </CardTitle>
           <CardDescription className="text-xs">
@@ -214,7 +214,7 @@ export function OverviewPage() {
             <SkeletonRows />
           ) : (
             <div className="space-y-0">
-              <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+              <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 <span>Section</span>
                 <div className="flex gap-4 text-right">
                   <span className="w-16">Visitors</span>
@@ -228,7 +228,7 @@ export function OverviewPage() {
                   className={ROW}
                   onClick={() => addFilter({ column: "url_path", operator: "starts_with", value: s.section })}
                 >
-                  <span className="truncate font-mono text-xs">
+                  <span className="truncate font-mono text-sm">
                     {s.section}
                   </span>
                   <div className="flex gap-4 text-right tabular-nums">
@@ -259,7 +259,7 @@ export function OverviewPage() {
         {/* Top Pages */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Top Pages</CardTitle>
+            <CardTitle>Top Pages</CardTitle>
             <CardDescription className="text-xs">
               Most visited pages
             </CardDescription>
@@ -269,7 +269,7 @@ export function OverviewPage() {
               <SkeletonRows />
             ) : (
               <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Page</span>
                   <div className="flex gap-4 text-right">
                     <span className="w-16">Visitors</span>
@@ -282,7 +282,7 @@ export function OverviewPage() {
                     className={ROW}
                     onClick={() => addFilter({ column: "url_path", operator: "eq", value: page.urlPath })}
                   >
-                    <span className="truncate font-mono text-xs">
+                    <span className="truncate font-mono text-sm">
                       {page.urlPath}
                     </span>
                     <div className="flex gap-4 text-right tabular-nums">
@@ -303,7 +303,7 @@ export function OverviewPage() {
         {/* Top Referrers */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
+            <CardTitle>
               Top Referrers
             </CardTitle>
             <CardDescription className="text-xs">
@@ -315,7 +315,7 @@ export function OverviewPage() {
               <SkeletonRows />
             ) : (
               <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Source</span>
                   <span>Visitors</span>
                 </div>
@@ -344,7 +344,7 @@ export function OverviewPage() {
         {/* Channels */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Channels</CardTitle>
+            <CardTitle>Channels</CardTitle>
             <CardDescription className="text-xs">
               Traffic channels breakdown
             </CardDescription>
@@ -354,7 +354,7 @@ export function OverviewPage() {
               <SkeletonRows />
             ) : (
               <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Channel</span>
                   <div className="flex gap-4 text-right">
                     <span className="w-16">Visitors</span>
@@ -390,7 +390,7 @@ export function OverviewPage() {
         {/* Top Events */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Top Events</CardTitle>
+            <CardTitle>Top Events</CardTitle>
             <CardDescription className="text-xs">
               Custom events tracked
             </CardDescription>
@@ -400,7 +400,7 @@ export function OverviewPage() {
               <SkeletonRows />
             ) : (
               <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Event</span>
                   <span>Count</span>
                 </div>
@@ -411,7 +411,7 @@ export function OverviewPage() {
                     onClick={() => addFilter({ column: "event_name", operator: "eq", value: evt.eventName })}
                   >
                     <div className="flex items-center justify-between py-1.5 text-sm">
-                      <span className="truncate font-mono text-xs">
+                      <span className="truncate font-mono text-sm">
                         {evt.eventName}
                       </span>
                       <span className="tabular-nums font-medium">
@@ -419,7 +419,7 @@ export function OverviewPage() {
                       </span>
                     </div>
                     {evt.properties && evt.properties.length > 0 && (
-                      <div className="pb-1.5 pl-2 text-[11px] text-muted-foreground leading-tight">
+                      <div className="pb-1.5 pl-2 text-xs text-muted-foreground leading-tight">
                         {Object.entries(
                           evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
                             (acc, p) => {
@@ -456,7 +456,7 @@ export function OverviewPage() {
         {/* Browsers */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Browsers</CardTitle>
+            <CardTitle>Browsers</CardTitle>
             <CardDescription className="text-xs">
               Visitor browsers
             </CardDescription>
@@ -466,7 +466,7 @@ export function OverviewPage() {
               <SkeletonRows />
             ) : (
               <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Browser</span>
                   <span>Visitors</span>
                 </div>

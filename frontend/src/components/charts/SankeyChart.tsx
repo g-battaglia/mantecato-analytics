@@ -253,7 +253,7 @@ export function SankeyChart({
                     y={(y0 + y1) / 2}
                     dy="0.35em"
                     textAnchor="start"
-                    fontSize={11}
+                    fontSize={12}
                     fill="var(--color-foreground)"
                     className="pointer-events-none"
                   >
@@ -296,7 +296,7 @@ export function SankeyChart({
                 x={avgX}
                 y={6}
                 textAnchor="middle"
-                fontSize={10}
+                fontSize={11}
                 fontWeight={600}
                 fill="var(--color-muted-foreground)"
               >
