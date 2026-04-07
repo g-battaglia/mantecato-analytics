@@ -126,6 +126,17 @@ export function OverviewPage() {
     [annotations, data?.timeseries]
   );
 
+  // Totals for percentage calculations
+  const totalViews = data?.sections.reduce((s, x) => s + x.views, 0) ?? 0;
+  const totalPageVisitors = data?.pages.reduce((s, x) => s + x.visitors, 0) ?? 0;
+  const totalRefVisitors = data?.referrers.reduce((s, x) => s + x.visitors, 0) ?? 0;
+  const totalEventCount = data?.events.reduce((s, x) => s + x.count, 0) ?? 0;
+  const totalBrowserVisitors = data?.browsers.reduce((s, x) => s + x.visitors, 0) ?? 0;
+  const totalChannelVisitors = data?.channels?.reduce((s, x) => s + x.visitors, 0) ?? 0;
+
+  const pct = (n: number, total: number) =>
+    total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "—";
+
   return (
     <div className="space-y-4">
       {/* Metrics Bar */}
@@ -220,6 +231,7 @@ export function OverviewPage() {
                   <span className="w-16">Visitors</span>
                   <span className="w-16">Views</span>
                   <span className="w-12">Pages</span>
+                  <span className="w-14">%</span>
                 </div>
               </div>
               {data?.sections.map((s) => (
@@ -240,6 +252,9 @@ export function OverviewPage() {
                     </span>
                     <span className="w-12 text-muted-foreground">
                       {s.pages.toLocaleString()}
+                    </span>
+                    <span className="w-14 text-muted-foreground">
+                      {pct(s.views, totalViews)}
                     </span>
                   </div>
                 </div>
@@ -274,6 +289,7 @@ export function OverviewPage() {
                   <div className="flex gap-4 text-right">
                     <span className="w-16">Visitors</span>
                     <span className="w-16">Views</span>
+                    <span className="w-14">%</span>
                   </div>
                 </div>
                 {data?.pages.map((page) => (
@@ -291,6 +307,9 @@ export function OverviewPage() {
                       </span>
                       <span className="w-16 font-medium">
                         {page.views.toLocaleString()}
+                      </span>
+                      <span className="w-14 text-muted-foreground">
+                        {pct(page.visitors, totalPageVisitors)}
                       </span>
                     </div>
                   </div>
@@ -317,7 +336,10 @@ export function OverviewPage() {
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Source</span>
-                  <span>Visitors</span>
+                  <div className="flex gap-4 text-right">
+                    <span className="w-16">Visitors</span>
+                    <span className="w-14">%</span>
+                  </div>
                 </div>
                 {data?.referrers.map((ref) => (
                   <div
@@ -326,9 +348,14 @@ export function OverviewPage() {
                     onClick={() => addFilter({ column: "referrer_domain", operator: "eq", value: ref.referrerDomain })}
                   >
                     <span className="truncate">{ref.referrerDomain}</span>
-                    <span className="tabular-nums font-medium">
-                      {ref.visitors.toLocaleString()}
-                    </span>
+                    <div className="flex gap-4 text-right tabular-nums">
+                      <span className="w-16 font-medium">
+                        {ref.visitors.toLocaleString()}
+                      </span>
+                      <span className="w-14 text-muted-foreground">
+                        {pct(ref.visitors, totalRefVisitors)}
+                      </span>
+                    </div>
                   </div>
                 ))}
                 {(!data?.referrers || data.referrers.length === 0) && (
@@ -358,6 +385,7 @@ export function OverviewPage() {
                   <span>Channel</span>
                   <div className="flex gap-4 text-right">
                     <span className="w-16">Visitors</span>
+                    <span className="w-14">%</span>
                     <span className="w-16">Bounce</span>
                   </div>
                 </div>
@@ -370,6 +398,9 @@ export function OverviewPage() {
                     <div className="flex gap-4 text-right tabular-nums">
                       <span className="w-16 font-medium">
                         {ch.visitors.toLocaleString()}
+                      </span>
+                      <span className="w-14 text-muted-foreground">
+                        {pct(ch.visitors, totalChannelVisitors)}
                       </span>
                       <span className="w-16 text-muted-foreground">
                         {ch.bounceRate.toFixed(1)}%
@@ -402,7 +433,10 @@ export function OverviewPage() {
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Event</span>
-                  <span>Count</span>
+                  <div className="flex gap-4 text-right">
+                    <span className="w-16">Count</span>
+                    <span className="w-14">%</span>
+                  </div>
                 </div>
                 {data?.events.map((evt) => (
                   <div
@@ -414,9 +448,14 @@ export function OverviewPage() {
                       <span className="truncate font-mono text-sm">
                         {evt.eventName}
                       </span>
-                      <span className="tabular-nums font-medium">
-                        {evt.count.toLocaleString()}
-                      </span>
+                      <div className="flex gap-4 text-right tabular-nums">
+                        <span className="w-16 font-medium">
+                          {evt.count.toLocaleString()}
+                        </span>
+                        <span className="w-14 text-muted-foreground">
+                          {pct(evt.count, totalEventCount)}
+                        </span>
+                      </div>
                     </div>
                     {evt.properties && evt.properties.length > 0 && (
                       <div className="pb-1.5 pl-2 text-xs text-muted-foreground leading-tight">
@@ -468,7 +507,10 @@ export function OverviewPage() {
               <div className="space-y-0">
                 <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <span>Browser</span>
-                  <span>Visitors</span>
+                  <div className="flex gap-4 text-right">
+                    <span className="w-16">Visitors</span>
+                    <span className="w-14">%</span>
+                  </div>
                 </div>
                 {data?.browsers.map((b) => (
                   <div
@@ -477,9 +519,14 @@ export function OverviewPage() {
                     onClick={() => addFilter({ column: "browser", operator: "eq", value: b.value })}
                   >
                     <span className="truncate">{b.value}</span>
-                    <span className="tabular-nums font-medium">
-                      {b.visitors.toLocaleString()}
-                    </span>
+                    <div className="flex gap-4 text-right tabular-nums">
+                      <span className="w-16 font-medium">
+                        {b.visitors.toLocaleString()}
+                      </span>
+                      <span className="w-14 text-muted-foreground">
+                        {pct(b.visitors, totalBrowserVisitors)}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
