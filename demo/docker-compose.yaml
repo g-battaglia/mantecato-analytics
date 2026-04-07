@@ -1,0 +1,51 @@
+##
+## Mantecato Demo — ACME Inc. sample data
+##
+## Start:   docker compose -f demo/docker-compose.yaml up -d --build
+## Login:   http://localhost:4180  (demo / demo)
+## Stop:    docker compose -f demo/docker-compose.yaml down -v
+##
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mantecato_demo
+      POSTGRES_USER: mantecato
+      POSTGRES_PASSWORD: mantecato
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/01-seed.sql
+      - demo-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mantecato -d mantecato_demo"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      - DATABASE_URL=postgresql://mantecato:mantecato@db:5432/mantecato_demo
+      - SESSION_SECRET=demo-secret-not-for-production
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+    ports:
+      - "4180:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  demo-data:
