@@ -81,19 +81,42 @@ async def get_pageview_time_series(
         else ""
     )
 
+    gran_interval = {
+        "minute": "1 minute",
+        "hour": "1 hour",
+        "day": "1 day",
+        "week": "1 week",
+        "month": "1 month",
+    }.get(gran, "1 day")
+
     rows = await raw_query(
-        f"""SELECT
-      date_trunc('{gran}', we.created_at) AS time,
-      COUNT(*)::bigint AS pageviews,
-      COUNT(DISTINCT we.session_id)::bigint AS visitors
-    FROM website_event we
-    {session_join}
-    WHERE we.website_id = {{websiteId::uuid}}
-      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND we.event_type = 1
-      {filter_where}
-    GROUP BY 1
-    ORDER BY 1 ASC""",
+        f"""WITH buckets AS (
+      SELECT generate_series(
+        date_trunc('{gran}', {{startDate::timestamptz}}),
+        date_trunc('{gran}', {{endDate::timestamptz}}),
+        '{gran_interval}'::interval
+      ) AS time
+    ),
+    data AS (
+      SELECT
+        date_trunc('{gran}', we.created_at) AS time,
+        COUNT(*)::bigint AS pageviews,
+        COUNT(DISTINCT we.session_id)::bigint AS visitors
+      FROM website_event we
+      {session_join}
+      WHERE we.website_id = {{websiteId::uuid}}
+        AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+        AND we.event_type = 1
+        {filter_where}
+      GROUP BY 1
+    )
+    SELECT
+      b.time,
+      COALESCE(d.pageviews, 0)::bigint AS pageviews,
+      COALESCE(d.visitors, 0)::bigint AS visitors
+    FROM buckets b
+    LEFT JOIN data d ON d.time = b.time
+    ORDER BY b.time ASC""",
         {
             "websiteId": website_id,
             "startDate": start_date,
