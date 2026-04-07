@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MetricCard } from "@/components/data/MetricCard";
 import { AreaChart } from "@/components/charts/AreaChart";
 import { WorldMap } from "@/components/charts/WorldMap";
+import { TrafficHeatmap } from "@/components/charts/TrafficHeatmap";
 import {
   useAnnotations,
   getAnnotationMarkers,
@@ -49,7 +50,12 @@ interface OverviewData {
   os: Array<{ value: string; visitors: number }>;
   devices: Array<{ value: string; visitors: number }>;
   countries: Array<{ country: string; visitors: number; pageviews: number }>;
+  regions: Array<{ region: string | null; visitors: number; pageviews: number }>;
+  cities: Array<{ city: string | null; visitors: number; pageviews: number }>;
   sections: Array<{ section: string; views: number; visitors: number; pages: number }>;
+  entryPages: Array<{ urlPath: string; entries: number; visitors: number }>;
+  exitPages: Array<{ urlPath: string; exits: number; visitors: number }>;
+  heatmap: Array<{ dayOfWeek: number; hour: number; pageviews: number; visitors: number }>;
   channels: Array<{
     channel: string;
     visitors: number;
@@ -127,6 +133,10 @@ export function OverviewPage() {
   const totalOsVisitors = data?.os?.reduce((s, x) => s + x.visitors, 0) ?? 0;
   const totalDeviceVisitors = data?.devices?.reduce((s, x) => s + x.visitors, 0) ?? 0;
   const totalChannelVisitors = data?.channels?.reduce((s, x) => s + x.visitors, 0) ?? 0;
+  const totalEntries = data?.entryPages?.reduce((s, x) => s + x.entries, 0) ?? 0;
+  const totalExits = data?.exitPages?.reduce((s, x) => s + x.exits, 0) ?? 0;
+  const totalRegionVisitors = data?.regions?.reduce((s, x) => s + x.visitors, 0) ?? 0;
+  const totalCityVisitors = data?.cities?.reduce((s, x) => s + x.visitors, 0) ?? 0;
 
   const pct = (n: number, total: number) =>
     total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "—";
@@ -164,7 +174,7 @@ export function OverviewPage() {
 
       {/* 2-column panels */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Pages: Sections / Pages */}
+        {/* Pages: Sections / Pages / Entry URLs / Exit URLs */}
         <Card>
           <CardContent className="pt-4">
             <PanelTabs tabs={[
@@ -201,6 +211,36 @@ export function OverviewPage() {
                     ],
                   })) ?? []}
                   empty="No page data"
+                />
+              )},
+              { label: "Entry URLs", content: (
+                <ListTable loading={isLoading}
+                  headers={["Entry Page", "Entries", "%"]}
+                  widths={["flex-1", "w-16", "w-14"]}
+                  rows={data?.entryPages?.map((p) => ({
+                    key: p.urlPath, label: p.urlPath, mono: true,
+                    onClick: () => addFilter({ column: "url_path", operator: "eq", value: p.urlPath }),
+                    values: [
+                      { v: p.entries.toLocaleString(), bold: true },
+                      { v: pct(p.entries, totalEntries), muted: true },
+                    ],
+                  })) ?? []}
+                  empty="No entry page data"
+                />
+              )},
+              { label: "Exit URLs", content: (
+                <ListTable loading={isLoading}
+                  headers={["Exit Page", "Exits", "%"]}
+                  widths={["flex-1", "w-16", "w-14"]}
+                  rows={data?.exitPages?.map((p) => ({
+                    key: p.urlPath, label: p.urlPath, mono: true,
+                    onClick: () => addFilter({ column: "url_path", operator: "eq", value: p.urlPath }),
+                    values: [
+                      { v: p.exits.toLocaleString(), bold: true },
+                      { v: pct(p.exits, totalExits), muted: true },
+                    ],
+                  })) ?? []}
+                  empty="No exit page data"
                 />
               )},
             ]} />
@@ -298,7 +338,7 @@ export function OverviewPage() {
           </CardContent>
         </Card>
 
-        {/* Location: Countries */}
+        {/* Location: Countries / Regions / Cities */}
         <Card>
           <CardContent className="pt-4">
             <PanelTabs tabs={[
@@ -317,72 +357,120 @@ export function OverviewPage() {
                   empty="No country data"
                 />
               )},
+              { label: "Regions", content: (
+                <ListTable loading={isLoading}
+                  headers={["Region", "Visitors", "%"]}
+                  widths={["flex-1", "w-16", "w-14"]}
+                  rows={data?.regions?.map((r) => ({
+                    key: r.region ?? "unknown", label: r.region || "(unknown)",
+                    onClick: () => r.region ? addFilter({ column: "region", operator: "eq", value: r.region }) : undefined,
+                    values: [
+                      { v: r.visitors.toLocaleString(), bold: true },
+                      { v: pct(r.visitors, totalRegionVisitors), muted: true },
+                    ],
+                  })) ?? []}
+                  empty="No region data"
+                />
+              )},
+              { label: "Cities", content: (
+                <ListTable loading={isLoading}
+                  headers={["City", "Visitors", "%"]}
+                  widths={["flex-1", "w-16", "w-14"]}
+                  rows={data?.cities?.map((c) => ({
+                    key: c.city ?? "unknown", label: c.city || "(unknown)",
+                    onClick: () => c.city ? addFilter({ column: "city", operator: "eq", value: c.city }) : undefined,
+                    values: [
+                      { v: c.visitors.toLocaleString(), bold: true },
+                      { v: pct(c.visitors, totalCityVisitors), muted: true },
+                    ],
+                  })) ?? []}
+                  empty="No city data"
+                />
+              )},
             ]} />
           </CardContent>
         </Card>
       </div>
 
-      {/* World Map */}
-      <Card>
-        <CardContent className="pt-4">
-          {isLoading ? (
-            <Skeleton className="h-[340px] w-full" />
-          ) : data?.countries ? (
-            <WorldMap
-              data={data.countries}
-              height={340}
-              onCountryClick={(code) => addFilter({ column: "country", operator: "eq", value: code })}
-            />
-          ) : null}
-        </CardContent>
-      </Card>
+      {/* World Map + Traffic Heatmap */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardContent className="pt-4">
+            {isLoading ? (
+              <Skeleton className="h-[340px] w-full" />
+            ) : data?.countries ? (
+              <WorldMap
+                data={data.countries}
+                height={340}
+                onCountryClick={(code) => addFilter({ column: "country", operator: "eq", value: code })}
+              />
+            ) : null}
+          </CardContent>
+        </Card>
 
-      {/* Events — full width */}
+        <Card>
+          <CardContent className="pt-4">
+            <div className="mb-3 text-sm font-medium">Traffic</div>
+            {isLoading ? (
+              <Skeleton className="h-[340px] w-full" />
+            ) : data?.heatmap ? (
+              <TrafficHeatmap data={data.heatmap} />
+            ) : (
+              <p className="py-8 text-center text-xs text-muted-foreground">No traffic data</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Events: Events / Properties */}
       <Card>
         <CardContent className="pt-4">
           <PanelTabs tabs={[
             { label: "Events", content: (
+              <ListTable loading={isLoading}
+                headers={["Event", "Count", "Visitors", "%"]}
+                widths={["flex-1", "w-16", "w-16", "w-14"]}
+                rows={data?.events.map((evt) => ({
+                  key: evt.eventName, label: evt.eventName, mono: true,
+                  onClick: () => addFilter({ column: "event_name", operator: "eq", value: evt.eventName }),
+                  values: [
+                    { v: evt.count.toLocaleString(), bold: true },
+                    { v: evt.visitors.toLocaleString(), muted: true },
+                    { v: pct(evt.count, totalEventCount), muted: true },
+                  ],
+                })) ?? []}
+                empty="No event data"
+              />
+            )},
+            { label: "Properties", content: (
               <div className="space-y-0">
                 {isLoading ? <SkeletonRows /> : (
                   <>
-                    <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      <span>Event</span>
-                      <div className="flex gap-4 text-right">
-                        <span className="w-16">Count</span>
-                        <span className="w-14">%</span>
-                      </div>
-                    </div>
-                    {data?.events.map((evt) => (
-                      <div key={evt.eventName}
-                        className="cursor-pointer rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors"
-                        onClick={() => addFilter({ column: "event_name", operator: "eq", value: evt.eventName })}
-                      >
-                        <div className="flex items-center justify-between py-1.5 text-sm">
-                          <span className="truncate font-mono text-sm" title={evt.eventName}>{evt.eventName}</span>
-                          <div className="flex gap-4 text-right tabular-nums">
-                            <span className="w-16 font-medium">{evt.count.toLocaleString()}</span>
-                            <span className="w-14 text-muted-foreground">{pct(evt.count, totalEventCount)}</span>
+                    {data?.events.flatMap((evt) =>
+                      (evt.properties ?? []).length > 0 ? [evt] : []
+                    ).map((evt) => (
+                      <div key={evt.eventName} className="mb-3 last:mb-0">
+                        <div className="text-xs font-medium text-muted-foreground mb-1">{evt.eventName}</div>
+                        {Object.entries(
+                          evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
+                            (acc, p) => { if (!acc[p.key]) acc[p.key] = []; acc[p.key].push({ value: p.value, count: p.count }); return acc; }, {},
+                          ),
+                        ).map(([key, values]) => (
+                          <div key={key} className="flex items-start gap-2 py-0.5 text-sm">
+                            <span className="text-muted-foreground min-w-[80px] text-xs">{key}</span>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                              {values.map((v, i) => (
+                                <span key={i} className="tabular-nums text-xs">
+                                  {v.value} <span className="text-muted-foreground">({v.count.toLocaleString()})</span>
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        {evt.properties && evt.properties.length > 0 && (
-                          <div className="pb-1.5 pl-2 text-xs text-muted-foreground leading-tight">
-                            {Object.entries(
-                              evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
-                                (acc, p) => { if (!acc[p.key]) acc[p.key] = []; acc[p.key].push({ value: p.value, count: p.count }); return acc; }, {},
-                              ),
-                            ).map(([key, values]) => (
-                              <div key={key}>
-                                {key}: {values.map((v, i) => (
-                                  <span key={i}>{i > 0 && ", "}{v.value} ({v.count.toLocaleString()})</span>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        ))}
                       </div>
                     ))}
-                    {(!data?.events || data.events.length === 0) && (
-                      <p className="py-4 text-center text-xs text-muted-foreground">No event data</p>
+                    {(!data?.events.some((e) => e.properties?.length > 0)) && (
+                      <p className="py-4 text-center text-xs text-muted-foreground">No event properties</p>
                     )}
                   </>
                 )}

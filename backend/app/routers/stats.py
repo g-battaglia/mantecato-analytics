@@ -14,6 +14,9 @@ from mantecato_core.date_utils import get_comparison_range
 from ..dependencies import require_site_access, parse_filters, resolve_dates
 from mantecato_core.queries import stats as q_stats
 from mantecato_core.queries import sources as q_sources
+from mantecato_core.queries import geo as q_geo
+from mantecato_core.queries import pageviews as q_pageviews
+from mantecato_core.queries import heatmap as q_heatmap
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["stats"])
 
@@ -123,7 +126,22 @@ async def get_stats(
         q_stats.get_country_breakdown(site_id, start_date, end_date, 10, filters),
         q_stats.get_top_sections(site_id, start_date, end_date, 2, 10, filters, normalize_urls),
         q_sources.get_channel_metrics(site_id, start_date, end_date, filters),
+        # Entry/exit pages (sorted by entries/exits from page metrics)
+        q_pageviews.get_page_metrics(
+            site_id, start_date, end_date, 10, 0, filters,
+            "slug" if mode == "slug" else "path",
+        ),
+        # Geo regions + cities
+        q_geo.get_geo_metrics(site_id, start_date, end_date, "region", limit=10, filters=filters),
+        q_geo.get_geo_metrics(site_id, start_date, end_date, "city", limit=10, filters=filters),
+        # Traffic heatmap
+        q_heatmap.get_traffic_heatmap(site_id, start_date, end_date, filters),
     )
+
+    # Derive entry/exit rankings from page metrics
+    page_metrics = results[13] or []
+    entry_pages = sorted(page_metrics, key=lambda p: p.get("entries", 0), reverse=True)[:10]
+    exit_pages = sorted(page_metrics, key=lambda p: p.get("exits", 0), reverse=True)[:10]
 
     return {
         "stats": results[0],
@@ -139,4 +157,9 @@ async def get_stats(
         "countries": results[10],
         "sections": results[11],
         "channels": results[12],
+        "entryPages": [{"urlPath": p["urlPath"], "entries": p.get("entries", 0), "visitors": p.get("visitors", 0)} for p in entry_pages],
+        "exitPages": [{"urlPath": p["urlPath"], "exits": p.get("exits", 0), "visitors": p.get("visitors", 0)} for p in exit_pages],
+        "regions": results[14],
+        "cities": results[15],
+        "heatmap": results[16],
     }
