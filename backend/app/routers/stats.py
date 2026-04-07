@@ -38,10 +38,12 @@ async def get_stats(
     granularity: str = Query("day"),
     section: str | None = Query(None),
     mode: str = Query("path"),
+    normalize: str = Query("smart"),
     filters: list = Depends(parse_filters),
 ):
     preset = range
     start_date, end_date = _resolve_dates(preset, start, end)
+    normalize_urls: bool | str = False if normalize == "off" else normalize
 
     # Section-based partial responses
     if section:
@@ -56,7 +58,7 @@ async def get_stats(
         if section == "pages":
             page_mode = "slug" if mode == "slug" else "path"
             return await q_stats.get_top_pages(
-                site_id, start_date, end_date, 10, filters, page_mode
+                site_id, start_date, end_date, 10, filters, page_mode, normalize_urls
             )
         if section == "referrers":
             return await q_stats.get_top_referrers(
@@ -84,7 +86,7 @@ async def get_stats(
             )
         if section == "sections":
             return await q_stats.get_top_sections(
-                site_id, start_date, end_date, 2, 10, filters
+                site_id, start_date, end_date, 2, 10, filters, normalize_urls
             )
 
     # Full response — calculate previous period
@@ -111,6 +113,7 @@ async def get_stats(
             10,
             filters,
             "slug" if mode == "slug" else "path",
+            normalize_urls,
         ),
         q_stats.get_top_referrers(site_id, start_date, end_date, 10, filters),
         q_stats.get_top_events_with_properties(
@@ -120,7 +123,7 @@ async def get_stats(
             site_id, start_date, end_date, "browser", 10, filters
         ),
         q_stats.get_country_breakdown(site_id, start_date, end_date, 10, filters),
-        q_stats.get_top_sections(site_id, start_date, end_date, 2, 10, filters),
+        q_stats.get_top_sections(site_id, start_date, end_date, 2, 10, filters, normalize_urls),
         q_sources.get_channel_metrics(site_id, start_date, end_date, filters),
     )
 

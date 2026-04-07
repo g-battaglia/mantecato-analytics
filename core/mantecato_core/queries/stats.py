@@ -8,17 +8,27 @@ from mantecato_core.database import raw_query
 from mantecato_core.filters import Filter, build_filter_sql
 
 # Patterns for normalizing dynamic URL segments to `:id`
-_NORMALIZE_PATTERNS = [
+# "smart" — safe patterns that are almost always dynamic IDs
+_PATTERNS_SMART = [
     (_re.compile(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", _re.I), "/:id"),  # UUID
     (_re.compile(r"/[0-9a-f]{12,}", _re.I), "/:id"),  # long hex (ObjectId, SHA)
     (_re.compile(r"/\d+"), "/:id"),                    # numeric ID
+]
+# "aggressive" — adds long alphanumeric blobs (may catch real slugs)
+_PATTERNS_AGGRESSIVE = _PATTERNS_SMART + [
     (_re.compile(r"/[A-Za-z0-9_-]{20,}"), "/:id"),     # long alphanumeric blob
 ]
 
+_PATTERN_SETS = {
+    "smart": _PATTERNS_SMART,
+    "aggressive": _PATTERNS_AGGRESSIVE,
+}
 
-def _normalize_url(path: str) -> str:
+
+def _normalize_url(path: str, mode: str = "smart") -> str:
     """Replace dynamic URL segments (UUIDs, numeric IDs, etc.) with :id."""
-    for pat, repl in _NORMALIZE_PATTERNS:
+    patterns = _PATTERN_SETS.get(mode, _PATTERNS_SMART)
+    for pat, repl in patterns:
         path = pat.sub(repl, path)
     return path
 
@@ -160,7 +170,7 @@ async def get_top_pages(
     limit: int = 10,
     filters: list[Filter] | None = None,
     page_mode: str = "path",
-    normalize_urls: bool = True,
+    normalize_urls: bool | str = True,
 ) -> list[dict[str, Any]]:
     filters = filters or []
     result = build_filter_sql(filters)
@@ -204,7 +214,8 @@ async def get_top_pages(
         # Normalize dynamic segments and re-aggregate
         merged: dict[str, dict[str, int]] = {}
         for row in rows:
-            key = _normalize_url(row["url_path"])
+            norm_mode = normalize_urls if isinstance(normalize_urls, str) else "smart"
+            key = _normalize_url(row["url_path"], norm_mode)
             if key in merged:
                 merged[key]["views"] += int(row["views"] or 0)
                 merged[key]["visitors"] += int(row["visitors"] or 0)
@@ -237,9 +248,13 @@ async def get_top_sections(
     depth: int = 2,
     limit: int = 10,
     filters: list[Filter] | None = None,
-    normalize_urls: bool = True,
+    normalize_urls: bool | str = True,
 ) -> list[dict[str, Any]]:
-    """Group pages by the first `depth` path segments and aggregate stats."""
+    """Group pages by the first `depth` path segments and aggregate stats.
+
+    normalize_urls: False to disable, True or "smart" for safe patterns,
+    "aggressive" to also collapse long alphanumeric slugs.
+    """
     filters = filters or []
     result = build_filter_sql(filters)
     filter_where = result["where"]
@@ -298,7 +313,8 @@ async def get_top_sections(
     # Normalize dynamic segments (/uuid, /123, etc.) in Python and re-aggregate
     merged: dict[str, dict[str, int]] = {}
     for row in rows:
-        key = _normalize_url(row["section"])
+        norm_mode = normalize_urls if isinstance(normalize_urls, str) else "smart"
+        key = _normalize_url(row["section"], norm_mode)
         if key in merged:
             merged[key]["views"] += int(row["views"] or 0)
             merged[key]["visitors"] += int(row["visitors"] or 0)

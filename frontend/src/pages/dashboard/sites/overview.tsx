@@ -71,12 +71,14 @@ interface OverviewData {
 function useOverviewData(siteId: string) {
   const { params, queryKeyParts } = useDateParams();
   const pageMode = usePreferencesStore((s) => s.pageMode);
+  const urlNormalization = usePreferencesStore((s) => s.urlNormalization);
 
   return useQuery<OverviewData>({
-    queryKey: ["overview", siteId, pageMode, ...queryKeyParts],
+    queryKey: ["overview", siteId, pageMode, urlNormalization, ...queryKeyParts],
     queryFn: async () => {
       const p = new URLSearchParams(params);
       p.set("mode", pageMode);
+      p.set("normalize", urlNormalization);
       const res = await apiFetch(`/api/sites/${siteId}/stats?${p}`);
       if (!res.ok) throw new Error("Failed to fetch overview data");
       return res.json();

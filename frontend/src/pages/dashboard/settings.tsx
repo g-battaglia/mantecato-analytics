@@ -109,6 +109,8 @@ export function SettingsPage() {
     setTableRows,
     pageMode,
     setPageMode,
+    urlNormalization,
+    setUrlNormalization,
     currency,
     setCurrency,
     timezone,
@@ -316,6 +318,30 @@ export function SettingsPage() {
                   <SelectContent>
                     <SelectItem value="path">Full path</SelectItem>
                     <SelectItem value="slug">Slug (normalized)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>URL normalization</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Group dynamic URLs (UUIDs, numeric IDs) into sections
+                  </p>
+                </div>
+                <Select
+                  value={urlNormalization}
+                  onValueChange={(v) =>
+                    setUrlNormalization(v as "off" | "smart" | "aggressive")
+                  }
+                >
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="off">Off</SelectItem>
+                    <SelectItem value="smart">Smart</SelectItem>
+                    <SelectItem value="aggressive">Aggressive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
