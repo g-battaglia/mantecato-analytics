@@ -101,7 +101,7 @@ interface Website {
 }
 
 export function SettingsPage() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, visualStyle, setVisualStyle } = useTheme();
   const {
     defaultDateRange,
     defaultGranularity,
@@ -151,6 +151,28 @@ export function SettingsPage() {
                     <SelectItem value="light">Light</SelectItem>
                     <SelectItem value="dark">Dark</SelectItem>
                     <SelectItem value="system">System</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Visual style</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Classic or glassmorphic UI
+                  </p>
+                </div>
+                <Select
+                  value={visualStyle}
+                  onValueChange={(v) =>
+                    setVisualStyle(v as "classic" | "glass")
+                  }
+                >
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="classic">Classic</SelectItem>
+                    <SelectItem value="glass">Glass</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

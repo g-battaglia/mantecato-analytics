@@ -6,14 +6,18 @@ import {
   useMemo,
   useState,
 } from "react";
+import { usePreferencesStore } from "@/stores/preferences";
 
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
+type VisualStyle = "classic" | "glass";
 
 interface ThemeContextValue {
   theme: Theme;
   resolvedTheme: ResolvedTheme;
+  visualStyle: VisualStyle;
   setTheme: (theme: Theme) => void;
+  setVisualStyle: (style: VisualStyle) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -35,6 +39,12 @@ function applyTheme(resolved: ResolvedTheme) {
   root.classList.add(resolved);
 }
 
+function applyVisualStyle(style: VisualStyle) {
+  const root = document.documentElement;
+  root.classList.remove("style-classic", "style-glass");
+  root.classList.add(`style-${style}`);
+}
+
 function setCookie(theme: Theme) {
   document.cookie = `theme=${theme};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
 }
@@ -46,10 +56,14 @@ export function ThemeProvider({
   children: React.ReactNode;
   initialTheme?: Theme;
 }) {
+  const storedVisualStyle = usePreferencesStore((s) => s.visualStyle);
+  const storeSetVisualStyle = usePreferencesStore((s) => s.setVisualStyle);
+
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     resolveTheme(initialTheme)
   );
+  const [visualStyle, setVisualStyleState] = useState<VisualStyle>(storedVisualStyle);
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
@@ -58,6 +72,12 @@ export function ThemeProvider({
     applyTheme(resolved);
     setCookie(next);
   }, []);
+
+  const setVisualStyle = useCallback((style: VisualStyle) => {
+    setVisualStyleState(style);
+    storeSetVisualStyle(style);
+    applyVisualStyle(style);
+  }, [storeSetVisualStyle]);
 
   useEffect(() => {
     if (theme !== "system") return;
@@ -76,9 +96,14 @@ export function ThemeProvider({
     applyTheme(resolveTheme(theme));
   }, [theme]);
 
+  // Apply visual style on mount and when it changes
+  useEffect(() => {
+    applyVisualStyle(visualStyle);
+  }, [visualStyle]);
+
   const value = useMemo(
-    () => ({ theme, resolvedTheme, setTheme }),
-    [theme, resolvedTheme, setTheme]
+    () => ({ theme, resolvedTheme, visualStyle, setTheme, setVisualStyle }),
+    [theme, resolvedTheme, visualStyle, setTheme, setVisualStyle]
   );
 
   return (

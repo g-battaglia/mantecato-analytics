@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { BarChart3, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { apiFetch } from "@/lib/api";
+import { GlassBackground } from "@/components/layout/GlassBackground";
+import { useTheme } from "@/lib/theme";
 
 function LoginForm() {
   const navigate = useNavigate();
@@ -47,7 +49,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="w-full max-w-sm">
+    <div className="relative z-10 w-full max-w-sm">
       {/* Logo + branding */}
       <div className="mb-8 text-center">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
@@ -119,8 +121,11 @@ function LoginForm() {
 }
 
 export function LoginPage() {
+  const { visualStyle } = useTheme();
+
   return (
-    <div className="flex min-h-svh items-center justify-center bg-background p-4">
+    <div className="relative flex min-h-svh items-center justify-center bg-background p-4">
+      {visualStyle === "glass" && <GlassBackground />}
       <LoginForm />
     </div>
   );

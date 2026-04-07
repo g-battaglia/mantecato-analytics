@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+type VisualStyle = "classic" | "glass";
+
 interface PreferencesState {
   theme: "light" | "dark" | "system";
+  visualStyle: VisualStyle;
   defaultDateRange: string;
   defaultGranularity: string;
   defaultComparison: string;
@@ -15,6 +18,7 @@ interface PreferencesState {
   sidebarCollapsed: boolean;
 
   setTheme: (theme: "light" | "dark" | "system") => void;
+  setVisualStyle: (style: VisualStyle) => void;
   setTableRows: (rows: number) => void;
   setPageMode: (mode: "path" | "slug") => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -26,6 +30,7 @@ export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
       theme: "system",
+      visualStyle: "classic",
       defaultDateRange: "24h",
       defaultGranularity: "auto",
       defaultComparison: "previous_period",
@@ -38,6 +43,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       sidebarCollapsed: false,
 
       setTheme: (theme) => set({ theme }),
+      setVisualStyle: (visualStyle) => set({ visualStyle }),
       setTableRows: (tableRows) => set({ tableRows }),
       setPageMode: (pageMode) => set({ pageMode }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),

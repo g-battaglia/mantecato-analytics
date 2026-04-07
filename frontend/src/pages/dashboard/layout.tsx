@@ -4,6 +4,8 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { useAuthStore } from "@/stores/auth";
 import { apiFetch } from "@/lib/api";
+import { GlassBackground } from "@/components/layout/GlassBackground";
+import { useTheme } from "@/lib/theme";
 
 /**
  * Client-side auth guard. Redirects to /login if no token or if the
@@ -11,6 +13,7 @@ import { apiFetch } from "@/lib/api";
  */
 export function DashboardLayout() {
   const token = useAuthStore((s) => s.token);
+  const { visualStyle } = useTheme();
 
   const { isLoading, isError } = useQuery({
     queryKey: ["auth-check"],
@@ -29,6 +32,7 @@ export function DashboardLayout() {
 
   return (
     <SidebarProvider>
+      {visualStyle === "glass" && <GlassBackground />}
       <AppSidebar />
       <SidebarInset>
         <Outlet />

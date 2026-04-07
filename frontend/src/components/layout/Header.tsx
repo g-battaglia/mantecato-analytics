@@ -33,7 +33,7 @@ export function Header({
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-4 border-b bg-background px-6">
+    <header data-slot="header" className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-4 border-b bg-background px-6">
       {title && (
         <h1 className="text-sm font-semibold">{title}</h1>
       )}
