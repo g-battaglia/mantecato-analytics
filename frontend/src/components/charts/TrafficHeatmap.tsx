@@ -23,7 +23,7 @@ interface TrafficHeatmapProps {
 }
 
 export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
-  const [hover, setHover] = useState<{ dow: number; hour: number; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{ dow: number; hour: number; mx: number; my: number } | null>(null);
 
   const lookup = new Map<string, HeatmapCell>();
   let max = 1;
@@ -61,9 +61,8 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
                 <div
                   key={di}
                   className="flex items-center justify-center h-8 cursor-default"
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setHover({ dow, hour, x: rect.left + rect.width / 2, y: rect.top });
+                  onMouseMove={(e) => {
+                    setHover({ dow, hour, mx: e.clientX, my: e.clientY });
                   }}
                   onMouseLeave={() => setHover(null)}
                 >
@@ -88,8 +87,8 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
         <div
           className="pointer-events-none fixed z-50 rounded-lg border bg-popover px-3 py-2 text-sm shadow-md"
           style={{
-            left: hover.x,
-            top: hover.y - 8,
+            left: hover.mx,
+            top: hover.my - 12,
             transform: "translate(-50%, -100%)",
           }}
         >
