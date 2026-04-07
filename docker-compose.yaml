@@ -16,7 +16,7 @@ services:
       - "${BACKEND_PORT:-8100}:8100"
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET must be set}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me}
     restart: unless-stopped
 
   cli:

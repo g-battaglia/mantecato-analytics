@@ -156,16 +156,47 @@ See **[docs/ai-agents.md](docs/ai-agents.md)** for platform-specific setup instr
 
 ## Docker
 
+Mantecato runs as two containers (frontend + backend) connecting to your existing Umami PostgreSQL database.
+
+### 1. Configure
+
 ```bash
-# Full stack
+cp .env.example .env
+```
+
+Edit `.env` with your database connection:
+
+```env
+DATABASE_URL="postgresql://user:password@host:5432/umami"
+SESSION_SECRET="any-random-string-here"
+```
+
+### 2. Start
+
+```bash
+# Build and run (Docker or Apple Containers)
 docker compose up -d --build
+```
 
-# CLI only (optional profile)
-docker compose --profile cli run --rm cli report --site mysite.com
+The dashboard is at **http://localhost:4180**. Log in with your Umami credentials.
 
-# MCP server (optional profile)
+### 3. CLI and MCP (optional)
+
+```bash
+# Run CLI commands via Docker
+docker compose --profile cli run --rm cli report --site mysite.com --period 30d
+
+# Start MCP server for AI agents
 docker compose --profile mcp run --rm mcp
 ```
+
+### Compatibility
+
+The `docker-compose.yaml` uses standard OCI images and works with:
+- **Docker Desktop** (macOS, Windows, Linux)
+- **Apple Containers** (`container compose up -d --build`)
+- **Podman** (`podman compose up -d --build`)
+- Any OCI-compliant runtime
 
 Production guide: **[docs/docker.md](docs/docker.md)**
 
@@ -200,4 +231,21 @@ Production guide: **[docs/docker.md](docs/docker.md)**
 
 ## License
 
-MIT
+Copyright (c) 2025 Giacomo Battaglia
+
+This project is licensed under the **GNU Affero General Public License v3.0** (AGPLv3). See [LICENSE](LICENSE) for the full text.
+
+### What this means
+
+- You can **freely install, use, and modify** Mantecato for any purpose
+- If you modify and deploy it as a network service, you must **share your changes** under AGPLv3
+- You **cannot** incorporate it into proprietary software without a commercial license
+
+### Commercial / Dual Licensing
+
+A **commercial license** is available for organizations that need to:
+- Embed Mantecato in proprietary products
+- Deploy modified versions without source disclosure
+- Get custom installations, support, or SLA guarantees
+
+Contact **giacomo@mantecato.com** for licensing and custom deployment options.
