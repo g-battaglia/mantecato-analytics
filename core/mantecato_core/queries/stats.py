@@ -7,6 +7,38 @@ from mantecato_core.database import raw_query
 from mantecato_core.filters import Filter, build_filter_sql
 
 
+def _normalize_url_sql(url_expr: str) -> str:
+    """Wrap a SQL expression to normalize dynamic URL segments.
+
+    Replaces UUIDs, numeric IDs, hex hashes, and base64-ish slugs with
+    ``:id`` so that pages like ``/subjects/65c8…`` group under ``/subjects/:id``.
+
+    Patterns replaced (in order):
+    1. UUID v4:  ``/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx``
+    2. Long hex: ``/[0-9a-f]{12,}``  (MongoDB ObjectId, SHA fragments)
+    3. Pure numeric: ``/12345``
+    4. Mixed alphanumeric blobs >=20 chars (base64 tokens, Firestore IDs)
+    """
+    # fmt: off
+    uuid_pat  = r"'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'"
+    hex_pat   = r"'/[0-9a-f]{12,}'"
+    num_pat   = r"'/[0-9]+'"
+    blob_pat  = r"'/[A-Za-z0-9_-]{20,}'"
+    repl      = "'/:id'"
+    # fmt: on
+    return (
+        f"REGEXP_REPLACE("
+        f"REGEXP_REPLACE("
+        f"REGEXP_REPLACE("
+        f"REGEXP_REPLACE("
+        f"  {url_expr}"
+        f", {uuid_pat}, {repl}, 'gi')"
+        f", {hex_pat}, {repl}, 'gi')"
+        f", {num_pat}, {repl}, 'g')"
+        f", {blob_pat}, {repl}, 'g')"
+    )
+
+
 async def get_website_stats(
     website_id: str,
     start_date: datetime,
@@ -156,7 +188,8 @@ async def get_top_pages(
     )
 
     if page_mode == "slug":
-        url_expr = "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
+        _stripped_pg = "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
+        url_expr = _normalize_url_sql(_stripped_pg)
         url_select = f"CASE WHEN {url_expr} = '' THEN '/' ELSE {url_expr} END"
     else:
         url_select = "we.url_path"
@@ -215,8 +248,9 @@ async def get_top_sections(
     # depth+1 because string_to_array splits '/a/b' into ['','a','b']
     slice_end = depth + 1
 
-    # Clean URL: strip query params, hash fragments, trailing slashes
-    clean_url = "REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(we.url_path, '?', 1), '#', 1), '/+$', '')"
+    # Clean URL: strip query params, hash, trailing slashes, then normalize IDs
+    _stripped = "REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(we.url_path, '?', 1), '#', 1), '/+$', '')"
+    clean_url = _normalize_url_sql(_stripped)
 
     rows = await raw_query(
         f"""SELECT
