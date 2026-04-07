@@ -265,16 +265,18 @@ html.style-glass {
 .style-glass [data-slot="dropdown-menu-content"],
 .style-glass [data-slot="dropdown-menu-sub-content"],
 .style-glass [data-slot="select-content"] {
-  background-color: rgba(30, 22, 50, 0.92) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  background-color: rgba(30, 22, 50, 0.75) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
   --tw-ring-color: rgba(255, 255, 255, 0.08) !important;
+  overflow: clip !important;
+  overflow-y: auto !important;
 }
 .style-glass:not(.dark) [data-slot="popover-content"],
 .style-glass:not(.dark) [data-slot="dropdown-menu-content"],
 .style-glass:not(.dark) [data-slot="dropdown-menu-sub-content"],
 .style-glass:not(.dark) [data-slot="select-content"] {
-  background-color: rgba(255, 255, 255, 0.85) !important;
+  background-color: rgba(255, 255, 255, 0.6) !important;
 }
 
 .style-glass [data-slot="dialog-overlay"] {
