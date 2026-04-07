@@ -39,7 +39,7 @@ export function SiteSelector() {
 
   if (!websites?.length) {
     return (
-      <p className="px-2 text-xs text-muted-foreground">No websites found</p>
+      <p className="px-2 text-sm text-muted-foreground">No websites found</p>
     );
   }
 
@@ -53,11 +53,15 @@ export function SiteSelector() {
       <SelectTrigger className="h-9 w-full border-0 bg-transparent px-2 py-1 text-left shadow-none hover:bg-transparent focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent dark:hover:bg-transparent">
         <SelectValue placeholder="Select a site" />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="min-w-[240px]">
         {websites.map((site) => (
-          <SelectItem key={site.websiteId} value={site.websiteId}>
-            <div className="flex flex-col">
-              <span>{site.name}</span>
+          <SelectItem
+            key={site.websiteId}
+            value={site.websiteId}
+            className="py-2.5 px-3"
+          >
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">{site.name}</span>
               {site.domain && (
                 <span className="text-xs text-muted-foreground">
                   {site.domain}

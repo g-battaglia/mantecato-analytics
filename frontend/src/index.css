@@ -205,15 +205,27 @@
   overflow: clip !important;
 }
 .style-glass:not(.dark) [data-slot="card"] {
-  background-color: rgba(255, 255, 255, 0.65) !important;
-  border-color: rgba(100, 80, 140, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.45) !important;
+  border-color: rgba(100, 80, 140, 0.1) !important;
 }
 
-/* Main content scroll area: use clip on ancestors to avoid breaking
-   backdrop-filter in Firefox while keeping vertical scroll */
+/* Main content + body must be transparent so glass-bg shows through */
+html.style-glass {
+  background: var(--background) !important;
+}
+.style-glass body {
+  background: transparent !important;
+}
 .style-glass [data-slot="sidebar-inset"] {
+  background: transparent !important;
   overflow: clip !important;
   overflow-y: auto !important;
+}
+.style-glass [data-slot="sidebar-wrapper"] {
+  background: transparent !important;
+}
+.style-glass [data-slot="sidebar-container"] {
+  border-right: none !important;
 }
 
 .style-glass [data-slot="sidebar-inner"] {
@@ -223,25 +235,8 @@
   border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 .style-glass:not(.dark) [data-slot="sidebar-inner"] {
-  background-color: rgba(255, 255, 255, 0.45) !important;
-  border-right-color: rgba(100, 80, 140, 0.12) !important;
-}
-.style-glass [data-slot="sidebar-container"] {
-  border-right: none !important;
-}
-.style-glass [data-slot="sidebar-wrapper"] {
-  background: transparent !important;
-}
-.style-glass [data-slot="sidebar-inset"] {
-  background: transparent !important;
-}
-
-/* Make html/body transparent so glass-bg gradient shows through all layers */
-html.style-glass {
-  background: var(--background) !important;
-}
-.style-glass body {
-  background: transparent !important;
+  background-color: rgba(255, 255, 255, 0.4) !important;
+  border-right-color: rgba(100, 80, 140, 0.1) !important;
 }
 
 .style-glass [data-slot="header"] {
@@ -251,8 +246,8 @@ html.style-glass {
   border-color: rgba(255, 255, 255, 0.06) !important;
 }
 .style-glass:not(.dark) [data-slot="header"] {
-  background-color: rgba(255, 255, 255, 0.65) !important;
-  border-color: rgba(100, 80, 140, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.45) !important;
+  border-color: rgba(100, 80, 140, 0.1) !important;
 }
 
 .style-glass [data-slot="filter-bar"] {
@@ -262,8 +257,8 @@ html.style-glass {
   border-color: rgba(255, 255, 255, 0.06) !important;
 }
 .style-glass:not(.dark) [data-slot="filter-bar"] {
-  background-color: rgba(255, 255, 255, 0.5) !important;
-  border-color: rgba(100, 80, 140, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.4) !important;
+  border-color: rgba(100, 80, 140, 0.1) !important;
 }
 
 .style-glass [data-slot="popover-content"],
@@ -416,7 +411,7 @@ html.style-glass {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(160deg, oklch(0.94 0.015 270), oklch(0.96 0.008 290));
+  background: linear-gradient(160deg, oklch(0.92 0.03 270), oklch(0.94 0.02 300));
 }
 .dark .glass-bg::before {
   background: linear-gradient(160deg, oklch(0.12 0.03 270), oklch(0.14 0.02 280));
@@ -426,7 +421,7 @@ html.style-glass {
   position: absolute;
   border-radius: 50%;
   filter: blur(100px);
-  opacity: 0.25;
+  opacity: 0.35;
   animation: orbDrift 60s ease-in-out infinite;
 }
 .dark .glass-orb {
