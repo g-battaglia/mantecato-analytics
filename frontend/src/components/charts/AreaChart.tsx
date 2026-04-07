@@ -41,14 +41,37 @@ interface AreaChartProps {
   annotations?: AnnotationMarker[];
 }
 
-function formatXAxis(value: string): string {
+/**
+ * Detect granularity from data by checking the interval between the
+ * first two timestamps. Returns a date-fns format string.
+ */
+function detectAxisFormat(data: ChartRow[], xKey: string): string {
+  if (data.length < 2) return "MMM d";
   try {
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return value;
-    return format(date, "MMM d");
+    const a = new Date(data[0][xKey]).getTime();
+    const b = new Date(data[1][xKey]).getTime();
+    const diffMs = Math.abs(b - a);
+    const diffHours = diffMs / (1000 * 60 * 60);
+    if (diffHours < 1) return "HH:mm"; // minute granularity
+    if (diffHours <= 24) return "HH:mm"; // hour granularity
+    if (diffHours <= 24 * 7) return "MMM d"; // day granularity
+    return "MMM d";
   } catch {
-    return value;
+    return "MMM d";
   }
+}
+
+function makeFormatXAxis(data: ChartRow[], xKey: string) {
+  const fmt = detectAxisFormat(data, xKey);
+  return (value: string): string => {
+    try {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return value;
+      return format(date, fmt);
+    } catch {
+      return value;
+    }
+  };
 }
 
 /**
@@ -97,6 +120,10 @@ export function AreaChart({
     ? comparisonKeys.map((k) => `prev_${k}`)
     : [];
 
+  const formatXAxis = makeFormatXAxis(data, xKey);
+  const axisFmt = detectAxisFormat(data, xKey);
+  const tooltipFmt = axisFmt === "HH:mm" ? "MMM d, yyyy HH:mm" : "MMM d, yyyy";
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RechartsAreaChart
@@ -136,7 +163,7 @@ export function AreaChart({
           }}
           labelFormatter={(label) => {
             try {
-              return format(new Date(String(label)), "MMM d, yyyy HH:mm");
+              return format(new Date(String(label)), tooltipFmt);
             } catch {
               return String(label);
             }

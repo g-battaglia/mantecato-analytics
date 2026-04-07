@@ -43,14 +43,30 @@ function getActivePayload(data: unknown): Record<string, unknown> | null {
   )?.payload ?? null;
 }
 
-function formatXAxis(value: string): string {
+function detectAxisFormat(data: Array<Record<string, unknown>>, xKey: string): string {
+  if (data.length < 2) return "MMM d";
   try {
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return value;
-    return format(date, "MMM d");
+    const a = new Date(String(data[0][xKey])).getTime();
+    const b = new Date(String(data[1][xKey])).getTime();
+    const diffHours = Math.abs(b - a) / (1000 * 60 * 60);
+    if (diffHours <= 24) return "HH:mm";
+    return "MMM d";
   } catch {
-    return value;
+    return "MMM d";
   }
+}
+
+function makeFormatXAxis(data: Array<Record<string, unknown>>, xKey: string) {
+  const fmt = detectAxisFormat(data, xKey);
+  return (value: string): string => {
+    try {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return value;
+      return format(date, fmt);
+    } catch {
+      return value;
+    }
+  };
 }
 
 export function BarChart({
@@ -76,6 +92,7 @@ export function BarChart({
   }
 
   const layout = horizontal ? "vertical" : "horizontal";
+  const formatXAxis = makeFormatXAxis(data, xKey);
 
   return (
     <ResponsiveContainer width="100%" height={height}>
