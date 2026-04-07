@@ -1,16 +1,14 @@
 /**
  * Traffic heatmap: dot-grid showing pageview intensity by day-of-week × hour.
- * Matches the Umami "Traffic" card style.
  */
+import { useState } from "react";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-// PostgreSQL DOW: 0=Sun, 1=Mon...6=Sat → reorder to Mon-Sun
-const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0]; // PostgreSQL DOW reordered
 
 const HOURS = Array.from({ length: 24 }, (_, i) => {
   const h = i % 12 || 12;
-  const ampm = i < 12 ? "am" : "pm";
-  return `${h}${ampm}`;
+  return `${h}${i < 12 ? "am" : "pm"}`;
 });
 
 interface HeatmapCell {
@@ -25,60 +23,95 @@ interface TrafficHeatmapProps {
 }
 
 export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
-  // Build lookup: key "dow-hour" → pageviews
-  const lookup = new Map<string, number>();
+  const [hover, setHover] = useState<{ dow: number; hour: number; x: number; y: number } | null>(null);
+
+  const lookup = new Map<string, HeatmapCell>();
   let max = 1;
   for (const cell of data) {
-    const key = `${cell.dayOfWeek}-${cell.hour}`;
-    lookup.set(key, cell.pageviews);
+    lookup.set(`${cell.dayOfWeek}-${cell.hour}`, cell);
     if (cell.pageviews > max) max = cell.pageviews;
   }
 
+  const hoverCell = hover ? lookup.get(`${hover.dow}-${hover.hour}`) : null;
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className="w-14" />
-            {DAYS.map((day) => (
-              <th
-                key={day}
-                className="px-1 pb-2 text-xs font-medium text-muted-foreground text-center"
-              >
-                {day}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {HOURS.map((label, hour) => (
-            <tr key={hour}>
-              <td className="pr-2 py-0.5 text-right text-xs text-muted-foreground whitespace-nowrap">
-                {label}
-              </td>
-              {DOW_ORDER.map((dow, di) => {
-                const pv = lookup.get(`${dow}-${hour}`) ?? 0;
-                const ratio = pv / max;
-                const size = 4 + ratio * 16; // 4px min, 20px max
-                const opacity = pv === 0 ? 0.12 : 0.25 + ratio * 0.75;
-                return (
-                  <td key={di} className="text-center py-0.5 px-1">
-                    <div
-                      className="inline-block rounded-full"
-                      style={{
-                        width: size,
-                        height: size,
-                        backgroundColor: `oklch(0.6 0.18 270 / ${opacity})`,
-                      }}
-                      title={`${DAYS[di]} ${label}: ${pv.toLocaleString()} pageviews`}
-                    />
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="relative">
+      <div className="grid" style={{ gridTemplateColumns: "60px repeat(7, 1fr)" }}>
+        {/* Header row */}
+        <div />
+        {DAYS.map((day) => (
+          <div key={day} className="text-center pb-3 text-sm font-medium text-muted-foreground">
+            {day}
+          </div>
+        ))}
+
+        {/* Hour rows */}
+        {HOURS.map((label, hour) => (
+          <div key={hour} className="contents">
+            <div className="text-right pr-3 text-sm text-muted-foreground leading-[32px]">
+              {label}
+            </div>
+            {DOW_ORDER.map((dow, di) => {
+              const cell = lookup.get(`${dow}-${hour}`);
+              const pv = cell?.pageviews ?? 0;
+              const ratio = pv / max;
+              const size = 6 + ratio * 22; // 6px min → 28px max
+              const opacity = pv === 0 ? 0.08 : 0.2 + ratio * 0.8;
+              return (
+                <div
+                  key={di}
+                  className="flex items-center justify-center h-8 cursor-default"
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHover({ dow, hour, x: rect.left + rect.width / 2, y: rect.top });
+                  }}
+                  onMouseLeave={() => setHover(null)}
+                >
+                  <div
+                    className="rounded-full transition-transform duration-100"
+                    style={{
+                      width: size,
+                      height: size,
+                      backgroundColor: `oklch(0.6 0.18 270 / ${opacity})`,
+                      transform: hover?.dow === dow && hover?.hour === hour ? "scale(1.3)" : "scale(1)",
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Tooltip */}
+      {hover && (
+        <div
+          className="pointer-events-none fixed z-50 rounded-lg border bg-popover px-3 py-2 text-sm shadow-md"
+          style={{
+            left: hover.x,
+            top: hover.y - 8,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <div className="font-medium">
+            {DAYS[DOW_ORDER.indexOf(hover.dow)]} {HOURS[hover.hour]}
+          </div>
+          <div className="mt-0.5 text-xs text-muted-foreground space-y-0.5">
+            <div className="flex justify-between gap-4">
+              <span>Pageviews</span>
+              <span className="font-medium text-foreground tabular-nums">
+                {(hoverCell?.pageviews ?? 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Visitors</span>
+              <span className="font-medium text-foreground tabular-nums">
+                {(hoverCell?.visitors ?? 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
