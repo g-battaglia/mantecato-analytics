@@ -123,7 +123,7 @@ export function SettingsPage() {
     <>
       <Header title="Settings" />
       <div className="flex-1 p-4">
-        <div className="max-w-2xl space-y-4">
+        <div className="space-y-4">
           {/* Appearance */}
           <Card>
             <CardHeader>
