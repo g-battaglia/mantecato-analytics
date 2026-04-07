@@ -205,8 +205,10 @@
   overflow: clip !important;
 }
 .style-glass:not(.dark) [data-slot="card"] {
-  background-color: rgba(255, 255, 255, 0.45) !important;
-  border-color: rgba(100, 80, 140, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.25) !important;
+  backdrop-filter: blur(28px) !important;
+  -webkit-backdrop-filter: blur(28px) !important;
+  border-color: rgba(100, 80, 140, 0.12) !important;
 }
 
 /* Main content + body must be transparent so glass-bg shows through */
@@ -235,8 +237,10 @@ html.style-glass {
   border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 .style-glass:not(.dark) [data-slot="sidebar-inner"] {
-  background-color: rgba(255, 255, 255, 0.4) !important;
-  border-right-color: rgba(100, 80, 140, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(28px) !important;
+  -webkit-backdrop-filter: blur(28px) !important;
+  border-right-color: rgba(100, 80, 140, 0.12) !important;
 }
 
 .style-glass [data-slot="header"] {
@@ -246,8 +250,10 @@ html.style-glass {
   border-color: rgba(255, 255, 255, 0.06) !important;
 }
 .style-glass:not(.dark) [data-slot="header"] {
-  background-color: rgba(255, 255, 255, 0.45) !important;
-  border-color: rgba(100, 80, 140, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.25) !important;
+  backdrop-filter: blur(28px) !important;
+  -webkit-backdrop-filter: blur(28px) !important;
+  border-color: rgba(100, 80, 140, 0.12) !important;
 }
 
 .style-glass [data-slot="filter-bar"] {
@@ -257,8 +263,10 @@ html.style-glass {
   border-color: rgba(255, 255, 255, 0.06) !important;
 }
 .style-glass:not(.dark) [data-slot="filter-bar"] {
-  background-color: rgba(255, 255, 255, 0.4) !important;
-  border-color: rgba(100, 80, 140, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-color: rgba(100, 80, 140, 0.12) !important;
 }
 
 /* Radix portals: transform on the popper wrapper prevents backdrop-filter
@@ -306,8 +314,10 @@ html.style-glass {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12) !important;
 }
 .style-glass:not(.dark) [data-slot="dialog-content"] {
-  background-color: rgba(255, 255, 255, 0.85) !important;
-  border-color: rgba(100, 80, 140, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.3) !important;
+  backdrop-filter: blur(32px) !important;
+  -webkit-backdrop-filter: blur(32px) !important;
+  border-color: rgba(100, 80, 140, 0.15) !important;
 }
 .style-glass [data-slot="dialog-footer"] {
   border-color: rgba(255, 255, 255, 0.06) !important;
@@ -325,7 +335,9 @@ html.style-glass {
   -webkit-backdrop-filter: blur(20px) !important;
 }
 .style-glass:not(.dark) [data-slot="sheet-content"] {
-  background-color: rgba(255, 255, 255, 0.85) !important;
+  background-color: rgba(255, 255, 255, 0.3) !important;
+  backdrop-filter: blur(32px) !important;
+  -webkit-backdrop-filter: blur(32px) !important;
 }
 
 .style-glass [data-slot="table-footer"],
@@ -426,7 +438,7 @@ html.style-glass {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(160deg, oklch(0.92 0.03 270), oklch(0.94 0.02 300));
+  background: linear-gradient(160deg, oklch(0.88 0.05 270), oklch(0.92 0.04 300));
 }
 .dark .glass-bg::before {
   background: linear-gradient(160deg, oklch(0.12 0.03 270), oklch(0.14 0.02 280));
@@ -436,7 +448,7 @@ html.style-glass {
   position: absolute;
   border-radius: 50%;
   filter: blur(100px);
-  opacity: 0.35;
+  opacity: 0.45;
   animation: orbDrift 60s ease-in-out infinite;
 }
 .dark .glass-orb {
