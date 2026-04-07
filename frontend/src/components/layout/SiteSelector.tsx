@@ -50,10 +50,10 @@ export function SiteSelector() {
         navigate(`/sites/${value}`);
       }}
     >
-      <SelectTrigger className="h-9 w-full border-0 bg-transparent px-2 py-1 text-left shadow-none hover:bg-transparent focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent dark:hover:bg-transparent">
+      <SelectTrigger className="h-9 w-full border-0 bg-transparent px-2 py-1 text-left shadow-none rounded-lg hover:bg-muted/50 transition-colors duration-150 focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent dark:hover:bg-muted/30">
         <SelectValue placeholder="Select a site" />
       </SelectTrigger>
-      <SelectContent className="min-w-[240px]">
+      <SelectContent position="popper" side="bottom" sideOffset={4} className="min-w-[240px]">
         {websites.map((site) => (
           <SelectItem
             key={site.websiteId}
