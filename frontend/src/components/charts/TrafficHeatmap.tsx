@@ -1,10 +1,10 @@
 /**
  * Traffic heatmap: dot-grid showing pageview intensity by day-of-week × hour.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0]; // PostgreSQL DOW reordered
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 const HOURS = Array.from({ length: 24 }, (_, i) => {
   const h = i % 12 || 12;
@@ -23,7 +23,8 @@ interface TrafficHeatmapProps {
 }
 
 export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
-  const [hover, setHover] = useState<{ dow: number; hour: number; mx: number; my: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{ dow: number; hour: number; x: number; y: number } | null>(null);
 
   const lookup = new Map<string, HeatmapCell>();
   let max = 1;
@@ -35,9 +36,9 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
   const hoverCell = hover ? lookup.get(`${hover.dow}-${hover.hour}`) : null;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <div className="grid" style={{ gridTemplateColumns: "60px repeat(7, 1fr)" }}>
-        {/* Header row */}
+        {/* Header */}
         <div />
         {DAYS.map((day) => (
           <div key={day} className="text-center pb-3 text-sm font-medium text-muted-foreground">
@@ -45,7 +46,7 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
           </div>
         ))}
 
-        {/* Hour rows */}
+        {/* Rows */}
         {HOURS.map((label, hour) => (
           <div key={hour} className="contents">
             <div className="text-right pr-3 text-sm text-muted-foreground leading-[32px]">
@@ -55,14 +56,24 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
               const cell = lookup.get(`${dow}-${hour}`);
               const pv = cell?.pageviews ?? 0;
               const ratio = pv / max;
-              const size = 6 + ratio * 22; // 6px min → 28px max
+              const size = 6 + ratio * 22;
               const opacity = pv === 0 ? 0.08 : 0.2 + ratio * 0.8;
+              const isHovered = hover?.dow === dow && hover?.hour === hour;
               return (
                 <div
                   key={di}
                   className="flex items-center justify-center h-8 cursor-default"
-                  onMouseMove={(e) => {
-                    setHover({ dow, hour, mx: e.clientX, my: e.clientY });
+                  onMouseEnter={(e) => {
+                    const container = containerRef.current;
+                    if (!container) return;
+                    const cRect = container.getBoundingClientRect();
+                    const tRect = e.currentTarget.getBoundingClientRect();
+                    setHover({
+                      dow,
+                      hour,
+                      x: tRect.left + tRect.width / 2 - cRect.left,
+                      y: tRect.top - cRect.top,
+                    });
                   }}
                   onMouseLeave={() => setHover(null)}
                 >
@@ -72,7 +83,7 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
                       width: size,
                       height: size,
                       backgroundColor: `oklch(0.6 0.18 270 / ${opacity})`,
-                      transform: hover?.dow === dow && hover?.hour === hour ? "scale(1.3)" : "scale(1)",
+                      transform: isHovered ? "scale(1.3)" : "scale(1)",
                     }}
                   />
                 </div>
@@ -82,13 +93,13 @@ export function TrafficHeatmap({ data }: TrafficHeatmapProps) {
         ))}
       </div>
 
-      {/* Tooltip */}
+      {/* Tooltip — positioned absolute relative to container */}
       {hover && (
         <div
-          className="pointer-events-none fixed z-50 rounded-lg border bg-popover px-3 py-2 text-sm shadow-md"
+          className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 text-sm shadow-md"
           style={{
-            left: hover.mx,
-            top: hover.my - 12,
+            left: hover.x,
+            top: hover.y - 8,
             transform: "translate(-50%, -100%)",
           }}
         >
