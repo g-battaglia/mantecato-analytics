@@ -269,15 +269,19 @@ html.style-glass {
   border-color: rgba(100, 80, 140, 0.12) !important;
 }
 
-/* Normalize filter bar controls in glass light mode */
-.style-glass:not(.dark) [data-slot="filter-bar"] [data-slot="button"],
-.style-glass:not(.dark) [data-slot="filter-bar"] [data-slot="select-trigger"] {
-  background-color: rgba(255, 255, 255, 0.3) !important;
+/* Normalize ALL interactive controls in glass light mode */
+.style-glass:not(.dark) [data-slot="button"][data-variant="outline"],
+.style-glass:not(.dark) [data-slot="button"][data-variant="ghost"],
+.style-glass:not(.dark) [data-slot="button"][data-variant="secondary"],
+.style-glass:not(.dark) [data-slot="select-trigger"] {
+  background-color: rgba(255, 255, 255, 0.35) !important;
   border-color: rgba(100, 80, 140, 0.12) !important;
 }
-.style-glass:not(.dark) [data-slot="filter-bar"] [data-slot="button"]:hover,
-.style-glass:not(.dark) [data-slot="filter-bar"] [data-slot="select-trigger"]:hover {
-  background-color: rgba(255, 255, 255, 0.45) !important;
+.style-glass:not(.dark) [data-slot="button"][data-variant="outline"]:hover,
+.style-glass:not(.dark) [data-slot="button"][data-variant="ghost"]:hover,
+.style-glass:not(.dark) [data-slot="button"][data-variant="secondary"]:hover,
+.style-glass:not(.dark) [data-slot="select-trigger"]:hover {
+  background-color: rgba(255, 255, 255, 0.5) !important;
 }
 
 /* Radix portals: transform on the popper wrapper prevents backdrop-filter
