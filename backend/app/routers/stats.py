@@ -114,6 +114,12 @@ async def get_stats(
         q_stats.get_device_breakdown(
             site_id, start_date, end_date, "browser", 10, filters
         ),
+        q_stats.get_device_breakdown(
+            site_id, start_date, end_date, "os", 10, filters
+        ),
+        q_stats.get_device_breakdown(
+            site_id, start_date, end_date, "device", 10, filters
+        ),
         q_stats.get_country_breakdown(site_id, start_date, end_date, 10, filters),
         q_stats.get_top_sections(site_id, start_date, end_date, 2, 10, filters, normalize_urls),
         q_sources.get_channel_metrics(site_id, start_date, end_date, filters),
@@ -128,7 +134,9 @@ async def get_stats(
         "referrers": results[5],
         "events": results[6],
         "browsers": results[7],
-        "countries": results[8],
-        "sections": results[9],
-        "channels": results[10],
+        "os": results[8],
+        "devices": results[9],
+        "countries": results[10],
+        "sections": results[11],
+        "channels": results[12],
     }
