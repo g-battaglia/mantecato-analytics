@@ -261,25 +261,34 @@ html.style-glass {
   border-color: rgba(100, 80, 140, 0.1) !important;
 }
 
-/* Radix portals: the popper wrapper applies transform which breaks
-   backdrop-filter on the content element. Apply blur to the wrapper
-   and make the content transparent. */
+/* Radix portals: transform on the popper wrapper prevents backdrop-filter
+   on children. Apply blur to the wrapper itself and keep all children
+   transparent. Also strip any background from intermediate elements. */
 .style-glass [data-radix-popper-content-wrapper] {
   backdrop-filter: blur(24px) !important;
   -webkit-backdrop-filter: blur(24px) !important;
+  background: transparent !important;
+}
+.style-glass [data-radix-portal] {
+  background: transparent !important;
 }
 .style-glass [data-slot="popover-content"],
 .style-glass [data-slot="dropdown-menu-content"],
 .style-glass [data-slot="dropdown-menu-sub-content"],
 .style-glass [data-slot="select-content"] {
-  background-color: rgba(30, 22, 50, 0.7) !important;
-  --tw-ring-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(30, 22, 50, 0.45) !important;
+  --tw-ring-color: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  --tw-ring-opacity: 0 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
 }
 .style-glass:not(.dark) [data-slot="popover-content"],
 .style-glass:not(.dark) [data-slot="dropdown-menu-content"],
 .style-glass:not(.dark) [data-slot="dropdown-menu-sub-content"],
 .style-glass:not(.dark) [data-slot="select-content"] {
-  background-color: rgba(255, 255, 255, 0.55) !important;
+  background-color: rgba(255, 255, 255, 0.45) !important;
+  border-color: rgba(100, 80, 140, 0.15) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
 }
 
 .style-glass [data-slot="dialog-overlay"] {
