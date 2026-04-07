@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router";
 import { useLocation, useParams } from "react-router";
 import {
@@ -57,7 +58,15 @@ export function AppSidebar() {
   const pathname = useLocation().pathname;
   const params = useParams();
   const siteId = params.siteId as string | undefined;
-  const basePath = siteId ? `/sites/${siteId}` : "";
+
+  // Remember last active siteId so nav items stay visible on /dashboards, /settings
+  const lastSiteId = useRef<string | undefined>(siteId);
+  useEffect(() => {
+    if (siteId) lastSiteId.current = siteId;
+  }, [siteId]);
+
+  const activeSiteId = siteId ?? lastSiteId.current;
+  const basePath = activeSiteId ? `/sites/${activeSiteId}` : "";
 
   return (
     <Sidebar collapsible="icon">
@@ -70,12 +79,12 @@ export function AppSidebar() {
 
       <SidebarContent>
 
-        {siteId && (
+        {activeSiteId && (
           <>
             <SidebarGroup>
               <SidebarGroupLabel>Analytics</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu>
+                <SidebarMenu className="gap-0.5">
                   {SITE_NAV_ITEMS.map((item) => {
                     const href = `${basePath}${item.href}`;
                     const isActive =
@@ -104,7 +113,7 @@ export function AppSidebar() {
             <SidebarGroup>
               <SidebarGroupLabel>Advanced</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu>
+                <SidebarMenu className="gap-0.5">
                   {ADVANCED_NAV_ITEMS.map((item) => {
                     const href = `${basePath}${item.href}`;
                     const isActive = pathname.startsWith(href);
@@ -131,7 +140,7 @@ export function AppSidebar() {
 
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
@@ -150,7 +159,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
+        <SidebarMenu className="gap-0.5">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
