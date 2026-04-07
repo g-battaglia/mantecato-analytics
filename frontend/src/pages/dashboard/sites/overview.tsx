@@ -497,6 +497,7 @@ export function OverviewPage() {
           </CardContent>
         </Card>
       </div>
+    </div>
   );
 }
 
