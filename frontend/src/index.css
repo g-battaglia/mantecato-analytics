@@ -269,6 +269,8 @@ html.style-glass {
   backdrop-filter: blur(40px) saturate(1.2) !important;
   -webkit-backdrop-filter: blur(40px) saturate(1.2) !important;
   background: transparent !important;
+  border-radius: var(--radius-lg) !important;
+  overflow: clip !important;
 }
 .style-glass [data-radix-portal] {
   background: transparent !important;
