@@ -284,10 +284,8 @@ html.style-glass {
   background-color: rgba(255, 255, 255, 0.5) !important;
 }
 
-/* Radix portals: transform on the popper wrapper prevents backdrop-filter
-   on children. Apply blur to the wrapper itself and keep all children
-   transparent. Also strip any background from intermediate elements. */
-/* Radix portals: apply blur to wrapper, content is fully transparent */
+/* Radix portals: the popper wrapper has transform which breaks
+   backdrop-filter on children. Apply blur to the wrapper. */
 .style-glass [data-radix-popper-content-wrapper] {
   backdrop-filter: blur(40px) saturate(1.2) !important;
   -webkit-backdrop-filter: blur(40px) saturate(1.2) !important;
@@ -298,11 +296,14 @@ html.style-glass {
 .style-glass [data-radix-portal] {
   background: transparent !important;
 }
+/* Popover/select/dropdown: solid bg as baseline, blur on wrapper as
+   progressive enhancement. The solid bg ensures readability even when
+   backdrop-filter can't work (e.g. inside a dialog with transform). */
 .style-glass [data-slot="popover-content"],
 .style-glass [data-slot="dropdown-menu-content"],
 .style-glass [data-slot="dropdown-menu-sub-content"],
 .style-glass [data-slot="select-content"] {
-  background-color: transparent !important;
+  background-color: oklch(0.18 0.03 270 / 95%) !important;
   --tw-ring-opacity: 0 !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25) !important;
@@ -311,6 +312,7 @@ html.style-glass {
 .style-glass:not(.dark) [data-slot="dropdown-menu-content"],
 .style-glass:not(.dark) [data-slot="dropdown-menu-sub-content"],
 .style-glass:not(.dark) [data-slot="select-content"] {
+  background-color: oklch(0.96 0.02 270 / 95%) !important;
   border-color: rgba(100, 80, 140, 0.15) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
 }
@@ -320,19 +322,18 @@ html.style-glass {
   backdrop-filter: blur(2px) !important;
   -webkit-backdrop-filter: blur(2px) !important;
 }
+/* Dialogs use transform:translate(-50%,-50%) which breaks backdrop-filter.
+   Use solid bg instead of relying on blur. */
 .style-glass [data-slot="dialog-content"] {
-  background-color: rgba(30, 22, 50, 0.92) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  background-color: oklch(0.18 0.03 270) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   --tw-ring-opacity: 0 !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4) !important;
 }
 .style-glass:not(.dark) [data-slot="dialog-content"] {
-  background-color: rgba(255, 255, 255, 0.3) !important;
-  backdrop-filter: blur(32px) !important;
-  -webkit-backdrop-filter: blur(32px) !important;
+  background-color: oklch(0.95 0.02 270) !important;
   border-color: rgba(100, 80, 140, 0.15) !important;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12) !important;
 }
 .style-glass [data-slot="dialog-footer"] {
   border-color: rgba(255, 255, 255, 0.06) !important;

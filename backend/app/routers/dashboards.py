@@ -40,7 +40,7 @@ async def create_dashboard(
         body.websiteId,
         body.name,
         body.description,
-        EMPTY_DASHBOARD_CONFIG,
+        body.config or EMPTY_DASHBOARD_CONFIG,
     )
     return dashboard
 

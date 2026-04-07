@@ -54,6 +54,7 @@ class DashboardCreate(BaseModel):
     name: str
     description: str = ""
     websiteId: str
+    config: dict | None = None
 
 
 class DashboardUpdate(BaseModel):
