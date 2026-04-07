@@ -6,12 +6,12 @@ Public stats endpoint that looks up a website by shareId.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 
 from fastapi import APIRouter, Query
 
 from mantecato_core.database import raw_query_one
-from mantecato_core.date_utils import resolve_date_range, get_comparison_range
+from mantecato_core.date_utils import get_comparison_range
+from ..dependencies import resolve_dates
 from mantecato_core.queries import stats as q_stats
 
 router = APIRouter(prefix="/api/share", tags=["share"])
@@ -41,17 +41,7 @@ async def get_shared_stats(
     preset = range
 
     # Resolve dates
-    if preset == "custom" and start and end:
-        start_date = datetime.fromisoformat(start)
-        end_date = datetime.fromisoformat(end)
-    else:
-        dr = resolve_date_range(preset)
-        if not dr:
-            start_date = datetime(2020, 1, 1)
-            end_date = datetime.utcnow()
-        else:
-            start_date = dr.start_date
-            end_date = dr.end_date
+    start_date, end_date = await resolve_dates(site_id, preset, start, end)
 
     prev_range = get_comparison_range(
         type("DateRange", (), {"start_date": start_date, "end_date": end_date})(),

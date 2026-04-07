@@ -6,12 +6,10 @@ Dynamic funnel analysis with configurable steps.
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from mantecato_core.date_utils import resolve_date_range
-from ..dependencies import require_site_access
+from ..dependencies import require_site_access, resolve_dates
 from mantecato_core.queries import funnels as q_funnels
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["funnels"])
@@ -28,17 +26,7 @@ async def get_funnels(
     window: int = Query(60),
 ):
     preset = range
-    if preset == "custom" and start and end:
-        start_date = datetime.fromisoformat(start)
-        end_date = datetime.fromisoformat(end)
-    else:
-        dr = resolve_date_range(preset)
-        if not dr:
-            start_date = datetime(2020, 1, 1)
-            end_date = datetime.utcnow()
-        else:
-            start_date = dr.start_date
-            end_date = dr.end_date
+    start_date, end_date = await resolve_dates(site_id, preset, start, end)
 
     if not steps:
         return {"error": "Missing steps parameter"}

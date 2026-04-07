@@ -78,6 +78,31 @@ async def require_site_access(
     return user
 
 
+async def resolve_dates(
+    site_id: str,
+    preset: str,
+    custom_start: str | None = None,
+    custom_end: str | None = None,
+):
+    """Resolve a date range, querying the DB for the first event on 'all'."""
+    from datetime import datetime as dt, timezone
+
+    from mantecato_core.date_utils import resolve_date_range
+    from mantecato_core.queries.stats import get_first_event_date
+
+    if preset == "custom" and custom_start and custom_end:
+        return dt.fromisoformat(custom_start), dt.fromisoformat(custom_end)
+    dr = resolve_date_range(preset)
+    if dr:
+        return dr.start_date, dr.end_date
+    # "all" or unknown — query first event
+    first = await get_first_event_date(site_id)
+    now = dt.now(timezone.utc)
+    if first and first.tzinfo is None:
+        first = first.replace(tzinfo=timezone.utc)
+    return (first or dt(2020, 1, 1, tzinfo=timezone.utc)), now
+
+
 def parse_filters(request: Request) -> list:
     """Parse filter parameters from the request query string."""
     from mantecato_core.filters import parse_filters_from_params

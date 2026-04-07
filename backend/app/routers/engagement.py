@@ -6,24 +6,13 @@ Returns duration distribution, percentiles, duration by page, bounce by page, bo
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from mantecato_core.date_utils import resolve_date_range
-from ..dependencies import require_site_access, parse_filters
+from ..dependencies import require_site_access, parse_filters, resolve_dates
 from mantecato_core.queries import engagement as q_engagement
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["engagement"])
-
-
-def _resolve_dates(preset: str, custom_start: str | None, custom_end: str | None):
-    if preset == "custom" and custom_start and custom_end:
-        return datetime.fromisoformat(custom_start), datetime.fromisoformat(custom_end)
-    dr = resolve_date_range(preset)
-    if not dr:
-        return datetime(2020, 1, 1), datetime.utcnow()
-    return dr.start_date, dr.end_date
 
 
 @router.get("/engagement")
@@ -36,7 +25,7 @@ async def get_engagement(
     filters: list = Depends(parse_filters),
 ):
     preset = range
-    start_date, end_date = _resolve_dates(preset, start, end)
+    start_date, end_date = await resolve_dates(site_id, preset, start, end)
 
     (
         distribution,
@@ -79,7 +68,7 @@ async def get_bucket_sessions(
     filters: list = Depends(parse_filters),
 ):
     preset = range
-    start_date, end_date = _resolve_dates(preset, start, end)
+    start_date, end_date = await resolve_dates(site_id, preset, start, end)
     return await q_engagement.get_sessions_for_bucket(
         site_id, start_date, end_date, bucket, limit, offset, filters, entry_page
     )

@@ -246,7 +246,7 @@ export function OverviewPage() {
                     addFilter({ column: "url_path", operator: "starts_with", value: prefix || "/" });
                   }}
                 >
-                  <span className="truncate font-mono text-sm">
+                  <span className="truncate font-mono text-sm" title={s.section}>
                     {s.section}
                   </span>
                   <div className="flex gap-4 text-right tabular-nums">
@@ -304,7 +304,7 @@ export function OverviewPage() {
                     className={ROW}
                     onClick={() => addFilter({ column: "url_path", operator: "eq", value: page.urlPath })}
                   >
-                    <span className="truncate font-mono text-sm">
+                    <span className="truncate font-mono text-sm" title={page.urlPath}>
                       {page.urlPath}
                     </span>
                     <div className="flex gap-4 text-right tabular-nums">
@@ -353,7 +353,7 @@ export function OverviewPage() {
                     className={ROW}
                     onClick={() => addFilter({ column: "referrer_domain", operator: "eq", value: ref.referrerDomain })}
                   >
-                    <span className="truncate">{ref.referrerDomain}</span>
+                    <span className="truncate" title={ref.referrerDomain}>{ref.referrerDomain}</span>
                     <div className="flex gap-4 text-right tabular-nums">
                       <span className="w-16 font-medium">
                         {ref.visitors.toLocaleString()}
@@ -400,7 +400,7 @@ export function OverviewPage() {
                     key={ch.channel}
                     className={ROW}
                   >
-                    <span className="truncate">{ch.channel}</span>
+                    <span className="truncate" title={ch.channel}>{ch.channel}</span>
                     <div className="flex gap-4 text-right tabular-nums">
                       <span className="w-16 font-medium">
                         {ch.visitors.toLocaleString()}
@@ -451,7 +451,7 @@ export function OverviewPage() {
                     onClick={() => addFilter({ column: "event_name", operator: "eq", value: evt.eventName })}
                   >
                     <div className="flex items-center justify-between py-1.5 text-sm">
-                      <span className="truncate font-mono text-sm">
+                      <span className="truncate font-mono text-sm" title={evt.eventName}>
                         {evt.eventName}
                       </span>
                       <div className="flex gap-4 text-right tabular-nums">
@@ -524,7 +524,7 @@ export function OverviewPage() {
                     className={ROW}
                     onClick={() => addFilter({ column: "browser", operator: "eq", value: b.value })}
                   >
-                    <span className="truncate">{b.value}</span>
+                    <span className="truncate" title={b.value}>{b.value}</span>
                     <div className="flex gap-4 text-right tabular-nums">
                       <span className="w-16 font-medium">
                         {b.visitors.toLocaleString()}

@@ -5,24 +5,12 @@ Supports list mode (default) and detail mode (?event=<eventName>).
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Query
 
-from mantecato_core.date_utils import resolve_date_range
-from ..dependencies import require_site_access, parse_filters
+from ..dependencies import require_site_access, parse_filters, resolve_dates
 from mantecato_core.queries import events as q_events
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["events"])
-
-
-def _resolve_dates(preset: str, custom_start: str | None, custom_end: str | None):
-    if preset == "custom" and custom_start and custom_end:
-        return datetime.fromisoformat(custom_start), datetime.fromisoformat(custom_end)
-    dr = resolve_date_range(preset)
-    if not dr:
-        return datetime(2020, 1, 1), datetime.utcnow()
-    return dr.start_date, dr.end_date
 
 
 @router.get("/events")
@@ -38,7 +26,7 @@ async def get_events(
     filters: list = Depends(parse_filters),
 ):
     preset = range
-    start_date, end_date = _resolve_dates(preset, start, end)
+    start_date, end_date = await resolve_dates(site_id, preset, start, end)
 
     # Detail view for a specific event
     if event:

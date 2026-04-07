@@ -10,22 +10,14 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from mantecato_core.date_utils import resolve_date_range, get_comparison_range
-from ..dependencies import require_site_access, parse_filters
+from mantecato_core.date_utils import get_comparison_range
+from ..dependencies import require_site_access, parse_filters, resolve_dates
 from mantecato_core.queries import stats as q_stats
 from mantecato_core.queries import sources as q_sources
 
 router = APIRouter(prefix="/api/sites/{site_id}", tags=["stats"])
 
 
-def _resolve_dates(preset: str, custom_start: str | None, custom_end: str | None):
-    """Resolve date range from preset or custom start/end."""
-    if preset == "custom" and custom_start and custom_end:
-        return datetime.fromisoformat(custom_start), datetime.fromisoformat(custom_end)
-    dr = resolve_date_range(preset)
-    if not dr:
-        return datetime(2020, 1, 1), datetime.utcnow()
-    return dr.start_date, dr.end_date
 
 
 @router.get("/stats")
@@ -42,7 +34,7 @@ async def get_stats(
     filters: list = Depends(parse_filters),
 ):
     preset = range
-    start_date, end_date = _resolve_dates(preset, start, end)
+    start_date, end_date = await resolve_dates(site_id, preset, start, end)
     normalize_urls: bool | str = False if normalize == "off" else normalize
 
     # Section-based partial responses

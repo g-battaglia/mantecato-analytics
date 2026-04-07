@@ -33,6 +33,19 @@ def _normalize_url(path: str, mode: str = "smart") -> str:
     return path
 
 
+async def get_first_event_date(website_id: str) -> datetime | None:
+    """Return the timestamp of the earliest event for a website."""
+    rows = await raw_query(
+        """SELECT MIN(created_at) AS first_event
+        FROM website_event
+        WHERE website_id = {websiteId::uuid}""",
+        {"websiteId": website_id},
+    )
+    if rows and rows[0].get("first_event"):
+        return rows[0]["first_event"]
+    return None
+
+
 async def get_website_stats(
     website_id: str,
     start_date: datetime,
