@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { MetricCard } from "@/components/data/MetricCard";
@@ -275,271 +275,322 @@ export function OverviewPage() {
         </CardContent>
       </Card>
 
-      {/* Bottom Panels */}
+      {/* Bottom Panels — 2-column grid like Umami */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Top Pages */}
+        {/* Pages — with Sections / Pages tabs */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Top Pages</CardTitle>
-            <CardDescription className="text-xs">
-              Most visited pages
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <SkeletonRows />
-            ) : (
-              <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Page</span>
-                  <div className="flex gap-4 text-right">
-                    <span className="w-16">Visitors</span>
-                    <span className="w-16">Views</span>
-                    <span className="w-14">%</span>
-                  </div>
-                </div>
-                {data?.pages.map((page) => (
-                  <div
-                    key={page.urlPath}
-                    className={ROW}
-                    onClick={() => addFilter({ column: "url_path", operator: "eq", value: page.urlPath })}
-                  >
-                    <span className="truncate font-mono text-sm" title={page.urlPath}>
-                      {page.urlPath}
-                    </span>
-                    <div className="flex gap-4 text-right tabular-nums">
-                      <span className="w-16 text-muted-foreground">
-                        {page.visitors.toLocaleString()}
-                      </span>
-                      <span className="w-16 font-medium">
-                        {page.views.toLocaleString()}
-                      </span>
-                      <span className="w-14 text-muted-foreground">
-                        {pct(page.visitors, totalPageVisitors)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <CardContent className="pt-4">
+            <PanelTabs
+              tabs={[
+                { label: "Sections", content: (
+                  <ListTable
+                    loading={isLoading}
+                    headers={["Section", "Visitors", "Views", "%"]}
+                    widths={["flex-1", "w-16", "w-16", "w-14"]}
+                    rows={data?.sections.map((s) => ({
+                      key: s.section,
+                      label: s.section,
+                      mono: true,
+                      onClick: () => {
+                        const prefix = s.section.replace(/\/:id/g, "");
+                        addFilter({ column: "url_path", operator: "starts_with", value: prefix || "/" });
+                      },
+                      values: [
+                        { v: s.visitors.toLocaleString(), muted: true },
+                        { v: s.views.toLocaleString(), bold: true },
+                        { v: pct(s.views, totalViews), muted: true },
+                      ],
+                    })) ?? []}
+                    empty="No section data"
+                  />
+                )},
+                { label: "Pages", content: (
+                  <ListTable
+                    loading={isLoading}
+                    headers={["Page", "Visitors", "Views", "%"]}
+                    widths={["flex-1", "w-16", "w-16", "w-14"]}
+                    rows={data?.pages.map((p) => ({
+                      key: p.urlPath,
+                      label: p.urlPath,
+                      mono: true,
+                      onClick: () => addFilter({ column: "url_path", operator: "eq", value: p.urlPath }),
+                      values: [
+                        { v: p.visitors.toLocaleString(), muted: true },
+                        { v: p.views.toLocaleString(), bold: true },
+                        { v: pct(p.visitors, totalPageVisitors), muted: true },
+                      ],
+                    })) ?? []}
+                    empty="No page data"
+                  />
+                )},
+              ]}
+            />
           </CardContent>
         </Card>
 
-        {/* Top Referrers */}
+        {/* Sources — Referrers / Channels tabs */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>
-              Top Referrers
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Traffic sources
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <SkeletonRows />
-            ) : (
-              <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Source</span>
-                  <div className="flex gap-4 text-right">
-                    <span className="w-16">Visitors</span>
-                    <span className="w-14">%</span>
-                  </div>
-                </div>
-                {data?.referrers.map((ref) => (
-                  <div
-                    key={ref.referrerDomain}
-                    className={ROW}
-                    onClick={() => addFilter({ column: "referrer_domain", operator: "eq", value: ref.referrerDomain })}
-                  >
-                    <span className="truncate" title={ref.referrerDomain}>{ref.referrerDomain}</span>
-                    <div className="flex gap-4 text-right tabular-nums">
-                      <span className="w-16 font-medium">
-                        {ref.visitors.toLocaleString()}
-                      </span>
-                      <span className="w-14 text-muted-foreground">
-                        {pct(ref.visitors, totalRefVisitors)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {(!data?.referrers || data.referrers.length === 0) && (
-                  <p className="py-4 text-center text-xs text-muted-foreground">
-                    No referrer data
-                  </p>
-                )}
-              </div>
-            )}
+          <CardContent className="pt-4">
+            <PanelTabs
+              tabs={[
+                { label: "Referrers", content: (
+                  <ListTable
+                    loading={isLoading}
+                    headers={["Source", "Visitors", "%"]}
+                    widths={["flex-1", "w-16", "w-14"]}
+                    rows={data?.referrers.map((r) => ({
+                      key: r.referrerDomain,
+                      label: r.referrerDomain,
+                      onClick: () => addFilter({ column: "referrer_domain", operator: "eq", value: r.referrerDomain }),
+                      values: [
+                        { v: r.visitors.toLocaleString(), bold: true },
+                        { v: pct(r.visitors, totalRefVisitors), muted: true },
+                      ],
+                    })) ?? []}
+                    empty="No referrer data"
+                  />
+                )},
+                { label: "Channels", content: (
+                  <ListTable
+                    loading={isLoading}
+                    headers={["Channel", "Visitors", "%", "Bounce"]}
+                    widths={["flex-1", "w-16", "w-14", "w-16"]}
+                    rows={data?.channels?.map((ch) => ({
+                      key: ch.channel,
+                      label: ch.channel,
+                      values: [
+                        { v: ch.visitors.toLocaleString(), bold: true },
+                        { v: pct(ch.visitors, totalChannelVisitors), muted: true },
+                        { v: `${ch.bounceRate.toFixed(1)}%`, muted: true },
+                      ],
+                    })) ?? []}
+                    empty="No channel data"
+                  />
+                )},
+              ]}
+            />
           </CardContent>
         </Card>
 
-        {/* Channels */}
+        {/* Environment — Browsers */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Channels</CardTitle>
-            <CardDescription className="text-xs">
-              Traffic channels breakdown
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <SkeletonRows />
-            ) : (
-              <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Channel</span>
-                  <div className="flex gap-4 text-right">
-                    <span className="w-16">Visitors</span>
-                    <span className="w-14">%</span>
-                    <span className="w-16">Bounce</span>
-                  </div>
-                </div>
-                {data?.channels?.map((ch) => (
-                  <div
-                    key={ch.channel}
-                    className={ROW}
-                  >
-                    <span className="truncate" title={ch.channel}>{ch.channel}</span>
-                    <div className="flex gap-4 text-right tabular-nums">
-                      <span className="w-16 font-medium">
-                        {ch.visitors.toLocaleString()}
-                      </span>
-                      <span className="w-14 text-muted-foreground">
-                        {pct(ch.visitors, totalChannelVisitors)}
-                      </span>
-                      <span className="w-16 text-muted-foreground">
-                        {ch.bounceRate.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {(!data?.channels || data.channels.length === 0) && (
-                  <p className="py-4 text-center text-xs text-muted-foreground">
-                    No channel data
-                  </p>
-                )}
-              </div>
-            )}
+          <CardContent className="pt-4">
+            <PanelTabs
+              tabs={[
+                { label: "Browsers", content: (
+                  <ListTable
+                    loading={isLoading}
+                    headers={["Browser", "Visitors", "%"]}
+                    widths={["flex-1", "w-16", "w-14"]}
+                    rows={data?.browsers.map((b) => ({
+                      key: b.value,
+                      label: b.value,
+                      onClick: () => addFilter({ column: "browser", operator: "eq", value: b.value }),
+                      values: [
+                        { v: b.visitors.toLocaleString(), bold: true },
+                        { v: pct(b.visitors, totalBrowserVisitors), muted: true },
+                      ],
+                    })) ?? []}
+                    empty="No browser data"
+                  />
+                )},
+              ]}
+            />
           </CardContent>
         </Card>
 
-        {/* Top Events */}
+        {/* Location — Countries */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Top Events</CardTitle>
-            <CardDescription className="text-xs">
-              Custom events tracked
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <SkeletonRows />
-            ) : (
-              <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Event</span>
-                  <div className="flex gap-4 text-right">
-                    <span className="w-16">Count</span>
-                    <span className="w-14">%</span>
-                  </div>
-                </div>
-                {data?.events.map((evt) => (
-                  <div
-                    key={evt.eventName}
-                    className="cursor-pointer rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors"
-                    onClick={() => addFilter({ column: "event_name", operator: "eq", value: evt.eventName })}
-                  >
-                    <div className="flex items-center justify-between py-1.5 text-sm">
-                      <span className="truncate font-mono text-sm" title={evt.eventName}>
-                        {evt.eventName}
-                      </span>
-                      <div className="flex gap-4 text-right tabular-nums">
-                        <span className="w-16 font-medium">
-                          {evt.count.toLocaleString()}
-                        </span>
-                        <span className="w-14 text-muted-foreground">
-                          {pct(evt.count, totalEventCount)}
-                        </span>
-                      </div>
-                    </div>
-                    {evt.properties && evt.properties.length > 0 && (
-                      <div className="pb-1.5 pl-2 text-xs text-muted-foreground leading-tight">
-                        {Object.entries(
-                          evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
-                            (acc, p) => {
-                              if (!acc[p.key]) acc[p.key] = [];
-                              acc[p.key].push({ value: p.value, count: p.count });
-                              return acc;
-                            },
-                            {},
-                          ),
-                        ).map(([key, values]) => (
-                          <div key={key}>
-                            {key}: {values.map((v, i) => (
-                              <span key={i}>
-                                {i > 0 && ", "}
-                                {v.value} ({v.count.toLocaleString()})
+          <CardContent className="pt-4">
+            <PanelTabs
+              tabs={[
+                { label: "Countries", content: (
+                  <ListTable
+                    loading={isLoading}
+                    headers={["Country", "Visitors", "%"]}
+                    widths={["flex-1", "w-16", "w-14"]}
+                    rows={data?.countries.map((c) => ({
+                      key: c.country,
+                      label: c.country || "(unknown)",
+                      onClick: () => addFilter({ column: "country", operator: "eq", value: c.country }),
+                      values: [
+                        { v: c.visitors.toLocaleString(), bold: true },
+                        { v: pct(c.visitors, stats?.visitors ?? 0), muted: true },
+                      ],
+                    })) ?? []}
+                    empty="No country data"
+                  />
+                )},
+              ]}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Events */}
+        <Card className="lg:col-span-2">
+          <CardContent className="pt-4">
+            <PanelTabs
+              tabs={[
+                { label: "Events", content: (
+                  <div className="space-y-0">
+                    {isLoading ? (
+                      <SkeletonRows />
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          <span>Event</span>
+                          <div className="flex gap-4 text-right">
+                            <span className="w-16">Count</span>
+                            <span className="w-14">%</span>
+                          </div>
+                        </div>
+                        {data?.events.map((evt) => (
+                          <div
+                            key={evt.eventName}
+                            className="cursor-pointer rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors"
+                            onClick={() => addFilter({ column: "event_name", operator: "eq", value: evt.eventName })}
+                          >
+                            <div className="flex items-center justify-between py-1.5 text-sm">
+                              <span className="truncate font-mono text-sm" title={evt.eventName}>
+                                {evt.eventName}
                               </span>
-                            ))}
+                              <div className="flex gap-4 text-right tabular-nums">
+                                <span className="w-16 font-medium">
+                                  {evt.count.toLocaleString()}
+                                </span>
+                                <span className="w-14 text-muted-foreground">
+                                  {pct(evt.count, totalEventCount)}
+                                </span>
+                              </div>
+                            </div>
+                            {evt.properties && evt.properties.length > 0 && (
+                              <div className="pb-1.5 pl-2 text-xs text-muted-foreground leading-tight">
+                                {Object.entries(
+                                  evt.properties.reduce<Record<string, Array<{ value: string; count: number }>>>(
+                                    (acc, p) => {
+                                      if (!acc[p.key]) acc[p.key] = [];
+                                      acc[p.key].push({ value: p.value, count: p.count });
+                                      return acc;
+                                    },
+                                    {},
+                                  ),
+                                ).map(([key, values]) => (
+                                  <div key={key}>
+                                    {key}: {values.map((v, i) => (
+                                      <span key={i}>
+                                        {i > 0 && ", "}
+                                        {v.value} ({v.count.toLocaleString()})
+                                      </span>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
-                      </div>
+                        {(!data?.events || data.events.length === 0) && (
+                          <p className="py-4 text-center text-xs text-muted-foreground">
+                            No event data
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
-                ))}
-                {(!data?.events || data.events.length === 0) && (
-                  <p className="py-4 text-center text-xs text-muted-foreground">
-                    No event data
-                  </p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Browsers */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Browsers</CardTitle>
-            <CardDescription className="text-xs">
-              Visitor browsers
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <SkeletonRows />
-            ) : (
-              <div className="space-y-0">
-                <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Browser</span>
-                  <div className="flex gap-4 text-right">
-                    <span className="w-16">Visitors</span>
-                    <span className="w-14">%</span>
-                  </div>
-                </div>
-                {data?.browsers.map((b) => (
-                  <div
-                    key={b.value}
-                    className={ROW}
-                    onClick={() => addFilter({ column: "browser", operator: "eq", value: b.value })}
-                  >
-                    <span className="truncate" title={b.value}>{b.value}</span>
-                    <div className="flex gap-4 text-right tabular-nums">
-                      <span className="w-16 font-medium">
-                        {b.visitors.toLocaleString()}
-                      </span>
-                      <span className="w-14 text-muted-foreground">
-                        {pct(b.visitors, totalBrowserVisitors)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                )},
+              ]}
+            />
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/* ── Reusable sub-components ── */
+
+function PanelTabs({ tabs }: { tabs: Array<{ label: string; content: React.ReactNode }> }) {
+  const [active, setActive] = useState(0);
+  return (
+    <div>
+      <div className="flex gap-4 border-b mb-3">
+        {tabs.map((tab, i) => (
+          <button
+            key={tab.label}
+            className={`pb-2 text-sm font-medium transition-colors ${
+              i === active
+                ? "border-b-2 border-foreground text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setActive(i)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {tabs[active]?.content}
+    </div>
+  );
+}
+
+interface ListRow {
+  key: string;
+  label: string;
+  mono?: boolean;
+  onClick?: () => void;
+  values: Array<{ v: string; bold?: boolean; muted?: boolean }>;
+}
+
+function ListTable({
+  loading,
+  headers,
+  widths,
+  rows,
+  empty,
+}: {
+  loading: boolean;
+  headers: string[];
+  widths: string[];
+  rows: ListRow[];
+  empty: string;
+}) {
+  if (loading) return <SkeletonRows />;
+  return (
+    <div className="space-y-0">
+      <div className="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <span>{headers[0]}</span>
+        <div className="flex gap-4 text-right">
+          {headers.slice(1).map((h, i) => (
+            <span key={h} className={widths[i + 1]}>{h}</span>
+          ))}
+        </div>
+      </div>
+      {rows.map((row) => (
+        <div
+          key={row.key}
+          className={ROW}
+          onClick={row.onClick}
+        >
+          <span
+            className={`truncate ${row.mono ? "font-mono text-sm" : ""}`}
+            title={row.label}
+          >
+            {row.label}
+          </span>
+          <div className="flex gap-4 text-right tabular-nums">
+            {row.values.map((val, i) => (
+              <span
+                key={i}
+                className={`${widths[i + 1]} ${val.bold ? "font-medium" : ""} ${val.muted ? "text-muted-foreground" : ""}`}
+              >
+                {val.v}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      {rows.length === 0 && (
+        <p className="py-4 text-center text-xs text-muted-foreground">{empty}</p>
+      )}
     </div>
   );
 }
