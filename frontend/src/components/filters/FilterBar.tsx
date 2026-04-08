@@ -1,6 +1,12 @@
-import { X } from "lucide-react";
+import { X, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   DateRangePicker,
   GranularitySelector,
@@ -10,6 +16,8 @@ import { AddFilterDialog } from "./AddFilterDialog";
 import { SavedViewsMenu } from "./SavedViewsMenu";
 import { AnnotationsManager } from "@/components/annotations/AnnotationsManager";
 import { useFiltersStore } from "@/stores/filters";
+import { usePreferencesStore } from "@/stores/preferences";
+import { useBotConfig } from "@/hooks/use-bot-config";
 import { useUrlState } from "@/hooks/use-url-state";
 import { FILTER_COLUMNS, FILTER_OPERATORS } from "@/lib/constants";
 
@@ -19,6 +27,18 @@ function getFilterLabel(column: string): string {
 
 export function FilterBar() {
   const { filters, removeFilter, clearFilters } = useFiltersStore();
+  const botFilterEnabled = usePreferencesStore((s) => s.botFilterEnabled);
+  const setBotFilterEnabled = usePreferencesStore((s) => s.setBotFilterEnabled);
+  const { config, save } = useBotConfig();
+
+  const handleBotToggle = () => {
+    const newEnabled = !botFilterEnabled;
+    setBotFilterEnabled(newEnabled);
+    // Ensure config is saved with enabled state
+    if (newEnabled && !config.enabled) {
+      save({ ...config, enabled: true });
+    }
+  };
 
   // Sync filter state ↔ URL search params
   useUrlState();
@@ -32,6 +52,24 @@ export function FilterBar() {
       <AddFilterDialog />
       <SavedViewsMenu />
       <AnnotationsManager />
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={botFilterEnabled ? "default" : "outline"}
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={handleBotToggle}
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Bot Filter</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Smart Bot Detection — filter out likely bot and crawler traffic
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       {filters.length > 0 && (
         <>

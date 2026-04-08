@@ -18,6 +18,7 @@ interface PreferencesState {
   pageMode: "path" | "slug";
   urlNormalization: UrlNormalization;
   sidebarCollapsed: boolean;
+  botFilterEnabled: boolean;
 
   setTheme: (theme: "light" | "dark" | "system") => void;
   setVisualStyle: (style: VisualStyle) => void;
@@ -27,6 +28,7 @@ interface PreferencesState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setCurrency: (currency: string) => void;
   setTimezone: (timezone: string) => void;
+  setBotFilterEnabled: (enabled: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -45,6 +47,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       pageMode: "slug",
       urlNormalization: "smart",
       sidebarCollapsed: false,
+      botFilterEnabled: false,
 
       setTheme: (theme) => set({ theme }),
       setVisualStyle: (visualStyle) => set({ visualStyle }),
@@ -54,6 +57,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setCurrency: (currency) => set({ currency }),
       setTimezone: (timezone) => set({ timezone }),
+      setBotFilterEnabled: (botFilterEnabled) => set({ botFilterEnabled }),
     }),
     {
       name: "mantecato-preferences",

@@ -31,6 +31,7 @@ from .routers import (
     script_router,
     share_router,
     cron_router,
+    bot_config_router,
 )
 
 
@@ -80,6 +81,7 @@ app.include_router(api_keys_router)
 app.include_router(script_router)
 app.include_router(share_router)
 app.include_router(cron_router)
+app.include_router(bot_config_router)
 
 
 @app.get("/api/health")

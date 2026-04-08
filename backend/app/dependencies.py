@@ -104,10 +104,21 @@ async def resolve_dates(
 
 
 def parse_filters(request: Request) -> list:
-    """Parse filter parameters from the request query string."""
-    from mantecato_core.filters import parse_filters_from_params
+    """Parse filter parameters from the request query string.
 
-    return parse_filters_from_params(request.query_params.getlist("f"))
+    Also injects a bot detection sentinel filter when bot_filter param is present.
+    """
+    from mantecato_core.filters import Filter, parse_filters_from_params
+
+    filters = parse_filters_from_params(request.query_params.getlist("f"))
+
+    bot_filter = request.query_params.get("bot_filter")
+    if bot_filter and bot_filter != "off":
+        filters.insert(
+            0, Filter(column="__bot_filter__", operator="eq", value=bot_filter)
+        )
+
+    return filters
 
 
 def require_scope(scope: str):

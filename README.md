@@ -78,7 +78,46 @@ Mantecato is **read-only** against your Umami database. The only writes go to in
 | **Revenue** | Revenue summary, time series, breakdowns |
 | **Engagement** | Session duration distribution and percentiles |
 | **Dashboards** | Custom drag-and-drop widget dashboards with PDF/PNG export |
-| **Settings** | Site management, API key generation |
+| **Settings** | Site management, API key generation, bot detection config |
+
+### Bot Detection
+
+Mantecato includes a smart bot detection system that filters out automated traffic without removing real visitors. Toggle it on from the **Bot Filter** button in the filter bar, and fine-tune it in **Settings > Bot Detection**.
+
+The filter works at three levels:
+
+**1. Known bots** — Sessions where the browser is identified as a bot (`searchbot`, `googlebot`, `bingbot`, crawlers, scrapers, AI bots, etc.). These are bots that don't try to hide.
+
+**2. Empty user-agents** — Sessions with no browser and no OS recorded. These are headless HTTP clients that didn't send a User-Agent header at all.
+
+**3. Cluster detection** — This is the core of the system. Instead of looking at individual sessions, it looks at collective patterns to catch bot farms that use real browsers (headless Chrome, Puppeteer, etc.) and are indistinguishable from real users when viewed one at a time.
+
+How cluster detection works:
+
+1. All sessions in the selected date range are grouped by **(country + device type)** — e.g. "HK/laptop", "US/mobile", "IT/desktop"
+2. For each group, the system calculates what percentage of sessions are **single-page zero-duration bounces** (visited one page and left instantly)
+3. If a group has **many sessions** (default: >100) **and** an abnormally high bounce rate (default: >90%), the group is flagged as suspicious
+4. Only the bounced sessions from flagged groups are filtered — multi-page sessions from those countries are kept
+
+This catches bot farms because they produce a statistically impossible pattern: hundreds or thousands of sessions from the same country/device combination, almost all bouncing instantly. Real traffic from any country has a mix of bounces and engaged visits.
+
+For example, on a site receiving bot traffic from Hong Kong:
+
+| Group | Sessions | Bounce % | Flagged? |
+|-------|----------|----------|----------|
+| HK/laptop | 1,513 | 96.2% | Yes — high volume + extreme bounce rate |
+| SG/laptop | 1,440 | 91.5% | Yes |
+| US/laptop | 2,277 | 88.1% | No — below 90% threshold, normal traffic |
+| US/mobile | 1,023 | 76.3% | No |
+| MX/laptop | 46 | 95.7% | No — below 100 session minimum |
+
+Two parameters are configurable in Settings:
+- **Bounce threshold** (default 90%) — the minimum bounce rate for a group to be flagged
+- **Min cluster size** (default 100) — the minimum number of sessions before a group can be flagged
+
+Additional filters available in Settings: missing screen resolution, missing language, high-velocity scraping detection (>60 pages/minute), and country exclusion lists.
+
+The bot detection config is stored per-site in the database and shared between all users of that site. The filter bar toggle is per-user (saved in the browser).
 
 ---
 

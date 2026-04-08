@@ -42,9 +42,13 @@ import {
   Check,
   Eye,
   EyeOff,
+  Bot,
+  X,
 } from "lucide-react";
 import type { ScheduledExport, ScheduledExportConfig } from "@/lib/types";
 import { apiFetch } from "@/lib/api";
+import { DEFAULT_BOT_CONFIG } from "@/hooks/use-bot-config";
+import type { BotConfig } from "@/hooks/use-bot-config";
 
 const COMMON_TIMEZONES = [
   "UTC",
@@ -371,6 +375,9 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Bot Detection */}
+          <BotDetectionSection />
+
           {/* API Keys */}
           <ApiKeysSection />
 
@@ -404,6 +411,474 @@ export function SettingsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// ---------- Bot Detection Section ----------
+
+const COUNTRY_OPTIONS = [
+  "AF","AL","DZ","AD","AO","AG","AR","AM","AU","AT","AZ","BS","BH","BD","BB",
+  "BY","BE","BZ","BJ","BT","BO","BA","BW","BR","BN","BG","BF","BI","KH","CM",
+  "CA","CV","CF","TD","CL","CN","CO","KM","CG","CR","HR","CU","CY","CZ","DK",
+  "DJ","DM","DO","EC","EG","SV","GQ","ER","EE","SZ","ET","FJ","FI","FR","GA",
+  "GM","GE","DE","GH","GR","GD","GT","GN","GW","GY","HT","HN","HK","HU","IS",
+  "IN","ID","IR","IQ","IE","IL","IT","JM","JP","JO","KZ","KE","KI","KP","KR",
+  "KW","KG","LA","LV","LB","LS","LR","LY","LI","LT","LU","MG","MW","MY","MV",
+  "ML","MT","MH","MR","MU","MX","FM","MD","MC","MN","ME","MA","MZ","MM","NA",
+  "NR","NP","NL","NZ","NI","NE","NG","MK","NO","OM","PK","PW","PA","PG","PY",
+  "PE","PH","PL","PT","QA","RO","RU","RW","KN","LC","VC","WS","SM","ST","SA",
+  "SN","RS","SC","SL","SG","SK","SI","SB","SO","ZA","ES","LK","SD","SR","SE",
+  "CH","SY","TW","TJ","TZ","TH","TL","TG","TO","TT","TN","TR","TM","TV","UG",
+  "UA","AE","GB","US","UY","UZ","VU","VE","VN","YE","ZM","ZW",
+];
+
+function BotDetectionSection() {
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const queryClient = useQueryClient();
+  const botFilterEnabled = usePreferencesStore((s) => s.botFilterEnabled);
+  const setBotFilterEnabled = usePreferencesStore((s) => s.setBotFilterEnabled);
+
+  const { data: websites } = useQuery<Website[]>({
+    queryKey: ["websites"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/sites");
+      if (!res.ok) throw new Error("Failed to fetch sites");
+      return res.json();
+    },
+  });
+
+  const { data: configData } = useQuery<{ config: BotConfig }>({
+    queryKey: ["bot-config", selectedSiteId],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/sites/${selectedSiteId}/bot-config`);
+      if (!res.ok) throw new Error("Failed to fetch bot config");
+      return res.json();
+    },
+    enabled: !!selectedSiteId,
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (cfg: BotConfig) => {
+      const res = await apiFetch(`/api/sites/${selectedSiteId}/bot-config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+      if (!res.ok) throw new Error("Failed to save bot config");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["bot-config", selectedSiteId], data);
+    },
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch(
+        `/api/sites/${selectedSiteId}/bot-config/reset`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error("Failed to reset bot config");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["bot-config", selectedSiteId], data);
+    },
+  });
+
+  const config = configData?.config ?? DEFAULT_BOT_CONFIG;
+  const isSaving = mutation.isPending || resetMutation.isPending;
+  const save = mutation.mutate;
+
+  const update = (partial: Partial<BotConfig>) => {
+    const updated = { ...config, ...partial };
+    save(updated);
+  };
+
+  const toggleAndSave = (key: keyof BotConfig) => {
+    update({ [key]: !config[key] });
+  };
+
+  const addCountry = (code: string) => {
+    if (!code || config.excludedCountries.includes(code)) return;
+    update({ excludedCountries: [...config.excludedCountries, code] });
+  };
+
+  const removeCountry = (code: string) => {
+    update({
+      excludedCountries: config.excludedCountries.filter((c) => c !== code),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Bot className="h-4 w-4" />
+              Bot Detection
+            </CardTitle>
+            <CardDescription>
+              Filter out sessions that appear to be bots, crawlers, or automated
+              traffic. Config is per-site.
+            </CardDescription>
+          </div>
+          <Select
+            value={botFilterEnabled ? "on" : "off"}
+            onValueChange={(v) => {
+              const on = v === "on";
+              setBotFilterEnabled(on);
+              if (on && !config.enabled) {
+                update({ enabled: true });
+              }
+            }}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="on">On</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Site selector */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Site</Label>
+            <p className="text-xs text-muted-foreground">
+              Select a site to configure bot detection
+            </p>
+          </div>
+          <Select value={selectedSiteId} onValueChange={setSelectedSiteId}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Select a site" />
+            </SelectTrigger>
+            <SelectContent>
+              {websites?.map((site) => (
+                <SelectItem key={site.websiteId} value={site.websiteId}>
+                  {site.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {!selectedSiteId && (
+          <p className="text-xs text-muted-foreground py-4 text-center">
+            Select a site above to configure bot detection settings
+          </p>
+        )}
+
+        {selectedSiteId && (<>
+        {/* Known bots & crawlers */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Known bots & crawlers</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter sessions with bot-like browser names (Googlebot, Bingbot,
+              searchbot, etc.)
+            </p>
+          </div>
+          <Select
+            value={config.knownBots ? "on" : "off"}
+            onValueChange={() => toggleAndSave("knownBots")}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Empty user-agents */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Empty user-agents</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter sessions with no browser and no OS (headless clients)
+            </p>
+          </div>
+          <Select
+            value={config.emptyUa ? "on" : "off"}
+            onValueChange={() => toggleAndSave("emptyUa")}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Cluster bot detection */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Cluster bot detection</Label>
+            <p className="text-xs text-muted-foreground">
+              Detect bot farms by finding (country, device) groups with
+              abnormally high single-page bounce rates. Catches headless Chrome
+              bots that mimic real browsers.
+            </p>
+          </div>
+          <Select
+            value={config.clusterDetection ? "on" : "off"}
+            onValueChange={() => toggleAndSave("clusterDetection")}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {config.clusterDetection && (
+          <div className="ml-4 space-y-4 border-l-2 border-muted pl-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Bounce threshold (%)</Label>
+                <p className="text-xs text-muted-foreground">
+                  A (country, device) group is suspicious if its single-page
+                  bounce rate exceeds this percentage.
+                </p>
+              </div>
+              <Input
+                type="number"
+                min={50}
+                max={100}
+                className="w-[80px]"
+                value={config.clusterBounceThreshold}
+                onChange={(e) =>
+                  update({
+                    clusterBounceThreshold: Math.min(
+                      100,
+                      Math.max(50, Number(e.target.value) || 90)
+                    ),
+                  })
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Min. cluster size</Label>
+                <p className="text-xs text-muted-foreground">
+                  Minimum sessions in a group before it can be flagged. Higher =
+                  fewer false positives, lower = catches smaller bot farms.
+                </p>
+              </div>
+              <Input
+                type="number"
+                min={10}
+                max={500}
+                className="w-[80px]"
+                value={config.clusterMinSize}
+                onChange={(e) =>
+                  update({
+                    clusterMinSize: Math.min(
+                      500,
+                      Math.max(10, Number(e.target.value) || 100)
+                    ),
+                  })
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Zero-engagement visits */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Zero-engagement visits</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter ALL single-page sessions with zero duration. Warning: in
+              Umami all single-page visits have 0 duration — this removes ALL
+              bounced traffic including legitimate visitors. Use with extreme
+              caution.
+            </p>
+          </div>
+          <Select
+            value={config.zeroEngagement ? "on" : "off"}
+            onValueChange={() => toggleAndSave("zeroEngagement")}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Min visit duration */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Min. visit duration (seconds)</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter single-page visits shorter than this. 0 = only instant
+              bounces.
+            </p>
+          </div>
+          <Input
+            type="number"
+            min={0}
+            max={300}
+            className="w-[80px]"
+            value={config.minDuration}
+            onChange={(e) =>
+              update({ minDuration: Math.max(0, Number(e.target.value) || 0) })
+            }
+          />
+        </div>
+
+        {/* Missing screen resolution */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Missing screen resolution</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter sessions with no screen size reported. More aggressive —
+              may cause false positives.
+            </p>
+          </div>
+          <Select
+            value={config.missingScreen ? "on" : "off"}
+            onValueChange={() => toggleAndSave("missingScreen")}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Missing language */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Missing language</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter sessions with no language set. More aggressive — may cause
+              false positives.
+            </p>
+          </div>
+          <Select
+            value={config.missingLanguage ? "on" : "off"}
+            onValueChange={() => toggleAndSave("missingLanguage")}
+          >
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* High-velocity threshold */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>High-velocity threshold (pages/min)</Label>
+            <p className="text-xs text-muted-foreground">
+              Filter sessions with more than this many pageviews per minute
+              (scrapers). 0 = disabled.
+            </p>
+          </div>
+          <Input
+            type="number"
+            min={0}
+            max={1000}
+            className="w-[80px]"
+            value={config.highVelocityThreshold}
+            onChange={(e) =>
+              update({
+                highVelocityThreshold: Math.max(
+                  0,
+                  Number(e.target.value) || 0
+                ),
+              })
+            }
+          />
+        </div>
+
+        {/* Excluded countries */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <Label>Excluded countries</Label>
+              <p className="text-xs text-muted-foreground">
+                Always filter traffic from these countries (2-letter codes)
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {config.excludedCountries.map((code) => (
+              <Badge key={code} variant="secondary" className="gap-1 text-xs">
+                {code}
+                <button
+                  onClick={() => removeCountry(code)}
+                  className="ml-0.5 rounded-sm hover:bg-muted"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+            {config.excludedCountries.length === 0 && (
+              <span className="text-xs text-muted-foreground">
+                No countries excluded
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Select onValueChange={addCountry} value="">
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Add country" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[200px]">
+                {COUNTRY_OPTIONS.filter(
+                  (c) => !config.excludedCountries.includes(c)
+                ).map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t">
+          {isSaving ? (
+            <p className="text-xs text-muted-foreground">Saving...</p>
+          ) : (
+            <div />
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            onClick={() => resetMutation.mutate()}
+            disabled={isSaving}
+          >
+            Reset to defaults
+          </Button>
+        </div>
+        </>)}
+      </CardContent>
+    </Card>
   );
 }
 

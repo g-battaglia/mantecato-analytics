@@ -23,6 +23,7 @@ from .api_keys import router as api_keys_router
 from .script import router as script_router
 from .share import router as share_router
 from .cron import router as cron_router
+from .bot_config import router as bot_config_router
 
 __all__ = [
     "auth_router",
@@ -50,4 +51,5 @@ __all__ = [
     "script_router",
     "share_router",
     "cron_router",
+    "bot_config_router",
 ]
