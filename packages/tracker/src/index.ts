@@ -9,4 +9,6 @@ export type {
   EventPayload,
   RevenueData,
   Tracker,
+  TrackCallback,
+  UmamiPayload,
 } from "./tracker";

@@ -8,7 +8,11 @@
  *     data-domains="example.com,www.example.com"
  *     data-tag="production"
  *     data-auto-track="true"
- *     data-respect-dnt="true"
+ *     data-do-not-track="true"
+ *     data-exclude-search="true"
+ *     data-exclude-hash="true"
+ *     data-before-send="myBeforeSendFn"
+ *     data-fetch-credentials="include"
  *   ></script>
  *
  * All data-* attributes are optional except data-website-id.
@@ -57,8 +61,22 @@ import { createTracker, type Tracker } from "./tracker";
     .filter(Boolean);
 
   const autoTrack = script.getAttribute("data-auto-track") !== "false";
-  const respectDNT = script.getAttribute("data-respect-dnt") !== "false";
+  // Match Umami: data-do-not-track="true" opts IN to DNT checking (default: off)
+  const respectDNT = script.getAttribute("data-do-not-track") === "true";
   const tag = script.getAttribute("data-tag") || undefined;
+  const excludeSearch = script.getAttribute("data-exclude-search") === "true";
+  const excludeHash = script.getAttribute("data-exclude-hash") === "true";
+  const beforeSendAttr = script.getAttribute("data-before-send") || undefined;
+  const fetchCredentials = (script.getAttribute("data-fetch-credentials") || "omit") as RequestCredentials;
+
+  // beforeSend: look up a global function by name, matching Umami behavior
+  const beforeSend = beforeSendAttr
+    ? (type: string, payload: import("./tracker").UmamiPayload) => {
+        const fn = (window as unknown as Record<string, unknown>)[beforeSendAttr];
+        if (typeof fn === "function") return fn(type, payload);
+        return payload;
+      }
+    : undefined;
 
   const tracker = createTracker({
     websiteId,
@@ -67,30 +85,82 @@ import { createTracker, type Tracker } from "./tracker";
     respectDNT,
     domains,
     tag,
+    excludeSearch,
+    excludeHash,
+    beforeSend,
+    credentials: fetchCredentials,
   });
 
-  // Umami-compatible data-umami-event click tracking
+  // Umami-compatible data-umami-event click tracking with full link handling
   // <button data-umami-event="signup" data-umami-event-plan="pro">
+  // <a href="/page" data-umami-event="nav-click">Link</a>
+  const eventNameAttribute = "data-umami-event";
+  const eventRegex = /data-umami-event-([\w-_]+)/;
+
+  function trackElement(el: HTMLElement): Promise<void> {
+    const eventName = el.getAttribute(eventNameAttribute);
+    if (!eventName) return Promise.resolve();
+
+    const eventData: Record<string, string> = {};
+    for (const attr of Array.from(el.attributes)) {
+      const match = attr.name.match(eventRegex);
+      if (match) eventData[match[1]] = attr.value;
+    }
+
+    // Return the actual send promise so link click handling can wait for it
+    return tracker.event(eventName, Object.keys(eventData).length > 0 ? eventData : undefined);
+  }
+
   function setupEventAttributeTracking() {
-    document.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement)?.closest("[data-umami-event]") as HTMLElement | null;
-      if (!target) return;
+    const onClick = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      const parentElement = el.closest("a,button") as HTMLElement | null;
 
-      const eventName = target.getAttribute("data-umami-event");
-      if (!eventName) return;
-
-      // Collect data-umami-event-* attributes as event data
-      const data: Record<string, string> = {};
-      const prefix = "data-umami-event-";
-      for (const attr of Array.from(target.attributes)) {
-        if (attr.name.startsWith(prefix) && attr.name.length > prefix.length) {
-          const key = attr.name.slice(prefix.length);
-          data[key] = attr.value;
-        }
+      if (!parentElement) {
+        // No a/button ancestor — try tracking the element itself
+        trackElement(el);
+        return;
       }
 
-      tracker.event(eventName, Object.keys(data).length > 0 ? data : undefined);
-    });
+      if (!parentElement.getAttribute(eventNameAttribute)) return;
+
+      if (parentElement.tagName === "BUTTON") {
+        trackElement(parentElement);
+        return;
+      }
+
+      if (parentElement.tagName === "A") {
+        const anchor = parentElement as HTMLAnchorElement;
+        const href = anchor.href;
+        const target = anchor.target;
+
+        if (!href) {
+          trackElement(parentElement);
+          return;
+        }
+
+        const external =
+          target === "_blank" ||
+          e.ctrlKey ||
+          e.shiftKey ||
+          e.metaKey ||
+          (e.button !== undefined && e.button === 1);
+
+        if (!external) e.preventDefault();
+
+        trackElement(parentElement).then(() => {
+          if (!external) {
+            if (target === "_top" && typeof top !== "undefined" && top) {
+              top.location.href = href;
+            } else {
+              location.href = href;
+            }
+          }
+        });
+      }
+    };
+
+    document.addEventListener("click", onClick, true);
   }
 
   setupEventAttributeTracking();
@@ -99,32 +169,11 @@ import { createTracker, type Tracker } from "./tracker";
   const w = window as unknown as Record<string, unknown>;
   w.mantecato = tracker;
 
-  // Umami-compatible global
+  // Umami-compatible global — delegates to tracker.track() which has full overload support
   if (!w.umami) {
     w.umami = {
-      track: (nameOrFn?: string | ((props: Record<string, unknown>) => Record<string, unknown>), data?: Record<string, string | number | boolean>) => {
-        if (typeof nameOrFn === "function") {
-          const result = nameOrFn({});
-          const eventName = (result as Record<string, unknown>).name as string | undefined;
-          const eventData = (result as Record<string, unknown>).data as Record<string, string | number | boolean> | undefined;
-          if (eventName) {
-            tracker.event(eventName, eventData);
-          } else {
-            tracker.pageview();
-          }
-        } else if (nameOrFn) {
-          tracker.event(nameOrFn, data);
-        } else {
-          tracker.pageview();
-        }
-      },
-      identify: (idOrData: string | Record<string, string | number | boolean>, data?: Record<string, string | number | boolean>) => {
-        if (typeof idOrData === "string") {
-          tracker.identify(idOrData, data);
-        } else {
-          tracker.identify(idOrData);
-        }
-      },
+      track: tracker.track,
+      identify: tracker.identify,
     };
   }
 })();
