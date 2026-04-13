@@ -66,3 +66,6 @@ packages/*/node_modules
 !public/screenshot.png
 neondb-dump.backup
 /backup_mantecato_2026-04-04.dump
+
+# deploy config (secrets & scripts)
+/deploy/

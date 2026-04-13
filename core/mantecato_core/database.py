@@ -1,9 +1,13 @@
+import asyncio
+import logging
 import os
 import re
 from decimal import Decimal
 from typing import Any
 
 import asyncpg
+
+logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
 
@@ -25,8 +29,9 @@ async def create_pool(dsn: str | None = None, **kwargs) -> asyncpg.Pool:
     url = dsn or _get_database_url()
     _pool = await asyncpg.create_pool(
         url,
-        min_size=kwargs.get("min_size", 2),
+        min_size=kwargs.get("min_size", 5),
         max_size=kwargs.get("max_size", 20),
+        command_timeout=kwargs.get("command_timeout", 30),
     )
     return _pool
 
@@ -76,14 +81,24 @@ def _convert_row(row: asyncpg.Record) -> dict[str, Any]:
 
 
 async def raw_query(
-    sql: str, params: dict[str, Any] | None = None
+    sql: str, params: dict[str, Any] | None = None, *, _retries: int = 2
 ) -> list[dict[str, Any]]:
     if params is None:
         params = {}
     pool = await get_pool()
     query, args = _substitute_params(sql, params)
-    rows = await pool.fetch(query, *args)
-    return [_convert_row(r) for r in rows]
+    last_exc: Exception | None = None
+    for attempt in range(_retries + 1):
+        try:
+            rows = await pool.fetch(query, *args)
+            return [_convert_row(r) for r in rows]
+        except (TimeoutError, asyncpg.ConnectionDoesNotExistError, OSError) as exc:
+            last_exc = exc
+            if attempt < _retries:
+                delay = 0.5 * (attempt + 1)
+                logger.warning("DB query retry %d/%d after %s", attempt + 1, _retries, exc)
+                await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
 
 
 async def raw_query_one(

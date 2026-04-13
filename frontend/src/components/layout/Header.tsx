@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Moon, Sun, LogOut, Share2, Check } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useAuthStore } from "@/stores/auth";
@@ -34,6 +35,7 @@ export function Header({
 
   return (
     <header data-slot="header" className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-4 border-b bg-background px-6">
+      <SidebarTrigger className="md:hidden shrink-0" />
       {title && (
         <h1 className="text-base font-semibold">{title}</h1>
       )}
