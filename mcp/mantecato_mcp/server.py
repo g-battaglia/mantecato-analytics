@@ -1368,7 +1368,8 @@ async def _dispatch_remote(name: str, args: dict[str, Any]) -> list[TextContent]
     return _err(f"Unknown tool: {name}")
 
 
-async def main():
+async def _init_db():
+    """Initialize DB pool if in direct mode."""
     if _REMOTE_MODE:
         api_url = os.environ.get("MANTECATO_API_URL", "")
         print(f"Mantecato MCP server (remote mode: {api_url})", file=sys.stderr)
@@ -1380,6 +1381,10 @@ async def main():
         print("Mantecato MCP server (direct DB mode)", file=sys.stderr)
         await create_pool(dsn=db_url)
 
+
+async def _run_stdio():
+    """Run MCP server over stdio transport (default)."""
+    await _init_db()
     try:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(
@@ -1390,9 +1395,98 @@ async def main():
             await close_pool()
 
 
+def _run_http(host: str, port: int):
+    """Run MCP server over StreamableHTTP transport."""
+    import uvicorn
+    from starlette.responses import JSONResponse
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    api_key = os.environ.get("MCP_API_KEY", "")
+    session_manager = StreamableHTTPSessionManager(
+        app=server, stateless=True, json_response=True,
+    )
+    _sm_ctx = None
+
+    async def app(scope, receive, send):
+        nonlocal _sm_ctx
+
+        if scope["type"] == "lifespan":
+            while True:
+                msg = await receive()
+                if msg["type"] == "lifespan.startup":
+                    await _init_db()
+                    _sm_ctx = session_manager.run()
+                    await _sm_ctx.__aenter__()
+                    await send({"type": "lifespan.startup.complete"})
+                elif msg["type"] == "lifespan.shutdown":
+                    if _sm_ctx:
+                        await _sm_ctx.__aexit__(None, None, None)
+                    if not _REMOTE_MODE:
+                        await close_pool()
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+            return
+
+        if scope["type"] != "http":
+            return
+
+        path = scope["path"]
+
+        if path == "/health" and scope["method"] == "GET":
+            resp = JSONResponse({"status": "ok"})
+            await resp(scope, receive, send)
+            return
+
+        if path == "/mcp":
+            if api_key:
+                headers = dict(scope.get("headers", []))
+                auth = headers.get(b"authorization", b"").decode()
+                if auth != f"Bearer {api_key}":
+                    resp = JSONResponse({"error": "unauthorized"}, status_code=401)
+                    await resp(scope, receive, send)
+                    return
+            await session_manager.handle_request(scope, receive, send)
+            return
+
+        resp = JSONResponse({"error": "not found"}, status_code=404)
+        await resp(scope, receive, send)
+
+    print(f"Mantecato MCP server (HTTP mode: {host}:{port})", file=sys.stderr)
+    uvicorn.run(app, host=host, port=port)
+
+
+def _parse_args():
+    transport = "stdio"
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", "8200"))
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--transport" and i + 1 < len(args):
+            transport = args[i + 1]
+            i += 2
+        elif args[i] == "--host" and i + 1 < len(args):
+            host = args[i + 1]
+            i += 2
+        elif args[i] == "--port" and i + 1 < len(args):
+            port = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
+    return transport, host, port
+
+
+def main_sync():
+    transport, host, port = _parse_args()
+    if transport == "http":
+        _run_http(host, port)
+    else:
+        asyncio.run(_run_stdio())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main_sync()
 
 
 def run():
-    asyncio.run(main())
+    main_sync()

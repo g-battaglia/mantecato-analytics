@@ -7,4 +7,4 @@ COPY mcp/ /app/mcp/
 
 RUN pip install --no-cache-dir /app/core /app/mcp
 
-ENTRYPOINT ["mantecato-mcp"]
+CMD ["mantecato-mcp", "--transport", "http"]

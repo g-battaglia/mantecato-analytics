@@ -6,6 +6,8 @@ dependencies = [
     "mantecato-core>=0.1.0",
     "mcp>=1.0",
     "httpx>=0.27",
+    "uvicorn[standard]>=0.34",
+    "starlette>=0.45",
 ]
 
 [project.scripts]
