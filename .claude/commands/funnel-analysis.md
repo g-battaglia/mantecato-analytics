@@ -2,7 +2,7 @@ Analyze a conversion funnel for the site and steps specified in $ARGUMENTS (form
 
 Parse the arguments: the first word is the site, the rest (after the space) is the comma-separated step list.
 
-Run these commands using `python -m backend.app.cli.main <command>`:
+Run these commands using `cd cli && uv run mantecato <command>`:
 
 ## Step 1: Run the funnel
 

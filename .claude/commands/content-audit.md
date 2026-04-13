@@ -1,6 +1,6 @@
 Audit content performance for the site and period specified in $ARGUMENTS (format: `<site> <period>`, e.g. `kerykeion.net 90d`).
 
-Run these commands using `python -m backend.app.cli.main <command>`:
+Run these commands using `cd cli && uv run mantecato <command>`:
 
 ## Step 1: Page inventory
 
