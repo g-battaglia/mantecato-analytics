@@ -1407,6 +1407,21 @@ def _run_http(host: str, port: int):
     )
     _sm_ctx = None
 
+    def _get_base_url(scope):
+        headers = dict(scope.get("headers", []))
+        host = headers.get(b"host", b"localhost").decode()
+        proto = headers.get(b"x-forwarded-proto", b"https").decode()
+        return f"{proto}://{host}"
+
+    async def _read_body(receive):
+        body = b""
+        while True:
+            msg = await receive()
+            body += msg.get("body", b"")
+            if not msg.get("more_body", False):
+                break
+        return body
+
     async def app(scope, receive, send):
         nonlocal _sm_ctx
 
@@ -1431,18 +1446,131 @@ def _run_http(host: str, port: int):
             return
 
         path = scope["path"]
+        base_url = _get_base_url(scope)
 
         if path == "/health" and scope["method"] == "GET":
             resp = JSONResponse({"status": "ok"})
             await resp(scope, receive, send)
             return
 
+        # --- OAuth 2.0 endpoints ---
+
+        if path == "/.well-known/oauth-protected-resource":
+            resp = JSONResponse({
+                "resource": f"{base_url}/mcp",
+                "authorization_servers": [base_url],
+                "bearer_methods_supported": ["header"],
+            })
+            await resp(scope, receive, send)
+            return
+
+        if path == "/.well-known/oauth-authorization-server":
+            resp = JSONResponse({
+                "issuer": base_url,
+                "authorization_endpoint": f"{base_url}/oauth/authorize",
+                "token_endpoint": f"{base_url}/oauth/token",
+                "registration_endpoint": f"{base_url}/oauth/register",
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code", "client_credentials"],
+                "code_challenge_methods_supported": ["S256"],
+                "token_endpoint_auth_methods_supported": [
+                    "client_secret_post", "client_secret_basic",
+                ],
+            })
+            await resp(scope, receive, send)
+            return
+
+        if path == "/oauth/register" and scope["method"] == "POST":
+            body = await _read_body(receive)
+            try:
+                data = json.loads(body)
+            except (json.JSONDecodeError, ValueError):
+                data = {}
+            import secrets as _secrets
+            client_id = _secrets.token_urlsafe(16)
+            resp = JSONResponse({
+                "client_id": client_id,
+                "client_name": data.get("client_name", "mcp-client"),
+                "grant_types": data.get("grant_types", ["authorization_code"]),
+                "redirect_uris": data.get("redirect_uris", []),
+                "token_endpoint_auth_method": data.get(
+                    "token_endpoint_auth_method", "client_secret_post"
+                ),
+            }, status_code=201)
+            await resp(scope, receive, send)
+            return
+
+        if path == "/oauth/authorize" and scope["method"] == "GET":
+            from urllib.parse import parse_qs
+            qs = parse_qs(scope.get("query_string", b"").decode())
+            redirect_uri = qs.get("redirect_uri", [""])[0]
+            state = qs.get("state", [""])[0]
+            code_challenge = qs.get("code_challenge", [""])[0]
+            if not redirect_uri:
+                resp = JSONResponse({"error": "invalid_request"}, status_code=400)
+                await resp(scope, receive, send)
+                return
+            import secrets as _secrets
+            code = _secrets.token_urlsafe(32)
+            sep = "&" if "?" in redirect_uri else "?"
+            location = f"{redirect_uri}{sep}code={code}"
+            if state:
+                location += f"&state={state}"
+            resp = JSONResponse(
+                {"redirecting": True},
+                status_code=302,
+                headers={"location": location},
+            )
+            await resp(scope, receive, send)
+            return
+
+        if path == "/oauth/token" and scope["method"] == "POST":
+            body = await _read_body(receive)
+            from urllib.parse import parse_qs
+            params = parse_qs(body.decode())
+            grant_type = params.get("grant_type", [""])[0]
+            client_secret = params.get("client_secret", [""])[0]
+
+            # Also check Basic auth header
+            if not client_secret:
+                hdrs = dict(scope.get("headers", []))
+                auth_h = hdrs.get(b"authorization", b"").decode()
+                if auth_h.startswith("Basic "):
+                    import base64
+                    decoded = base64.b64decode(auth_h[6:]).decode()
+                    if ":" in decoded:
+                        client_secret = decoded.split(":", 1)[1]
+
+            if grant_type in ("client_credentials", "authorization_code"):
+                if client_secret == api_key or not api_key:
+                    resp = JSONResponse({
+                        "access_token": api_key,
+                        "token_type": "Bearer",
+                        "expires_in": 86400,
+                    })
+                    await resp(scope, receive, send)
+                    return
+            resp = JSONResponse({"error": "invalid_grant"}, status_code=400)
+            await resp(scope, receive, send)
+            return
+
+        # --- MCP endpoint ---
+
         if path == "/mcp":
             if api_key:
                 headers = dict(scope.get("headers", []))
                 auth = headers.get(b"authorization", b"").decode()
                 if auth != f"Bearer {api_key}":
-                    resp = JSONResponse({"error": "unauthorized"}, status_code=401)
+                    resp = JSONResponse(
+                        {"error": "unauthorized"},
+                        status_code=401,
+                        headers={
+                            "WWW-Authenticate": (
+                                f'Bearer resource_metadata='
+                                f'"{base_url}/.well-known/oauth-protected-resource"'
+                            ),
+                        },
+                    )
                     await resp(scope, receive, send)
                     return
             await session_manager.handle_request(scope, receive, send)
