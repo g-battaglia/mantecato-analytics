@@ -5,7 +5,7 @@ export function formatNumber(value: number, compact = true): string {
   if (compact && Math.abs(value) >= 1000) {
     return new Intl.NumberFormat("en-US", {
       notation: "compact",
-      maximumFractionDigits: 1,
+      maximumFractionDigits: 2,
     }).format(value);
   }
   // For small fractional numbers (e.g. 1.977 pages/visit), show max 2 decimals
