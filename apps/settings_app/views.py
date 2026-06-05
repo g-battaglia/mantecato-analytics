@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import TemplateView
@@ -27,6 +28,7 @@ from apps.common.constants import COUNTRY_CHOICES_SORTED
 from apps.common.forms import (
     ApiKeyForm,
     BotConfigForm,
+    UmamiImportForm,
     WebsiteModelForm,
     first_error,
 )
@@ -36,9 +38,12 @@ from apps.settings_app.services import (
     generate_new_api_key,
     get_api_keys_for_user,
     get_bot_config,
+    get_latest_umami_import_job,
+    get_umami_import_job,
     remove_api_key,
     save_bot_config,
     soft_delete_website,
+    start_umami_import_job,
 )
 
 if TYPE_CHECKING:
@@ -52,6 +57,21 @@ def _accessible_sites(request: HttpRequest) -> list[dict]:
     settings templates render a single dropdown source.
     """
     return resolve_websites_for_user(str(request.user.id), request.user.is_staff)
+
+
+class _AdminRequiredMixin(LoginRequiredMixin):
+    """Restrict a view to admin (``is_staff``) users.
+
+    Unauthenticated users fall through to :class:`LoginRequiredMixin`'s login
+    redirect; authenticated non-admins get a ``403``. Used for the Umami import,
+    which can mutate analytics data across the whole instance.
+    """
+
+    def dispatch(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Reject authenticated non-admins with ``PermissionDenied`` (403)."""
+        if request.user.is_authenticated and not request.user.is_staff:
+            raise PermissionDenied
+        return super().dispatch(request, *args, **kwargs)
 
 
 # ============================================================================
@@ -399,6 +419,68 @@ class SiteDeleteView(LoginRequiredMixin, View):
         else:
             messages.success(request, f"Site '{name}' deleted.")
         return redirect("site_list")
+
+
+# ============================================================================
+# Umami import (background, data-only, single-site)
+# ============================================================================
+
+
+class UmamiImportView(_AdminRequiredMixin, View):
+    """Render and start a data-only, single-site Umami import (admin-only).
+
+    ``GET`` renders the form plus the relevant job (``?job=<id>`` or the latest
+    one) so a page reload restores the progress bar. ``POST`` validates the
+    form, starts the background import via the service layer and redirects
+    (post/redirect/get) with ``?job=<id>`` so the progress partial begins polling.
+    """
+
+    template_name = "settings/umami_import.html"
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Render the import form and the current/last job for this user."""
+        job_id = request.GET.get("job", "").strip()
+        job = (
+            get_umami_import_job(job_id, str(request.user.id))
+            if job_id
+            else get_latest_umami_import_job(str(request.user.id))
+        )
+        return render(
+            request,
+            self.template_name,
+            {"sites": _accessible_sites(request), "job": job},
+        )
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Validate the form and start the background import, then redirect (PRG)."""
+        form = UmamiImportForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, first_error(form))
+            return redirect("umami_import")
+        data = form.cleaned_data
+        result = start_umami_import_job(
+            user_id=str(request.user.id),
+            target_website=str(data["target_website"]),
+            source_website=str(data["source_website"]),
+            source_dsn=data["source_dsn"],
+            since_date=data["since"],
+            replace=data["replace"],
+        )
+        messages.success(request, "Umami import started.")
+        return redirect(f"{request.path}?job={result['id']}")
+
+
+class UmamiImportStatusView(_AdminRequiredMixin, View):
+    """HTMX polling endpoint: render the progress partial for a single job."""
+
+    template_name = "settings/_umami_import_progress.html"
+
+    def get(
+        self, request: HttpRequest, job_id: str, *args: object, **kwargs: object
+    ) -> HttpResponse:
+        """Render the progress partial for *job_id* (scoped to the current user)."""
+        job = get_umami_import_job(str(job_id), str(request.user.id))
+        return render(request, self.template_name, {"job": job})
 
 
 # ============================================================================

@@ -492,6 +492,60 @@ class Segment(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# Umami import jobs (background, UI-triggered)
+# ---------------------------------------------------------------------------
+
+
+class UmamiImportJob(models.Model):
+    """State of a UI-triggered, data-only Umami import running in a thread.
+
+    The web UI starts a background import (see
+    :func:`apps.core.services.run_umami_import_job`) and polls this row via
+    HTMX to render a progress bar. State lives in the database — not in
+    process memory — so any gunicorn worker can serve the poll regardless of
+    which worker runs the import thread.
+
+    Security: the source database DSN is **never** stored here. Only the
+    non-sensitive parameters (the website UUIDs, the optional ``since`` cutoff
+    and the ``replace`` flag) and progress counters are persisted.
+    """
+
+    id = _uuid_pk()
+    user_id = models.UUIDField()
+    status = models.CharField(max_length=20, default="pending")  # pending|running|success|error
+    # Non-sensitive parameters (single-site remap). No DSN, ever.
+    target_website_id = models.UUIDField()
+    source_website_id = models.UUIDField()
+    since = models.DateField(null=True, blank=True)
+    replace = models.BooleanField(default=False)
+    # Progress, written by the DBProgress adapter.
+    current_table = models.CharField(max_length=50, null=True, blank=True)
+    total_rows = models.BigIntegerField(default=0)
+    imported_rows = models.BigIntegerField(default=0)
+    error_message = models.CharField(max_length=500, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "umami_import_job"
+        indexes = [models.Index(fields=["user_id", "-created_at"], name="idx_uij_user_created")]
+
+    def __str__(self) -> str:
+        return f"UmamiImportJob({self.id}, {self.status})"
+
+    @property
+    def is_active(self) -> bool:
+        """Return ``True`` while the job is still pending or running.
+
+        Drives the HTMX polling trigger in the progress partial: once the
+        job reaches a terminal state (``success``/``error``) the trigger is
+        dropped and polling stops on its own.
+        """
+        return self.status in ("pending", "running")
+
+
+# ---------------------------------------------------------------------------
 # Report table (polymorphic configuration store)
 # ---------------------------------------------------------------------------
 

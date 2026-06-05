@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Import from Umami" %}{% endblock %}
+{% block page_title %}{% trans "Import from Umami" %}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="{% url 'settings_index' %}" class="text-sm text-primary hover:text-primary">
+    &larr; {% trans "Back to Settings" %}
+  </a>
+</div>
+
+<div class="mx-auto max-w-2xl">
+  <h2 class="text-xl font-semibold text-foreground mb-1">{% trans "Import data from Umami" %}</h2>
+  <p class="mb-4 text-sm text-muted-foreground">
+    {% trans "Copy analytics data (sessions, events, revenue) from an existing Umami PostgreSQL database into one of your sites. Configuration and users are never imported. The import runs in the background — you can leave this page and come back." %}
+  </p>
+
+  <form method="post" class="rounded-lg border border-border bg-card px-4 sm:px-6 py-6 shadow-sm space-y-5">
+    {% csrf_token %}
+
+    <div>
+      <label for="id_target_website" class="block text-sm font-medium text-foreground">{% trans "Destination site" %}</label>
+      <p class="mb-1.5 mt-0.5 text-xs text-muted-foreground">{% trans "Imported analytics are remapped onto this existing Mantecato site." %}</p>
+      <select id="id_target_website" name="target_website" required
+              class="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+        <option value="">{% trans "— pick a site —" %}</option>
+        {% for site in sites %}
+        <option value="{{ site.id }}">{{ site.name }}{% if site.domain %} · {{ site.domain }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      {% if not sites %}
+      <p class="mt-1 text-xs text-muted-foreground">
+        {% trans "No sites yet." %}
+        <a href="{% url 'site_create' %}" class="text-primary hover:underline">{% trans "Add a site" %}</a>
+        {% trans "first." %}
+      </p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="id_source_website" class="block text-sm font-medium text-foreground">{% trans "Umami website ID" %}</label>
+      <p class="mb-1.5 mt-0.5 text-xs text-muted-foreground">{% trans "The website_id (UUID) of the source site in your Umami database." %}</p>
+      <input type="text" id="id_source_website" name="source_website" required autocomplete="off"
+             placeholder="00000000-0000-0000-0000-000000000000"
+             class="block w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+    </div>
+
+    <div>
+      <label for="id_source_dsn" class="block text-sm font-medium text-foreground">{% trans "Umami database URL" %}</label>
+      <p class="mb-1.5 mt-0.5 text-xs text-muted-foreground">{% trans "PostgreSQL connection string, e.g. postgresql://user:pass@host:5432/umami. It must be reachable from this server. It is used once and never stored." %}</p>
+      <input type="password" id="id_source_dsn" name="source_dsn" required autocomplete="off"
+             placeholder="postgresql://user:pass@host:5432/umami"
+             class="block w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+    </div>
+
+    <div>
+      <label for="id_since" class="block text-sm font-medium text-foreground">{% trans "Import since (optional)" %}</label>
+      <p class="mb-1.5 mt-0.5 text-xs text-muted-foreground">{% trans "Only import rows newer than this date." %}</p>
+      <input type="date" id="id_since" name="since"
+             class="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring sm:w-auto">
+    </div>
+
+    <label class="flex items-start gap-3">
+      <input type="checkbox" name="replace"
+             class="mt-0.5 h-4 w-4 rounded border-input text-primary focus:ring-ring">
+      <span class="text-sm text-foreground">
+        {% trans "Replace existing data" %}
+        <span class="block text-xs text-muted-foreground">{% trans "Delete the destination site's current analytics rows before importing. Off by default — the import is additive." %}</span>
+      </span>
+    </label>
+
+    <div class="flex justify-end pt-2">
+      <button type="submit"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
+        {% trans "Start import" %}
+      </button>
+    </div>
+  </form>
+
+  <div id="umami-progress-wrap" class="mt-5">
+    {% if job %}
+    {% include "settings/_umami_import_progress.html" %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

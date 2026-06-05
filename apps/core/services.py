@@ -21,6 +21,7 @@ boolean, ``revenue`` NULL → 0, JSON wrapping, width truncation) and batched
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING
 
@@ -396,3 +397,144 @@ class UmamiImporter:
         """Execute one batch of parameterised INSERTs against the destination."""
         with connection.cursor() as cur:
             cur.executemany(sql, batch)
+
+
+# ---------------------------------------------------------------------------
+# Background, UI-triggered import (data-only, single-site)
+# ---------------------------------------------------------------------------
+
+
+class DBProgress:
+    """Progress sink that records onto a ``UmamiImportJob`` row.
+
+    Duck-types the subset of :class:`rich.progress.Progress` that
+    :meth:`UmamiImporter.run` relies on — ``add_task(description, total=...)``
+    returning a task id, and ``update(task_id, advance=...)`` — so the importer
+    can drive a background progress bar with **zero** changes to the engine. It
+    deliberately does not implement ``__enter__``/``__exit__``: ``run`` receives
+    an already-entered progress object.
+
+    Writes are throttled. The engine advances in batches of
+    :data:`BATCH_SIZE` rows, and this adapter only issues an ``UPDATE`` once
+    every *flush_every* rows, so a multi-million-row import does not flood the
+    database with progress writes. ``add_task`` updates ``current_table`` and
+    the running ``total_rows`` sum; :meth:`flush` must be called once at the end.
+    """
+
+    def __init__(self, job_id: str, *, flush_every: int = 50_000) -> None:
+        self.job_id = job_id
+        self._tasks: dict[int, dict[str, Any]] = {}
+        self._next = 0
+        self._pending = 0
+        self._flush_every = flush_every
+
+    def add_task(self, description: str, *, total: int = 0, **kwargs: Any) -> int:
+        """Register a new per-table task and refresh ``current_table``/``total_rows``."""
+        from apps.core.models import UmamiImportJob
+
+        task_id = self._next
+        self._next += 1
+        label = description.replace("Importing ", "").strip()
+        self._tasks[task_id] = {"label": label, "total": total, "done": 0}
+        UmamiImportJob.objects.filter(id=self.job_id).update(
+            current_table=label,
+            total_rows=sum(t["total"] for t in self._tasks.values()),
+        )
+        return task_id
+
+    def update(self, task_id: int, *, advance: int = 0, **kwargs: Any) -> None:
+        """Accumulate progress, flushing to the database past the throttle limit."""
+        task = self._tasks[task_id]
+        task["done"] += advance
+        self._pending += advance
+        if self._pending >= self._flush_every:
+            self.flush()
+
+    def flush(self) -> None:
+        """Persist the current total of imported rows to the job row."""
+        from apps.core.models import UmamiImportJob
+
+        done = sum(t["done"] for t in self._tasks.values())
+        UmamiImportJob.objects.filter(id=self.job_id).update(imported_rows=done)
+        self._pending = 0
+
+
+def run_umami_import_job(
+    job_id: str,
+    source_dsn: str,
+    *,
+    target_website: str,
+    source_website: str,
+    since_date: datetime | None,
+    replace: bool,
+) -> None:
+    """Run a data-only, single-site Umami import; thread target for the UI flow.
+
+    Drives :class:`UmamiImporter` and records progress and the terminal status
+    onto the :class:`~apps.core.models.UmamiImportJob` row identified by
+    *job_id*, so the HTMX poller can show a live progress bar. Designed to run
+    in a background :class:`threading.Thread`; the database state (not process
+    memory) is the single source of truth, so any gunicorn worker can serve the
+    poll.
+
+    Security: *source_dsn* is only ever an argument — it is never persisted and
+    never logged. Connection failures are reported with a generic message
+    because psycopg's exception text can embed the host and credentials.
+
+    Args:
+        job_id: UUID string of the :class:`UmamiImportJob` to update.
+        source_dsn: PostgreSQL connection string for the source Umami database.
+        target_website: Existing Mantecato ``website_id`` to remap rows onto.
+        source_website: Umami ``website_id`` to import.
+        since_date: Optional cutoff; only rows ``created_at >= since_date``.
+        replace: When ``True``, delete the target site's analytics rows first.
+    """
+    from django.db.models import F
+    from django.utils import timezone
+
+    from apps.core.models import UmamiImportJob
+
+    logger = logging.getLogger(__name__)
+    src = None
+    try:
+        UmamiImportJob.objects.filter(id=job_id).update(status="running", started_at=timezone.now())
+        importer = UmamiImporter(
+            source_dsn,
+            console=None,
+            data_only=True,
+            since_date=since_date,
+            source_website=source_website,
+            target_website=target_website,
+        )
+        try:
+            src = importer.connect()
+        except ConnectionError:
+            # psycopg's message can leak host/credentials — keep it generic.
+            raise ConnectionError("Cannot connect to the source database.") from None
+        if replace:
+            importer.replace_target_data()
+        progress = DBProgress(job_id)
+        importer.run(src, progress)
+        progress.flush()
+        UmamiImportJob.objects.filter(id=job_id).update(
+            status="success",
+            finished_at=timezone.now(),
+            imported_rows=F("total_rows"),
+            current_table=None,
+        )
+    except Exception as exc:  # noqa: BLE001 — recorded on the job row
+        # Never include source_dsn in the log; for connection errors `exc` is
+        # already the generic message raised above.
+        logger.warning("Umami import job %s failed: %s", job_id, exc)
+        UmamiImportJob.objects.filter(id=job_id).update(
+            status="error",
+            finished_at=timezone.now(),
+            error_message=str(exc)[:500],
+        )
+    finally:
+        if src is not None:
+            src.close()
+        # The importer wrote to the destination via django.db.connection, a
+        # thread-local proxy; close it so it is not pinned to this thread until
+        # the worker recycles (CONN_MAX_AGE=600 in production).
+        connection.close()

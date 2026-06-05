@@ -24,6 +24,7 @@ Design choice:
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from django import forms
@@ -276,6 +277,47 @@ class BotConfigForm(forms.Form):
             config[field] = data.get(field) or 0
         config["excludedCountries"] = list(data.get("excludedCountries") or [])
         return config
+
+
+class UmamiImportForm(forms.Form):
+    """Validate the UI-triggered, data-only single-site Umami import request.
+
+    Mirrors the validation in the ``importumamidata`` management command: both
+    website ids are required (single-site remap), the DSN must be a PostgreSQL
+    connection string, and ``since`` (when given) uses the same ``YYYY-MM-DD``
+    format. The DSN is **not** persisted — the view hands it straight to the
+    background thread (see :func:`apps.settings_app.services.start_umami_import_job`).
+
+    Fields:
+        - ``target_website`` (UUIDField): existing Mantecato site to remap onto.
+        - ``source_website`` (UUIDField): Umami ``website_id`` to import.
+        - ``source_dsn`` (CharField, ≤500): source Umami PostgreSQL DSN.
+        - ``since`` (optional): ``YYYY-MM-DD`` cutoff, cleaned to a ``datetime``.
+        - ``replace`` (optional bool): delete the target site's rows first.
+    """
+
+    target_website = forms.UUIDField()
+    source_website = forms.UUIDField()
+    source_dsn = forms.CharField(max_length=500)
+    since = forms.CharField(required=False)
+    replace = forms.BooleanField(required=False)
+
+    def clean_source_dsn(self) -> str:
+        """Require a PostgreSQL DSN. The value is validated, never stored."""
+        dsn = (self.cleaned_data.get("source_dsn") or "").strip()
+        if not (dsn.startswith("postgres://") or dsn.startswith("postgresql://")):
+            raise forms.ValidationError("DSN must be a postgres:// connection string.")
+        return dsn
+
+    def clean_since(self) -> datetime | None:
+        """Parse the optional ``since`` date with the CLI's ``YYYY-MM-DD`` format."""
+        raw = (self.cleaned_data.get("since") or "").strip()
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d")  # noqa: DTZ007 — date-only cutoff
+        except ValueError as exc:
+            raise forms.ValidationError("Invalid date format. Use YYYY-MM-DD.") from exc
 
 
 # ---------------------------------------------------------------------------

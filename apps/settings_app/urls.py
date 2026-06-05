@@ -13,6 +13,8 @@ from apps.settings_app.views import (
     SiteCreateView,
     SiteDeleteView,
     SiteListView,
+    UmamiImportStatusView,
+    UmamiImportView,
 )
 
 urlpatterns = [
@@ -32,4 +34,10 @@ urlpatterns = [
         name="api_key_delete",
     ),
     path("settings/bot-config/", BotConfigView.as_view(), name="bot_config"),
+    path("settings/import/umami/", UmamiImportView.as_view(), name="umami_import"),
+    path(
+        "settings/import/umami/status/<uuid:job_id>/",
+        UmamiImportStatusView.as_view(),
+        name="umami_import_status",
+    ),
 ]

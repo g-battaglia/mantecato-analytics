@@ -14,6 +14,7 @@ read and the write step rolls back cleanly. Update functions use
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -24,9 +25,11 @@ from apps.core.models import (
     ApiKey,
     BotConfig,
     ScheduledExport,
+    UmamiImportJob,
     Website,
     merge_bot_config,
 )
+from apps.core.services import run_umami_import_job
 
 if TYPE_CHECKING:
     from typing import Any
@@ -299,3 +302,69 @@ def soft_delete_website(
     site.is_deleted = True
     site.save(update_fields=["is_deleted"])
     return site.name
+
+
+# ---------------------------------------------------------------------------
+# Umami import (background, data-only, single-site)
+# ---------------------------------------------------------------------------
+
+
+def start_umami_import_job(
+    *,
+    user_id: str,
+    target_website: str,
+    source_website: str,
+    source_dsn: str,
+    since_date: datetime | None,
+    replace: bool,
+) -> dict[str, Any]:
+    """Create a :class:`UmamiImportJob` and start the background import thread.
+
+    The job row stores only non-sensitive parameters and progress counters; the
+    *source_dsn* is handed straight to the worker thread and **never persisted**.
+    The thread is a daemon so it never blocks interpreter shutdown, and the
+    importer runs data-only/single-site (see
+    :func:`apps.core.services.run_umami_import_job`).
+
+    Args:
+        user_id: UUID string of the admin starting the import.
+        target_website: Existing Mantecato ``website_id`` to remap rows onto.
+        source_website: Umami ``website_id`` to import.
+        source_dsn: Source Umami PostgreSQL DSN (not stored).
+        since_date: Optional ``created_at`` cutoff.
+        replace: Whether to delete the target site's analytics rows first.
+
+    Returns:
+        A dict with the new job ``id`` (string).
+    """
+    job = UmamiImportJob.objects.create(
+        user_id=user_id,
+        status="pending",
+        target_website_id=target_website,
+        source_website_id=source_website,
+        since=since_date.date() if since_date else None,
+        replace=replace,
+    )
+    thread = threading.Thread(
+        target=run_umami_import_job,
+        args=(str(job.id), source_dsn),
+        kwargs={
+            "target_website": target_website,
+            "source_website": source_website,
+            "since_date": since_date,
+            "replace": replace,
+        },
+        daemon=True,
+    )
+    thread.start()
+    return {"id": str(job.id)}
+
+
+def get_umami_import_job(job_id: str, user_id: str) -> UmamiImportJob | None:
+    """Return the user's import job by id, or ``None`` when not found/owned."""
+    return UmamiImportJob.objects.filter(id=job_id, user_id=user_id).first()
+
+
+def get_latest_umami_import_job(user_id: str) -> UmamiImportJob | None:
+    """Return the user's most recently created import job, or ``None``."""
+    return UmamiImportJob.objects.filter(user_id=user_id).order_by("-created_at").first()
