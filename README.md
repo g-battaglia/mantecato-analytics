@@ -23,6 +23,18 @@
   <img src="screen.png" alt="Mantecato Dashboard" width="800">
 </p>
 
+### 🚂 Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/mantecato-analytics?referralCode=UmPu3s&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+One click provisions PostgreSQL 16 + Mantecato, wired together automatically.
+The bundled `railway.toml` (Railpack builder) runs migrations in a pre-deploy
+step, collects static files at build time, and serves the app with gunicorn on
+Railway's injected `$PORT`. Health checks hit `/health/`.
+
+See [docs/RAILWAY.md](docs/RAILWAY.md) for the full environment-variable
+reference and for publishing your own copy of the community template.
+
 ---
 
 ## ✨ Why Mantecato?
@@ -412,18 +424,6 @@ UMAMI_IMPORT_ALLOW_CONFIG=True
 After the import succeeds, set `UMAMI_IMPORT_ON_DEPLOY=False` and remove
 `UMAMI_DATABASE_URL` from Render unless it is needed again. The Umami database
 must be reachable from Render.
-
-### 🚂 Deploy on Railway
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/XXXXXX)
-
-One click provisions PostgreSQL 16 + Mantecato, wired together automatically.
-The bundled `railway.toml` (Railpack builder) runs migrations in a pre-deploy
-step, collects static files at build time, and serves the app with gunicorn on
-Railway's injected `$PORT`. Health checks hit `/health/`.
-
-See [docs/RAILWAY.md](docs/RAILWAY.md) for the full environment-variable
-reference and for publishing your own copy of the community template.
 
 ### 🐳 With Docker (recommended)
 
