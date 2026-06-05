@@ -77,3 +77,20 @@ def test_require_database_url_enforced_in_production() -> None:
     require_database_url("", debug=True)
     # Production with a database URL is fine.
     require_database_url("postgres://u:p@h:5432/db", debug=False)
+
+
+def test_open_hosts_warning() -> None:
+    import os
+
+    from mantecato.config import open_hosts_warning
+
+    # Restricted hosts: no warning.
+    assert open_hosts_warning(["example.com"]) is None
+    # Open, off Railway: generic message.
+    with patch.dict(os.environ, {}, clear=True):
+        msg = open_hosts_warning(["*"])
+        assert msg is not None and "Set the ALLOWED_HOSTS" in msg
+    # Open, on Railway: message suggests the exact value to set.
+    with patch.dict(os.environ, {"RAILWAY_PUBLIC_DOMAIN": "myapp.up.railway.app"}, clear=True):
+        msg = open_hosts_warning(["*"])
+        assert "myapp.up.railway.app,healthcheck.railway.app" in msg

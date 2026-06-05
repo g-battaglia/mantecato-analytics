@@ -19,6 +19,7 @@ Sections:
 
 from __future__ import annotations
 
+import logging
 import os
 
 import dj_database_url
@@ -28,6 +29,7 @@ from mantecato.config import (
     BASE_DIR,
     get_database_url,
     get_secret_key,
+    open_hosts_warning,
     require_database_url,
     validate_database_host,
 )
@@ -128,6 +130,12 @@ SECRET_KEY = get_secret_key()
 # POSTs still work (Django matches Origin against the request host) — only
 # cross-origin requests need CSRF_TRUSTED_ORIGINS (see below).
 ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS") or ["*"]
+
+# Warn (once, at startup) when host validation is disabled. On Railway the
+# message includes the exact value to set, derived from RAILWAY_PUBLIC_DOMAIN.
+_hosts_warning = open_hosts_warning(ALLOWED_HOSTS)
+if _hosts_warning:
+    logging.getLogger("mantecato.security").warning(_hosts_warning)
 
 # ============================================================================
 # 3. Installed apps and middleware

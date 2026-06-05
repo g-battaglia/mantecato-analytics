@@ -153,6 +153,34 @@ def require_database_url(database_url: str, *, debug: bool) -> None:
         )
 
 
+def open_hosts_warning(allowed_hosts: list[str]) -> str | None:
+    """Return a warning message when ALLOWED_HOSTS is wide open, else None.
+
+    ``ALLOWED_HOSTS == ['*']`` disables Django's Host-header validation. That
+    keeps a first deploy zero-config, but should be tightened in production.
+    When running on Railway we can suggest the exact value to set, derived from
+    the ``RAILWAY_PUBLIC_DOMAIN`` system variable.
+
+    Args:
+        allowed_hosts: The resolved ``ALLOWED_HOSTS`` list.
+
+    Returns:
+        A human-readable warning string, or ``None`` if hosts are restricted.
+    """
+    if allowed_hosts != ["*"]:
+        return None
+    railway_domain = _env("RAILWAY_PUBLIC_DOMAIN")
+    if railway_domain:
+        return (
+            f"ALLOWED_HOSTS is open to all hosts ('*'). On Railway, set "
+            f"ALLOWED_HOSTS={railway_domain},healthcheck.railway.app to restrict it."
+        )
+    return (
+        "ALLOWED_HOSTS is open to all hosts ('*'). Set the ALLOWED_HOSTS "
+        "environment variable (comma-separated) to restrict it in production."
+    )
+
+
 def get_secret_key() -> str:
     """Read the ``SECRET_KEY`` from the environment, raising if missing.
 
