@@ -17,6 +17,8 @@ media/
 
 # Config (secrets)
 .env
+.env.*
+!.env.example
 config.toml
 
 # IDE
