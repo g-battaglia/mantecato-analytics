@@ -310,6 +310,10 @@ CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS")
 # SSL and cookie security: enabled by default in production (DEBUG=False),
 # disabled in development to allow plain HTTP on localhost.
 SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", default=not DEBUG)
+# Exempt the health endpoint from the HTTPS redirect: platform health checkers
+# (e.g. Railway) hit /health/ internally over plain HTTP without the
+# X-Forwarded-Proto header, so a 301 redirect would be read as a failed check.
+SECURE_REDIRECT_EXEMPT = [r"^health/$"]
 SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", default=not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool("CSRF_COOKIE_SECURE", default=not DEBUG)
 

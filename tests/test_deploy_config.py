@@ -94,3 +94,9 @@ def test_open_hosts_warning() -> None:
     with patch.dict(os.environ, {"RAILWAY_PUBLIC_DOMAIN": "myapp.up.railway.app"}, clear=True):
         msg = open_hosts_warning(["*"])
         assert "myapp.up.railway.app,healthcheck.railway.app" in msg
+
+
+def test_health_endpoint_exempt_from_ssl_redirect() -> None:
+    # Platform health checks hit /health/ over plain HTTP; it must not 301-redirect,
+    # otherwise the check fails even though the app is healthy.
+    assert any("health" in pattern for pattern in settings.SECURE_REDIRECT_EXEMPT)
