@@ -130,6 +130,29 @@ def validate_database_host(database_url: str, debug: bool) -> None:
         )
 
 
+def require_database_url(database_url: str, *, debug: bool) -> None:
+    """Fail fast when no database is configured in production.
+
+    Mantecato requires PostgreSQL; the SQLite fallback in ``settings`` is only
+    for quick local development (``DEBUG=True``). With ``DEBUG=False`` a missing
+    ``DATABASE_URL`` would silently fall back to SQLite and break the
+    PostgreSQL-only migrations (e.g. ``core.0002`` runs ``SET DEFAULT now()``),
+    so we fail with a clear message instead of an opaque mid-migration crash.
+
+    Args:
+        database_url: The resolved database URL (may be empty).
+        debug: Whether Django is running in debug mode.
+
+    Raises:
+        ImproperlyConfigured: If *database_url* is empty and *debug* is False.
+    """
+    if not database_url and not debug:
+        raise ImproperlyConfigured(
+            "DATABASE_URL must be set when DEBUG=False. Mantecato requires "
+            "PostgreSQL in production; the SQLite fallback is development-only."
+        )
+
+
 def get_secret_key() -> str:
     """Read the ``SECRET_KEY`` from the environment, raising if missing.
 

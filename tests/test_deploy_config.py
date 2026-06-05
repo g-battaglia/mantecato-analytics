@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from django.conf import settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,3 +63,17 @@ def test_production_database_url_ignores_test_database_url() -> None:
     ):
         assert get_database_url(debug=False) == "postgres://prod:prod@prod-db:5432/umami"
         assert get_database_url(debug=True) == "postgres://test:test@test-db:5432/umami"
+
+
+def test_require_database_url_enforced_in_production() -> None:
+    from django.core.exceptions import ImproperlyConfigured
+
+    from mantecato.config import require_database_url
+
+    # Production without a database must fail loudly rather than fall back to SQLite.
+    with pytest.raises(ImproperlyConfigured):
+        require_database_url("", debug=False)
+    # Development is allowed to use the SQLite fallback.
+    require_database_url("", debug=True)
+    # Production with a database URL is fine.
+    require_database_url("postgres://u:p@h:5432/db", debug=False)

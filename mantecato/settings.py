@@ -29,6 +29,7 @@ from mantecato.config import (
     get_database_url,
     get_production_hosts,
     get_secret_key,
+    require_database_url,
     validate_database_host,
 )
 
@@ -205,6 +206,8 @@ WSGI_APPLICATION = "mantecato.wsgi.application"
 # ============================================================================
 
 DATABASE_URL = get_database_url(debug=DEBUG)
+# Refuse the silent SQLite fallback in production: Mantecato is PostgreSQL-only.
+require_database_url(DATABASE_URL, debug=DEBUG)
 if DATABASE_URL:
     validate_database_host(DATABASE_URL, DEBUG)
 
