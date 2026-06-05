@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mantecato"
+version = "3.0.0"
+description = "Self-hosted analytics platform — Django + HTMX"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=6.0,<7.0",
+    "psycopg[binary]>=3.2",
+    "dj-database-url>=2.3",
+    "bcrypt>=4.2",
+    "python-dotenv>=1.0",
+    "whitenoise>=6.8",
+    "gunicorn>=23.0",
+    "typer>=0.12",
+    "rich>=13.0",
+    "ua-parser>=1.0",
+    "geoip2>=4.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.9",
+    "ruff>=0.8",
+]
+
+[project.scripts]
+mantecato = "cli.mantecato_cli.main:app"
+
+[tool.setuptools.packages.find]
+include = ["mantecato*", "apps*", "core*", "cli*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/**"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "mantecato.settings"
+python_files = ["tests/*.py", "tests/**/*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

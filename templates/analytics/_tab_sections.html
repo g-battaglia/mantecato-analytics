@@ -1,0 +1,18 @@
+{% load i18n fmt %}
+{% spaceless %}
+<div class="space-y-0">
+  {% for s in sections %}
+  <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=url_path:starts_with:{{ s.section }}"
+     class="relative flex items-center rounded px-2.5 py-[6px] text-[12.5px] transition-colors hover:bg-muted/30">
+    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {{ s.pct }}%"></div>
+    <span class="relative flex-1 truncate font-mono text-foreground" title="{{ s.section }}">{{ s.section }}</span>
+    <div class="relative flex gap-3 font-mono text-[12px]">
+      <span class="text-muted-foreground">{{ s.views|intcomma }} v</span>
+      <span class="min-w-[50px] text-right text-foreground">{{ s.visitors|intcomma }}</span>
+    </div>
+  </a>
+  {% empty %}
+  <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No section data" %}</p>
+  {% endfor %}
+</div>
+{% endspaceless %}

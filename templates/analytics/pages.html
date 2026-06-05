@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Pages" %}{% endblock %}
+{% block page_title %}{% trans "Pages" %}{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+{% if pages %}
+{# ── Top Pages chart ──────────────────────────────────────── #}
+{% if pages_chart_data.labels %}
+<div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Top Pages" %}</h2>
+  <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-pages"></canvas></div>
+  {{ pages_chart_data|json_script:"pages-chart-data" }}
+</div>
+{% endif %}
+<div class="flex max-w-full flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+  <div class="overflow-x-auto">
+    <div class="space-y-0">
+      <div class="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <span class="flex-1">{% trans "Page" %}</span>
+        <div class="flex gap-4 text-right">
+          <span class="w-16">{% trans "Views" %}</span>
+          <span class="w-16">{% trans "Visitors" %}</span>
+          <span class="hidden w-14 sm:inline">{% trans "Bounce" %}</span>
+          <span class="hidden w-14 sm:inline">{% trans "Avg" %}</span>
+        </div>
+      </div>
+      {% for p in pages %}
+      <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors cursor-pointer"
+           hx-get="{% url 'analytics_next_pages' %}?url_path={{ p.urlPath|urlencode }}&website={{ selected_website }}&range={{ range_preset }}"
+           hx-target="#next-pages-detail" hx-swap="innerHTML">
+        <div class="flex-1 min-w-0 pr-4">
+          <span class="block truncate font-medium" title="{{ p.pageTitle|default:p.urlPath }}">{{ p.pageTitle|default:p.urlPath }}</span>
+          <span class="block truncate text-xs text-muted-foreground font-mono">{{ p.urlPath }}</span>
+        </div>
+        <div class="flex gap-4 text-right tabular-nums">
+          <span class="w-16 font-medium">{{ p.views|intcomma }}</span>
+          <span class="w-16 text-muted-foreground">{{ p.visitors|intcomma }}</span>
+          <span class="hidden w-14 text-muted-foreground sm:inline">{{ p.bounceRate|floatformat:1 }}%</span>
+          <span class="hidden w-14 text-muted-foreground sm:inline">{% if p.avgTimeOnPage %}{{ p.avgTimeOnPage|floatformat:0 }}s{% else %}—{% endif %}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+<div id="next-pages-detail"></div>
+{% else %}
+<div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+  <div class="px-4 py-4 text-center">
+    <p class="text-muted-foreground">{% trans "No page data for this period." %}</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var el = document.getElementById('pages-chart-data');
+    if (el) initBarChart('chart-pages', JSON.parse(el.textContent));
+  })();
+</script>
+{% endblock %}

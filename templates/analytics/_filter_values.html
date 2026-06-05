@@ -1,0 +1,7 @@
+{% comment %}
+Options for the filter-value <datalist>, swapped in by HTMX when the user
+picks a column or types in the value box of the "Add filter" popover.
+Rendered by apps.analytics.partials.FilterValuesView.
+{% endcomment %}
+{% for value in values %}<option value="{{ value }}"></option>
+{% endfor %}

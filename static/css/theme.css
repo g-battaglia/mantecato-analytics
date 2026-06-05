@@ -1,0 +1,147 @@
+/* Mantecato v3 — Studio design tokens.
+   Direction: neutral graphite + lime accent (#c4f04a).
+   Values stored as bare oklch components (L C H) so Tailwind opacity
+   modifiers (bg-muted/50, border-border/50, …) resolve correctly. */
+
+:root {
+  --background: 0.985 0.0001 263;
+  --foreground: 0.182 0.004 264;
+  --card: 1 0.0001 263;
+  --card-foreground: 0.182 0.004 264;
+  --popover: 1 0.0001 263;
+  --popover-foreground: 0.182 0.004 264;
+  --primary: 0.768 0.204 131;
+  --primary-foreground: 1 0.0001 263;
+  --secondary: 0.967 0.001 285;
+  --secondary-foreground: 0.182 0.004 264;
+  --muted: 0.967 0.001 285;
+  --muted-foreground: 0.551 0.023 264;
+  --accent: 0.967 0.001 285;
+  --accent-foreground: 0.182 0.004 264;
+  --destructive: 0.711 0.166 22;
+  --destructive-foreground: 1 0.0001 263;
+  --border: 0.927 0.006 264;
+  --input: 0.927 0.006 264;
+  --ring: 0.768 0.204 131;
+  --chart-1: 0.768 0.204 131;
+  --chart-2: 0.800 0.182 152;
+  --chart-3: 0.837 0.164 84;
+  --chart-4: 0.714 0.144 255;
+  --chart-5: 0.711 0.166 22;
+  --radius: 0.5rem;
+  --sidebar: 0.985 0.0001 263;
+  --sidebar-foreground: 0.182 0.004 264;
+  --sidebar-primary: 0.768 0.204 131;
+  --sidebar-primary-foreground: 1 0.0001 263;
+  --sidebar-accent: 0.967 0.001 285;
+  --sidebar-accent-foreground: 0.182 0.004 264;
+  --sidebar-border: 0.927 0.006 264;
+  --sidebar-ring: 0.768 0.204 131;
+}
+
+.dark {
+  --background: 0.154 0.005 264;
+  --foreground: 0.933 0.005 258;
+  --card: 0.182 0.004 264;
+  --card-foreground: 0.933 0.005 258;
+  --popover: 0.182 0.004 264;
+  --popover-foreground: 0.933 0.005 258;
+  --primary: 0.894 0.192 123;
+  --primary-foreground: 0.154 0.005 264;
+  --secondary: 0.204 0.007 258;
+  --secondary-foreground: 0.933 0.005 258;
+  --muted: 0.204 0.007 258;
+  --muted-foreground: 0.649 0.013 260;
+  --accent: 0.204 0.007 258;
+  --accent-foreground: 0.933 0.005 258;
+  --destructive: 0.711 0.166 22;
+  --destructive-foreground: 0.933 0.005 258;
+  --border: 0.175 0.003 264;
+  --input: 0.195 0.005 264;
+  --ring: 0.894 0.192 123;
+  --chart-1: 0.894 0.192 123;
+  --chart-2: 0.800 0.182 152;
+  --chart-3: 0.837 0.164 84;
+  --chart-4: 0.714 0.144 255;
+  --chart-5: 0.711 0.166 22;
+  --sidebar: 0.154 0.005 264;
+  --sidebar-foreground: 0.933 0.005 258;
+  --sidebar-primary: 0.894 0.192 123;
+  --sidebar-primary-foreground: 0.154 0.005 264;
+  --sidebar-accent: 0.204 0.007 258;
+  --sidebar-accent-foreground: 0.933 0.005 258;
+  --sidebar-border: 0.175 0.003 264;
+  --sidebar-ring: 0.894 0.192 123;
+}
+
+:where(*) {
+  border-color: oklch(var(--border));
+}
+
+html,
+body {
+  background-color: oklch(var(--background));
+  color: oklch(var(--foreground));
+}
+
+body {
+  font-feature-settings: "ss01" 1, "ss02" 1, "cv11" 1, "rlig" 1, "calt" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Global form input styling for dark/light mode */
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
+textarea,
+select {
+  background-color: oklch(var(--background));
+  color: oklch(var(--foreground));
+}
+
+/* Thin, themed scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(var(--border));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--muted-foreground) / 0.4);
+}
+
+/* Leaflet map should blend with the card surface and stay below sidebar */
+.leaflet-container {
+  background: oklch(var(--muted)) !important;
+  font-family: inherit;
+  z-index: 0 !important;
+}
+
+/* Hide scrollbar (sidebar nav) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Native select arrow tweak for dark mode */
+select {
+  color-scheme: light dark;
+}
+
+/* Sidebar active indicator */
+.nav-active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: oklch(var(--sidebar-primary));
+  border-radius: 1px;
+}

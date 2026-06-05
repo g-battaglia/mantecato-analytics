@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Sources" %}{% endblock %}
+{% block page_title %}{% trans "Sources" %}{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+{# ── Charts ────────────────────────────────────────────────── #}
+{% if channels_chart_data.labels or referrers_chart_data.labels %}
+<div class="mb-6 grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+  {% if channels_chart_data.labels %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Channels" %}</h2>
+    <div class="relative h-48 sm:h-64"><canvas id="chart-channels"></canvas></div>
+    {{ channels_chart_data|json_script:"channels-chart-data" }}
+  </div>
+  {% endif %}
+  {% if referrers_chart_data.labels %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Top Referrers" %}</h2>
+    <div class="relative h-48 sm:h-64"><canvas id="chart-referrers"></canvas></div>
+    {{ referrers_chart_data|json_script:"referrers-chart-data" }}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── Channels ───────────────────────────────────────────────── #}
+<div class="mb-6">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Channels" %}</h2>
+  {% if channels %}
+  <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-border">
+      <thead class="bg-muted/50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Channel" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
+          <th class="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Bounce Rate" %}</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border">
+        {% for c in channels %}
+        <tr class="hover:bg-muted/50">
+          <td class="px-4 py-3 text-sm font-medium text-foreground">{{ c.channel }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ c.visitors|intcomma }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ c.pageviews|intcomma }}</td>
+          <td class="hidden px-4 py-3 text-right text-sm text-foreground sm:table-cell">{{ c.bounceRate|floatformat:1 }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm text-muted-foreground">{% trans "No channel data." %}</p>
+  {% endif %}
+</div>
+
+{# ── Referrers ──────────────────────────────────────────────── #}
+<div class="mb-6">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Referrers" %}</h2>
+  {% if referrers %}
+  <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-border">
+      <thead class="bg-muted/50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Referrer" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
+          <th class="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Bounce Rate" %}</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border">
+        {% for r in referrers %}
+        <tr class="hover:bg-muted/50">
+          <td class="px-4 py-3 text-sm font-medium text-foreground">{{ r.referrerDomain }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ r.visitors|intcomma }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ r.pageviews|intcomma }}</td>
+          <td class="hidden px-4 py-3 text-right text-sm text-foreground sm:table-cell">{{ r.bounceRate|floatformat:1 }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm text-muted-foreground">{% trans "No referrer data." %}</p>
+  {% endif %}
+</div>
+
+{# ── UTM Sources ────────────────────────────────────────────── #}
+<div class="mb-6">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "UTM Sources" %}</h2>
+  {% if utm_chart_data.labels %}
+  <div class="mb-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <div class="relative h-48 sm:h-64"><canvas id="chart-utm"></canvas></div>
+    {{ utm_chart_data|json_script:"utm-chart-data" }}
+  </div>
+  {% endif %}
+  {% if utm_source %}
+  <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-border">
+      <thead class="bg-muted/50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Source" %}</th>
+          <th class="hidden px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Medium" %}</th>
+          <th class="hidden px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Campaign" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border">
+        {% for u in utm_source %}
+        <tr class="hover:bg-muted/50">
+          <td class="px-4 py-3 text-sm text-foreground">{{ u.utmSource }}</td>
+          <td class="hidden px-4 py-3 text-sm text-muted-foreground sm:table-cell">{{ u.utmMedium|default:"—" }}</td>
+          <td class="hidden px-4 py-3 text-sm text-muted-foreground sm:table-cell">{{ u.utmCampaign|default:"—" }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ u.visitors|intcomma }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ u.pageviews|intcomma }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm text-muted-foreground">{% trans "No UTM data." %}</p>
+  {% endif %}
+</div>
+
+{# ── Click IDs ──────────────────────────────────────────────── #}
+<div class="mb-6">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Ad Platforms (Click IDs)" %}</h2>
+  {% if clickids_chart_data.labels %}
+  <div class="mb-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <div class="relative h-48 sm:h-64"><canvas id="chart-clickids"></canvas></div>
+    {{ clickids_chart_data|json_script:"clickids-chart-data" }}
+  </div>
+  {% endif %}
+  {% if click_ids %}
+  <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-border">
+      <thead class="bg-muted/50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Platform" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border">
+        {% for c in click_ids %}
+        <tr class="hover:bg-muted/50">
+          <td class="px-4 py-3 text-sm font-medium text-foreground">{{ c.platform }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ c.visitors|intcomma }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ c.pageviews|intcomma }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm text-muted-foreground">{% trans "No ad platform data." %}</p>
+  {% endif %}
+</div>
+
+{# ── Hostnames ──────────────────────────────────────────────── #}
+<div class="mb-6">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Hostnames" %}</h2>
+  {% if hostnames_chart_data.labels %}
+  <div class="mb-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <div class="relative h-48 sm:h-64"><canvas id="chart-hostnames"></canvas></div>
+    {{ hostnames_chart_data|json_script:"hostnames-chart-data" }}
+  </div>
+  {% endif %}
+  {% if hostnames %}
+  <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-border">
+      <thead class="bg-muted/50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Hostname" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+          <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border">
+        {% for h in hostnames %}
+        <tr class="hover:bg-muted/50">
+          <td class="px-4 py-3 text-sm font-medium text-foreground">{{ h.hostname }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ h.visitors|intcomma }}</td>
+          <td class="px-4 py-3 text-right text-sm text-foreground">{{ h.pageviews|intcomma }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm text-muted-foreground">{% trans "No hostname data." %}</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var cEl = document.getElementById('channels-chart-data');
+    if (cEl) initPieChart('chart-channels', JSON.parse(cEl.textContent));
+    var rEl = document.getElementById('referrers-chart-data');
+    if (rEl) initBarChart('chart-referrers', JSON.parse(rEl.textContent));
+
+    var uEl = document.getElementById('utm-chart-data');
+    if (uEl) initBarChart('chart-utm', JSON.parse(uEl.textContent));
+    var ciEl = document.getElementById('clickids-chart-data');
+    if (ciEl) initPieChart('chart-clickids', JSON.parse(ciEl.textContent));
+    var hEl = document.getElementById('hostnames-chart-data');
+    if (hEl) initPieChart('chart-hostnames', JSON.parse(hEl.textContent));
+  })();
+</script>
+{% endblock %}

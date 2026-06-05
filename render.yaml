@@ -1,0 +1,55 @@
+databases:
+  - name: mantecato-db
+    plan: free
+    databaseName: mantecato
+    user: mantecato
+    region: frankfurt
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+services:
+  - type: web
+    name: mantecato
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: "pip install . && python manage.py collectstatic --noinput"
+    startCommand: >-
+      python manage.py migrate --noinput &&
+      python manage.py importumamienv &&
+      { if [ -n "${INIT_ADMIN_PASS:-}" ]; then python manage.py createuser "${INIT_ADMIN_USER:-admin}" --role admin --password "$INIT_ADMIN_PASS" || true; fi; } &&
+      exec gunicorn mantecato.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile - --error-logfile -
+    healthCheckPath: /health/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mantecato-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SETTINGS_MODULE
+        value: mantecato.settings
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: INIT_ADMIN_USER
+        value: admin
+      - key: INIT_ADMIN_PASS
+        sync: false
+      - key: UMAMI_DATABASE_URL
+        sync: false
+      - key: UMAMI_IMPORT_ON_DEPLOY
+        value: "False"
+      - key: UMAMI_IMPORT_MODE
+        value: data
+      - key: UMAMI_IMPORT_ALLOW_CONFIG
+        value: "False"
+      - key: USE_SECURE_PROXY_SSL_HEADER
+        value: "True"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: TIME_ZONE
+        value: "Europe/Rome"

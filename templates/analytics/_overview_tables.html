@@ -1,0 +1,72 @@
+{% load i18n fmt %}
+
+<div class="grid gap-2.5 lg:grid-cols-2">
+
+  {# ── Pages panel (Sections / Pages) ────────────────────── #}
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-sm shadow-sm" data-panel-group>
+    <div class="flex items-center justify-between px-4 pt-3">
+      <div class="flex gap-0 border-b border-border">
+        <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="sections-tab">{% trans "Sections" %}</button>
+        <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="pages-tab">{% trans "Pages" %}</button>
+      </div>
+      <a href="{% url 'analytics_sections' %}?{% view_query %}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+    </div>
+    <div class="panel-content flex-1 p-2" id="sections-tab">
+      {% include "analytics/_tab_sections.html" %}
+    </div>
+    <div class="panel-content hidden flex-1 p-2" id="pages-tab">
+      {% include "analytics/_tab_pages.html" %}
+    </div>
+  </div>
+
+  {# ── Sources panel (Referrers / Channels) ──────────────── #}
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-sm shadow-sm" data-panel-group>
+    <div class="flex items-center justify-between px-4 pt-3">
+      <div class="flex gap-0 border-b border-border">
+        <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="referrers-tab">{% trans "Referrers" %}</button>
+        <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="channels-tab">{% trans "Channels" %}</button>
+      </div>
+      <a href="{% url 'analytics_sources' %}?{% view_query %}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+    </div>
+    <div class="panel-content flex-1 p-2" id="referrers-tab">
+      {% include "analytics/_tab_referrers.html" %}
+    </div>
+    <div class="panel-content hidden flex-1 p-2" id="channels-tab">
+      {% include "analytics/_tab_sources.html" %}
+    </div>
+  </div>
+
+  {# ── Environment panel (Browser / OS / Devices) ────────── #}
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-sm shadow-sm" data-panel-group>
+    <div class="flex items-center justify-between px-4 pt-3">
+      <div class="flex gap-0 border-b border-border">
+        <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="browser-tab">{% trans "Browser" %}</button>
+        <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="os-tab">{% trans "OS" %}</button>
+        <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="devices-tab">{% trans "Devices" %}</button>
+      </div>
+      <a href="{% url 'analytics_devices' %}?{% view_query %}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+    </div>
+    <div class="panel-content flex-1 p-2" id="browser-tab">
+      {% include "analytics/_tab_devices.html" with tab="browser" %}
+    </div>
+    <div class="panel-content hidden flex-1 p-2" id="os-tab">
+      {% include "analytics/_tab_devices.html" with tab="os" %}
+    </div>
+    <div class="panel-content hidden flex-1 p-2" id="devices-tab">
+      {% include "analytics/_tab_devices.html" with tab="device" %}
+    </div>
+  </div>
+
+  {# ── Location panel (Countries) ────────────────────────── #}
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-sm shadow-sm" data-panel-group>
+    <div class="flex items-center justify-between px-4 pt-3">
+      <div class="flex gap-0 border-b border-border">
+        <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="countries-tab">{% trans "Countries" %}</button>
+      </div>
+      <a href="{% url 'analytics_geo' %}?{% view_query %}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+    </div>
+    <div class="panel-content flex-1 p-2" id="countries-tab">
+      {% include "analytics/_tab_geo.html" %}
+    </div>
+  </div>
+</div>

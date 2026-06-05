@@ -1,0 +1,130 @@
+{% load i18n static %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE }}" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% trans "Sign in" %} — Mantecato</title>
+
+  <script>
+    (function () {
+      var t = localStorage.getItem("mantecato-theme");
+      if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+        document.documentElement.classList.add("dark");
+      }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-mono/style.css">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+            mono: ['"Geist Mono"', "ui-monospace", "monospace"],
+          },
+          colors: {
+            background: "oklch(var(--background) / <alpha-value>)",
+            foreground: "oklch(var(--foreground) / <alpha-value>)",
+            card: {
+              DEFAULT: "oklch(var(--card) / <alpha-value>)",
+              foreground: "oklch(var(--card-foreground) / <alpha-value>)",
+            },
+            primary: {
+              DEFAULT: "oklch(var(--primary) / <alpha-value>)",
+              foreground: "oklch(var(--primary-foreground) / <alpha-value>)",
+            },
+            muted: {
+              DEFAULT: "oklch(var(--muted) / <alpha-value>)",
+              foreground: "oklch(var(--muted-foreground) / <alpha-value>)",
+            },
+            destructive: {
+              DEFAULT: "oklch(var(--destructive) / <alpha-value>)",
+              foreground: "oklch(var(--destructive-foreground) / <alpha-value>)",
+            },
+            border: "oklch(var(--border) / <alpha-value>)",
+            input: "oklch(var(--input) / <alpha-value>)",
+            ring: "oklch(var(--ring) / <alpha-value>)",
+          },
+          borderRadius: {
+            sm: "calc(var(--radius) - 4px)",
+            md: "calc(var(--radius) - 2px)",
+            lg: "var(--radius)",
+            xl: "calc(var(--radius) + 4px)",
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="flex h-full items-center justify-center bg-background px-4 font-sans text-foreground antialiased">
+
+  {# Grid backdrop #}
+  <div class="pointer-events-none fixed inset-0 opacity-30"
+       style="background-image: linear-gradient(oklch(var(--border)) 1px, transparent 1px), linear-gradient(90deg, oklch(var(--border)) 1px, transparent 1px); background-size: 40px 40px; -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 75%); mask-image: radial-gradient(circle at center, black 30%, transparent 75%);"></div>
+
+  <div class="relative w-full max-w-sm">
+
+    <div class="mb-6 flex flex-col items-start gap-6">
+      <a href="/" class="flex items-center gap-2.5">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <rect x="2" y="2" width="20" height="20" rx="5" class="fill-primary"/>
+          <path d="M6 17V8L9 8L12 13L15 8L18 8V17" stroke="oklch(var(--primary-foreground))" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <span class="text-lg font-semibold tracking-tight">Mantecato</span>
+      </a>
+      <div>
+        <h1 class="text-[26px] font-medium tracking-tight">{% trans "Sign in to Mantecato" %}</h1>
+        <p class="mt-1.5 text-sm text-muted-foreground">{% trans "Enter your credentials to access your analytics." %}</p>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
+      {% if error %}
+      <div class="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+        {% trans "Invalid username or password." %}
+      </div>
+      {% endif %}
+
+      <form method="post" action="{% url 'login' %}" novalidate class="space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <div>
+          <label for="id_username" class="mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Username" %}</label>
+          <input type="text" id="id_username" name="username"
+                 value="{{ username|default:'' }}" autocomplete="username" required
+                 class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40">
+        </div>
+
+        <div>
+          <label for="id_password" class="mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Password" %}</label>
+          <input type="password" id="id_password" name="password"
+                 autocomplete="current-password" required
+                 class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40">
+        </div>
+
+        <button type="submit"
+                class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring/40">
+          {% trans "Sign in" %} →
+        </button>
+      </form>
+    </div>
+
+    <div class="mt-6 flex gap-4 font-mono text-xs text-muted-foreground">
+      <span>Privacy-first</span><span class="text-border">·</span>
+      <span>Self-hosted</span><span class="text-border">·</span>
+      <span>GDPR-ready</span>
+    </div>
+  </div>
+
+  <script>if (window.lucide) window.lucide.createIcons();</script>
+</body>
+</html>

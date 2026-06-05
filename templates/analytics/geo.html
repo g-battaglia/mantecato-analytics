@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Geo" %}{% endblock %}
+{% block page_title %}{% trans "Geo" %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css" />
+{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+
+{# ── Drill-down breadcrumb ──────────────────────────────────── #}
+{% if country or region %}
+<div class="mb-4 flex items-center gap-2 text-sm">
+  <a href="{% url 'analytics_geo' %}?website={{ selected_website }}&range={{ range_preset }}"
+     class="text-primary hover:underline">{% trans "Countries" %}</a>
+  {% if country and not region %}
+  <span class="text-muted-foreground">/</span>
+  <span class="text-foreground">{{ country }}</span>
+  {% elif country and region %}
+  <span class="text-muted-foreground">/</span>
+  <a href="{% url 'analytics_geo' %}?country={{ country }}&website={{ selected_website }}&range={{ range_preset }}"
+     class="text-primary hover:underline">{{ country }}</a>
+  <span class="text-muted-foreground">/</span>
+  <span class="text-foreground">{{ region }}</span>
+  {% endif %}
+</div>
+{% endif %}
+
+
+{# ── KPI summary cards (country-level only) ─────────────────── #}
+{% if not country and not region and geo_summary %}
+<div class="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Countries" %}</p>
+    <p class="mt-1 text-2xl font-semibold tabular-nums">{{ geo_summary.total_countries }}</p>
+  </div>
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Top Country" %}</p>
+    <p class="mt-1 text-2xl font-semibold">{{ geo_summary.top_country }}</p>
+    <p class="text-xs text-muted-foreground">{{ geo_summary.top_country_pct|floatformat:1 }}% {% trans "of visitors" %}</p>
+  </div>
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Avg Bounce Rate" %}</p>
+    <p class="mt-1 text-2xl font-semibold tabular-nums">{{ geo_summary.avg_bounce_rate|floatformat:1 }}%</p>
+  </div>
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Avg Duration" %}</p>
+    <p class="mt-1 text-2xl font-semibold tabular-nums">{{ geo_summary.avg_duration }}s</p>
+  </div>
+</div>
+{% endif %}
+
+
+{# ── Charts grid (country-level only) ───────────────────────── #}
+{% if not country and not region %}
+<div class="mb-4 grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+
+  {# Leaflet bubble map #}
+  {% if geo_bubble_data %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Visitors by Country" %}</h2>
+    <div id="geo-map" class="h-48 sm:h-64 lg:h-80 rounded-md"></div>
+    {{ geo_bubble_data|json_script:"geo-bubble-data" }}
+  </div>
+  {% endif %}
+
+  {# Country doughnut + mini table #}
+  {% if country_pie_data.labels %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <div class="px-4">
+      <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Top Countries" %}</h2>
+      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-countries"></canvas></div>
+      {{ country_pie_data|json_script:"country-pie-data" }}
+      {% if country_breakdown %}
+      <div class="mt-3 space-y-0">
+        {% for c in country_breakdown %}
+        <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+          <span>{{ c.country }}</span>
+          <div class="flex gap-2 tabular-nums text-right">
+            <span class="font-medium">{{ c.visitors|intcomma }}</span>
+            <span class="w-14 text-muted-foreground">{{ c.pct|floatformat:1 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Top regions bar chart #}
+  {% if regions_bar_data.labels %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Top Regions in" %} {{ top_regions_country }}</h2>
+    <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-regions"></canvas></div>
+    {{ regions_bar_data|json_script:"regions-bar-data" }}
+  </div>
+  {% endif %}
+
+  {# Avg duration by country #}
+  {% if duration_bar_data.labels %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Avg Duration by Country" %}</h2>
+    <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-duration"></canvas></div>
+    {{ duration_bar_data|json_script:"duration-bar-data" }}
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+
+{# ── Detail table ────────────────────────────────────────────── #}
+{% if geo %}
+<div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+  <div class="overflow-x-auto">
+  <table class="min-w-full divide-y divide-border">
+    <thead class="bg-muted/50">
+      <tr>
+        {% if level == "country" or not level %}
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Country" %}</th>
+        {% endif %}
+        {% if level == "region" or level == "city" %}
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Region" %}</th>
+        {% endif %}
+        {% if level == "city" %}
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "City" %}</th>
+        {% endif %}
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "%" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
+        <th class="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Bounce Rate" %}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border">
+      {% for g in geo %}
+      <tr class="hover:bg-muted/50">
+        {% if level == "country" or not level %}
+        <td class="px-4 py-3 text-sm">
+          <a href="?country={{ g.country }}&website={{ selected_website }}&range={{ range_preset }}"
+             class="font-medium text-primary hover:underline">{{ g.country }}</a>
+        </td>
+        {% endif %}
+        {% if level == "region" or level == "city" %}
+        <td class="px-4 py-3 text-sm">
+          {% if level == "region" %}
+          <a href="?country={{ country }}&region={{ g.region }}&website={{ selected_website }}&range={{ range_preset }}"
+             class="font-medium text-primary hover:underline">{{ g.region }}</a>
+          {% else %}
+          <span class="text-foreground">{{ g.region }}</span>
+          {% endif %}
+        </td>
+        {% endif %}
+        {% if level == "city" %}
+        <td class="px-4 py-3 text-sm text-foreground">{{ g.city }}</td>
+        {% endif %}
+        <td class="px-4 py-3 text-right text-sm text-foreground">{{ g.visitors|intcomma }}</td>
+        <td class="px-4 py-3 text-right text-sm text-muted-foreground">{{ g.pct|floatformat:1 }}%</td>
+        <td class="px-4 py-3 text-right text-sm text-foreground">{{ g.pageviews|intcomma }}</td>
+        <td class="hidden px-4 py-3 text-right text-sm text-foreground sm:table-cell">{{ g.bounceRate|floatformat:1 }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="rounded-lg border border-border bg-card p-8 text-center">
+  <p class="text-muted-foreground">{% trans "No geographic data for this period." %}</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>
+<script>
+  (function () {
+    var el = document.getElementById('geo-bubble-data');
+    var container = document.getElementById('geo-map');
+    if (el && container) {
+      var data = JSON.parse(el.textContent);
+      if (data && data.length > 0) {
+        var map = L.map('geo-map').setView([20, 0], 2);
+        var isDark = document.documentElement.classList.contains('dark');
+        L.tileLayer(isDark
+          ? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+          subdomains: 'abcd',
+          maxZoom: 6,
+        }).addTo(map);
+
+        var maxV = Math.max.apply(null, data.map(function (g) { return g.visitors || 0; }));
+        data.forEach(function (g) {
+          var radius = maxV > 0 ? Math.max(4, (g.visitors / maxV) * 20) : 4;
+          L.circleMarker([g.lat, g.lng], {
+            radius: radius,
+            fillColor: '#6366f1',
+            color: '#4f46e5',
+            weight: 1,
+            fillOpacity: 0.7,
+          }).addTo(map).bindPopup('<strong>' + g.country + '</strong><br>' + g.visitors + ' {% trans "visitors" %}');
+        });
+      }
+    }
+
+    var cpEl = document.getElementById('country-pie-data');
+    if (cpEl) initPieChart('chart-countries', JSON.parse(cpEl.textContent));
+
+    var rbEl = document.getElementById('regions-bar-data');
+    if (rbEl) initBarChart('chart-regions', JSON.parse(rbEl.textContent));
+
+    var dbEl = document.getElementById('duration-bar-data');
+    if (dbEl) initBarChart('chart-duration', JSON.parse(dbEl.textContent));
+  })();
+</script>
+{% endblock %}
