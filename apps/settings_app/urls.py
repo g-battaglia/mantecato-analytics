@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.urls import path
 
 from apps.settings_app.views import (
+    AccountView,
     ApiKeyCreateView,
     ApiKeyDeleteView,
     ApiKeyListView,
@@ -15,6 +16,10 @@ from apps.settings_app.views import (
     SiteListView,
     UmamiImportStatusView,
     UmamiImportView,
+    UserCreateView,
+    UserDeleteView,
+    UserEditView,
+    UserListView,
 )
 
 urlpatterns = [
@@ -34,6 +39,19 @@ urlpatterns = [
         name="api_key_delete",
     ),
     path("settings/bot-config/", BotConfigView.as_view(), name="bot_config"),
+    path("settings/users/", UserListView.as_view(), name="user_list"),
+    path("settings/users/create/", UserCreateView.as_view(), name="user_create"),
+    path(
+        "settings/users/<uuid:user_id>/edit/",
+        UserEditView.as_view(),
+        name="user_edit",
+    ),
+    path(
+        "settings/users/<uuid:user_id>/delete/",
+        UserDeleteView.as_view(),
+        name="user_delete",
+    ),
+    path("settings/account/", AccountView.as_view(), name="account"),
     path("settings/import/umami/", UmamiImportView.as_view(), name="umami_import"),
     path(
         "settings/import/umami/status/<uuid:job_id>/",

@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from django.contrib import messages
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
@@ -28,22 +29,32 @@ from apps.common.constants import COUNTRY_CHOICES_SORTED
 from apps.common.forms import (
     ApiKeyForm,
     BotConfigForm,
+    ChangePasswordForm,
     UmamiImportForm,
+    UserCreateForm,
+    UserEditForm,
     WebsiteModelForm,
     first_error,
 )
 from apps.core.models import Website
 from apps.settings_app.services import (
+    UserActionError,
+    change_own_password,
+    create_user_account,
     create_website,
     generate_new_api_key,
+    get_all_users,
     get_api_keys_for_user,
     get_bot_config,
     get_latest_umami_import_job,
     get_umami_import_job,
+    get_user,
     remove_api_key,
     save_bot_config,
+    soft_delete_user,
     soft_delete_website,
     start_umami_import_job,
+    update_user_account,
 )
 
 if TYPE_CHECKING:
@@ -481,6 +492,151 @@ class UmamiImportStatusView(_AdminRequiredMixin, View):
         """Render the progress partial for *job_id* (scoped to the current user)."""
         job = get_umami_import_job(str(job_id), str(request.user.id))
         return render(request, self.template_name, {"job": job})
+
+
+# ============================================================================
+# User management (admin-only CRUD)
+# ============================================================================
+
+
+class UserListView(_AdminRequiredMixin, View):
+    """Render the list of all active users (admin-only)."""
+
+    template_name = "settings/users.html"
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Render the user list page."""
+        return render(request, self.template_name, {"users": get_all_users()})
+
+
+class UserCreateView(_AdminRequiredMixin, View):
+    """Render and process the user-creation form (admin-only)."""
+
+    template_name = "settings/user_form.html"
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Render the empty user creation form."""
+        return render(request, self.template_name, {"action": "create", "form_data": {}})
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Validate and create a new user."""
+        form = UserCreateForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, first_error(form))
+            return render(request, self.template_name, {"action": "create", "form_data": request.POST})
+        try:
+            result = create_user_account(
+                username=form.cleaned_data["username"],
+                role=form.cleaned_data["role"],
+                password=form.cleaned_data["password"],
+            )
+        except UserActionError as exc:
+            messages.error(request, str(exc))
+            return render(request, self.template_name, {"action": "create", "form_data": request.POST})
+        messages.success(request, f"User '{result['username']}' created.")
+        return redirect("user_list")
+
+
+class UserEditView(_AdminRequiredMixin, View):
+    """Render and process the user-edit form (admin-only)."""
+
+    template_name = "settings/user_form.html"
+
+    def get(self, request: HttpRequest, user_id: str, *args: object, **kwargs: object) -> HttpResponse:
+        """Render the edit form pre-filled with the user's data."""
+        user_data = get_user(user_id)
+        if user_data is None:
+            messages.error(request, "User not found.")
+            return redirect("user_list")
+        return render(
+            request,
+            self.template_name,
+            {"action": "edit", "form_data": {}, "target_user": user_data},
+        )
+
+    def post(self, request: HttpRequest, user_id: str, *args: object, **kwargs: object) -> HttpResponse:
+        """Validate and update the user."""
+        form = UserEditForm(request.POST)
+        target_user = get_user(user_id)
+        if target_user is None:
+            messages.error(request, "User not found.")
+            return redirect("user_list")
+        if not form.is_valid():
+            messages.error(request, first_error(form))
+            return render(
+                request,
+                self.template_name,
+                {"action": "edit", "form_data": request.POST, "target_user": target_user},
+            )
+        try:
+            update_user_account(
+                user_id,
+                role=form.cleaned_data["role"],
+                new_password=form.cleaned_data.get("new_password") or None,
+                acting_user_id=str(request.user.id),
+            )
+        except UserActionError as exc:
+            messages.error(request, str(exc))
+            return render(
+                request,
+                self.template_name,
+                {"action": "edit", "form_data": request.POST, "target_user": target_user},
+            )
+        messages.success(request, f"User '{target_user['username']}' updated.")
+        return redirect("user_list")
+
+
+class UserDeleteView(_AdminRequiredMixin, View):
+    """Soft-delete a user (POST-only, admin-only)."""
+
+    def get(self, request: HttpRequest, user_id: str, *args: object, **kwargs: object) -> HttpResponse:
+        """Redirect GET to the list page (deletion is POST-only)."""
+        return redirect("user_list")
+
+    def post(self, request: HttpRequest, user_id: str, *args: object, **kwargs: object) -> HttpResponse:
+        """Soft-delete the user with anti-lockout guards."""
+        try:
+            username = soft_delete_user(user_id, str(request.user.id))
+        except UserActionError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f"User '{username}' deleted.")
+        return redirect("user_list")
+
+
+# ============================================================================
+# Self-service account (all logged-in users)
+# ============================================================================
+
+
+class AccountView(LoginRequiredMixin, View):
+    """Self-service password change (all logged-in users)."""
+
+    template_name = "settings/account.html"
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Render the account/password-change form."""
+        return render(request, self.template_name)
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+        """Validate and change the user's own password."""
+        form = ChangePasswordForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, first_error(form))
+            return render(request, self.template_name)
+        try:
+            change_own_password(
+                request.user,
+                current_password=form.cleaned_data["current_password"],
+                new_password=form.cleaned_data["new_password"],
+            )
+        except UserActionError as exc:
+            messages.error(request, str(exc))
+            return render(request, self.template_name)
+        # Keep the user logged in after password change.
+        update_session_auth_hash(request, request.user)
+        messages.success(request, "Password changed successfully.")
+        return redirect("account")
 
 
 # ============================================================================

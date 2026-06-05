@@ -38,6 +38,11 @@ from apps.core.models import (
     Website,
 )
 
+# Minimum password length enforced across all user-management forms.
+MIN_PASSWORD_LENGTH = 8
+
+ROLE_CHOICES = [("user", "User"), ("admin", "Admin")]
+
 
 def first_error(form: forms.BaseForm) -> str:
     """Return a human-readable summary of a bound form's first error.
@@ -318,6 +323,90 @@ class UmamiImportForm(forms.Form):
             return datetime.strptime(raw, "%Y-%m-%d")  # noqa: DTZ007 — date-only cutoff
         except ValueError as exc:
             raise forms.ValidationError("Invalid date format. Use YYYY-MM-DD.") from exc
+
+
+# ---------------------------------------------------------------------------
+# User management forms (admin CRUD + self-service password change)
+# ---------------------------------------------------------------------------
+
+
+class UserCreateForm(forms.Form):
+    """Validate the admin user-creation form.
+
+    Fields:
+        - ``username`` (CharField, ≤255, required) — unique login identifier.
+        - ``role`` (ChoiceField) — ``"user"`` or ``"admin"``.
+        - ``password`` (CharField, min_length=8) — raw password.
+        - ``password2`` (CharField) — confirmation.
+    """
+
+    username = forms.CharField(max_length=255)
+    role = forms.ChoiceField(choices=ROLE_CHOICES)
+    password = forms.CharField(min_length=MIN_PASSWORD_LENGTH, widget=forms.PasswordInput)
+    password2 = forms.CharField(widget=forms.PasswordInput)
+
+    def clean_username(self) -> str:
+        """Strip and reject blank usernames."""
+        username = (self.cleaned_data.get("username") or "").strip()
+        if not username:
+            raise forms.ValidationError("Username cannot be empty.")
+        return username
+
+    def clean(self) -> dict[str, Any]:
+        """Ensure passwords match."""
+        cleaned = super().clean()
+        pw1 = cleaned.get("password", "")
+        pw2 = cleaned.get("password2", "")
+        if pw1 and pw2 and pw1 != pw2:
+            self.add_error("password2", "Passwords do not match.")
+        return cleaned
+
+
+class UserEditForm(forms.Form):
+    """Validate the admin user-edit form (role + optional password reset).
+
+    Fields:
+        - ``role`` (ChoiceField) — ``"user"`` or ``"admin"``.
+        - ``new_password`` (CharField, optional) — new password (≥ 8 chars).
+        - ``new_password2`` (CharField, optional) — confirmation.
+    """
+
+    role = forms.ChoiceField(choices=ROLE_CHOICES)
+    new_password = forms.CharField(required=False, min_length=MIN_PASSWORD_LENGTH, widget=forms.PasswordInput)
+    new_password2 = forms.CharField(required=False, widget=forms.PasswordInput)
+
+    def clean(self) -> dict[str, Any]:
+        """Validate optional password fields when provided."""
+        cleaned = super().clean()
+        pw1 = cleaned.get("new_password", "")
+        pw2 = cleaned.get("new_password2", "")
+        if pw1 or pw2:
+            if pw1 != pw2:
+                self.add_error("new_password2", "Passwords do not match.")
+        return cleaned
+
+
+class ChangePasswordForm(forms.Form):
+    """Self-service password change form (all logged-in users).
+
+    Fields:
+        - ``current_password`` (CharField) — verified by the service layer.
+        - ``new_password`` (CharField, min_length=8).
+        - ``new_password2`` (CharField) — confirmation.
+    """
+
+    current_password = forms.CharField(widget=forms.PasswordInput)
+    new_password = forms.CharField(min_length=MIN_PASSWORD_LENGTH, widget=forms.PasswordInput)
+    new_password2 = forms.CharField(widget=forms.PasswordInput)
+
+    def clean(self) -> dict[str, Any]:
+        """Ensure new passwords match."""
+        cleaned = super().clean()
+        pw1 = cleaned.get("new_password", "")
+        pw2 = cleaned.get("new_password2", "")
+        if pw1 and pw2 and pw1 != pw2:
+            self.add_error("new_password2", "Passwords do not match.")
+        return cleaned
 
 
 # ---------------------------------------------------------------------------

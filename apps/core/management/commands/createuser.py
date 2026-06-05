@@ -27,7 +27,7 @@ class Command(BaseCommand):
     help = "Create a Mantecato user account."
 
     def add_arguments(self, parser):
-        """Register the ``username``, ``--role``, and ``--password`` arguments.
+        """Register the ``username``, ``--role``, ``--password`` arguments.
 
         Args:
             parser: The :class:`~argparse.ArgumentParser` to configure.
@@ -43,6 +43,12 @@ class Command(BaseCommand):
             "--password",
             help="Password (will prompt interactively if omitted).",
         )
+        parser.add_argument(
+            "--password-is-default",
+            action="store_true",
+            default=False,
+            help="Mark this user's password as the initial/default one (triggers UI warning).",
+        )
 
     def handle(self, *args, **options):
         """Validate inputs and create the user.
@@ -54,6 +60,7 @@ class Command(BaseCommand):
         username: str = options["username"].strip()
         role: str = options["role"]
         password: str | None = options["password"]
+        password_is_default: bool = options["password_is_default"]
 
         if not username:
             raise CommandError("Username cannot be empty.")
@@ -71,5 +78,8 @@ class Command(BaseCommand):
         if len(password) < 4:
             raise CommandError("Password must be at least 4 characters.")
 
-        MantecatoUser.objects.create_user(username=username, password=password, role=role)
+        user = MantecatoUser.objects.create_user(username=username, password=password, role=role)
+        if password_is_default:
+            user.password_is_default = True
+            user.save(update_fields=["password_is_default", "updated_at"])
         self.stdout.write(self.style.SUCCESS(f"User '{username}' created (role={role})."))

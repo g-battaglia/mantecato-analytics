@@ -230,6 +230,17 @@
         </div>
       </header>
 
+      {# Default password warning banner #}
+      {% if user.is_authenticated and user.password_is_default %}
+      {% url 'account' as account_url %}
+      <div class="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 sm:px-6">
+        <i data-lucide="alert-triangle" class="size-4 shrink-0 text-amber-600 dark:text-amber-400"></i>
+        <span class="text-sm text-amber-600 dark:text-amber-400">
+          {% blocktrans with change_url=account_url %}You are still using the default password. <a href="{{ change_url }}" class="font-medium underline hover:no-underline">Change it now</a>.{% endblocktrans %}
+        </span>
+      </div>
+      {% endif %}
+
       {# Django messages #}
       {% if messages %}
       <div class="px-4 pt-3 sm:px-6">

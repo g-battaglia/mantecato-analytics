@@ -7,7 +7,7 @@
 {% block content %}
 <div class="mb-5">
   <h2 class="text-xl font-medium tracking-tight text-foreground">{% trans "Settings" %}</h2>
-  <p class="mt-1 text-[13px] text-muted-foreground">{% trans "Manage API keys and bot detection." %}</p>
+  <p class="mt-1 text-[13px] text-muted-foreground">{% trans "Manage API keys, users, and bot detection." %}</p>
 </div>
 
 <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -48,6 +48,18 @@
   </a>
 
   {% if user.is_staff %}
+  <a href="{% url 'user_list' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="users" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Users" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Manage user accounts and roles." %}</p>
+    </div>
+  </a>
+
   <a href="{% url 'umami_import' %}"
      class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
     <div class="flex items-center justify-between">
@@ -60,6 +72,18 @@
     </div>
   </a>
   {% endif %}
+
+  <a href="{% url 'account' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="user" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Account" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Change your password." %}</p>
+    </div>
+  </a>
 
 </div>
 {% endblock %}

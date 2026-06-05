@@ -20,16 +20,29 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 
+from django.contrib.auth.hashers import check_password
+from django.utils import timezone
+
 from apps.core.api_keys import generate_key, hash_key
 from apps.core.models import (
     ApiKey,
     BotConfig,
+    MantecatoUser,
     ScheduledExport,
     UmamiImportJob,
     Website,
     merge_bot_config,
 )
 from apps.core.services import run_umami_import_job
+
+
+class UserActionError(Exception):
+    """Raised when a user-management operation violates a business rule."""
+
+
+def _active_admin_count() -> int:
+    """Return the number of active (non-deleted) admin users."""
+    return MantecatoUser.objects.filter(role="admin", deleted_at__isnull=True).count()
 
 if TYPE_CHECKING:
     from typing import Any
@@ -368,3 +381,158 @@ def get_umami_import_job(job_id: str, user_id: str) -> UmamiImportJob | None:
 def get_latest_umami_import_job(user_id: str) -> UmamiImportJob | None:
     """Return the user's most recently created import job, or ``None``."""
     return UmamiImportJob.objects.filter(user_id=user_id).order_by("-created_at").first()
+
+
+# ---------------------------------------------------------------------------
+# User management (admin CRUD + self-service password change)
+# ---------------------------------------------------------------------------
+
+
+def get_all_users() -> list[dict[str, Any]]:
+    """Return all active (non-deleted) users ordered by username.
+
+    Returns:
+        A list of dicts with ``id``, ``username``, ``role``, ``is_admin``,
+        ``last_login``, ``created_at`` keys.
+    """
+    users = MantecatoUser.objects.filter(deleted_at__isnull=True).order_by("username")
+    return [
+        {
+            "id": str(u.id),
+            "username": u.username,
+            "role": u.role,
+            "is_admin": u.role == "admin",
+            "last_login": u.last_login.isoformat() if u.last_login else None,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "password_is_default": u.password_is_default,
+        }
+        for u in users
+    ]
+
+
+def get_user(user_id: str) -> dict[str, Any] | None:
+    """Return a single active user by id, or ``None``.
+
+    Args:
+        user_id: UUID string of the user.
+
+    Returns:
+        A dict with ``id``, ``username``, ``role``, ``is_admin`` keys.
+    """
+    user = MantecatoUser.objects.filter(id=user_id, deleted_at__isnull=True).first()
+    if user is None:
+        return None
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "role": user.role,
+        "is_admin": user.role == "admin",
+        "password_is_default": user.password_is_default,
+    }
+
+
+def create_user_account(username: str, role: str, password: str) -> dict[str, Any]:
+    """Create a new user account.
+
+    Args:
+        username: Unique login identifier.
+        role: ``"user"`` or ``"admin"``.
+        password: Raw password string.
+
+    Returns:
+        A dict with ``id``, ``username``, ``role`` keys.
+
+    Raises:
+        UserActionError: If the username is already taken by an active user.
+    """
+    if MantecatoUser.objects.filter(username=username, deleted_at__isnull=True).exists():
+        raise UserActionError(f"User '{username}' already exists.")
+    user = MantecatoUser.objects.create_user(username=username, password=password, role=role)
+    return {"id": str(user.id), "username": user.username, "role": user.role}
+
+
+def update_user_account(
+    user_id: str,
+    *,
+    role: str | None = None,
+    new_password: str | None = None,
+    acting_user_id: str,
+) -> None:
+    """Update a user's role and/or password.
+
+    Applies **anti-lockout guards**: cannot demote the last active admin.
+
+    Args:
+        user_id: UUID string of the user to update.
+        role: New role (``"user"`` or ``"admin"``), or ``None`` to keep.
+        new_password: New raw password, or ``None`` to keep.
+        acting_user_id: UUID string of the admin performing the action.
+
+    Raises:
+        UserActionError: On duplicate username or last-admin demotion.
+    """
+    user = MantecatoUser.objects.filter(id=user_id, deleted_at__isnull=True).first()
+    if user is None:
+        raise UserActionError("User not found.")
+
+    if role is not None and role != user.role:
+        # Demoting from admin to user: check last-admin guard.
+        if user.role == "admin" and role == "user" and _active_admin_count() <= 1:
+            raise UserActionError("Cannot demote the last admin.")
+        user.role = role
+
+    if new_password:
+        user.set_password(new_password)
+        user.password_is_default = False
+
+    user.save(update_fields=["role", "password", "password_is_default", "updated_at"])
+
+
+def soft_delete_user(user_id: str, acting_user_id: str) -> str:
+    """Soft-delete a user by setting ``deleted_at``.
+
+    Applies **anti-lockout guards**: cannot delete self or the last admin.
+
+    Args:
+        user_id: UUID string of the user to delete.
+        acting_user_id: UUID string of the admin performing the action.
+
+    Returns:
+        The deleted user's username (for flash messages).
+
+    Raises:
+        UserActionError: On self-delete or last-admin deletion.
+    """
+    if user_id == acting_user_id:
+        raise UserActionError("You cannot delete your own account.")
+
+    user = MantecatoUser.objects.filter(id=user_id, deleted_at__isnull=True).first()
+    if user is None:
+        raise UserActionError("User not found.")
+
+    if user.role == "admin" and _active_admin_count() <= 1:
+        raise UserActionError("Cannot delete the last admin.")
+
+    user.deleted_at = timezone.now()
+    user.save(update_fields=["deleted_at", "updated_at"])
+    return user.username
+
+
+def change_own_password(user: MantecatoUser, current_password: str, new_password: str) -> None:
+    """Change the password for the given user after verifying the current one.
+
+    Also clears the ``password_is_default`` flag.
+
+    Args:
+        user: The authenticated ``MantecatoUser`` instance.
+        current_password: The current password for verification.
+        new_password: The new raw password.
+
+    Raises:
+        UserActionError: If the current password is incorrect.
+    """
+    if not check_password(current_password, user.password):
+        raise UserActionError("Current password is incorrect.")
+    user.set_password(new_password)
+    user.password_is_default = False
+    user.save(update_fields=["password", "password_is_default", "updated_at"])

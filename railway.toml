@@ -27,7 +27,7 @@ watchPatterns = [
 # Ideale per: migrazioni + hook umami (inerte di default) + bootstrap admin opzionale.
 # migrate qui (non nello startCommand) => nessuna race su repliche multiple e
 # deploy atomico: se migrate fallisce, Railway non promuove la nuova versione.
-preDeployCommand = "uv run python manage.py migrate --noinput && uv run python manage.py importumamienv && { if [ -n \"${INIT_ADMIN_PASS:-}\" ]; then uv run python manage.py createuser \"${INIT_ADMIN_USER:-admin}\" --role admin --password \"$INIT_ADMIN_PASS\" || true; fi; }"
+preDeployCommand = "uv run python manage.py migrate --noinput && uv run python manage.py importumamienv && { if [ -n \"${INIT_ADMIN_PASS:-}\" ]; then uv run python manage.py createuser \"${INIT_ADMIN_USER:-admin}\" --role admin --password \"$INIT_ADMIN_PASS\" --password-is-default || true; fi; }"
 # Railway inietta $PORT; gunicorn deve ascoltare su 0.0.0.0:$PORT.
 startCommand = "uv run gunicorn mantecato.wsgi:application --bind 0.0.0.0:$PORT --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --access-logfile - --error-logfile -"
 # /health/ esegue SELECT 1 sul DB: timeout generoso per il primo boot del Postgres.

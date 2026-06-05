@@ -17,7 +17,7 @@ services:
     startCommand: >-
       python manage.py migrate --noinput &&
       python manage.py importumamienv &&
-      { if [ -n "${INIT_ADMIN_PASS:-}" ]; then python manage.py createuser "${INIT_ADMIN_USER:-admin}" --role admin --password "$INIT_ADMIN_PASS" || true; fi; } &&
+      { if [ -n "${INIT_ADMIN_PASS:-}" ]; then python manage.py createuser "${INIT_ADMIN_USER:-admin}" --role admin --password "$INIT_ADMIN_PASS" --password-is-default || true; fi; } &&
       exec gunicorn mantecato.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile - --error-logfile -
     healthCheckPath: /health/
     envVars:
