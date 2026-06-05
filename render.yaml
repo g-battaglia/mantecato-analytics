@@ -32,7 +32,7 @@ services:
       - key: DJANGO_SETTINGS_MODULE
         value: mantecato.settings
       - key: ALLOWED_HOSTS
-        value: ".onrender.com"
+        value: "*"
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
       - key: INIT_ADMIN_USER

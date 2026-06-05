@@ -27,7 +27,6 @@ from dotenv import load_dotenv
 from mantecato.config import (
     BASE_DIR,
     get_database_url,
-    get_production_hosts,
     get_secret_key,
     require_database_url,
     validate_database_host,
@@ -123,9 +122,12 @@ DEBUG = _env_bool("DEBUG", default=True)
 
 SECRET_KEY = get_secret_key()
 
-# ALLOWED_HOSTS precedence: explicit env var > PRODUCTION_HOSTS > localhost fallback.
-_configured_hosts = _env_list("ALLOWED_HOSTS") or list(get_production_hosts())
-ALLOWED_HOSTS = _configured_hosts or ["localhost", "127.0.0.1"]
+# ALLOWED_HOSTS: open ("*") by default so a fresh deploy works without
+# host configuration. Set the ALLOWED_HOSTS env var (comma-separated) to
+# restrict. Note: "*" disables Django's Host-header validation; same-origin
+# POSTs still work (Django matches Origin against the request host) — only
+# cross-origin requests need CSRF_TRUSTED_ORIGINS (see below).
+ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS") or ["*"]
 
 # ============================================================================
 # 3. Installed apps and middleware
