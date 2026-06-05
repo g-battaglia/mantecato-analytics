@@ -21,6 +21,13 @@ What the config does:
 > the database or the environment variables. Those live on the Railway side (dashboard / CLI) and,
 > for a reusable template, are baked into the template itself (see below).
 
+> **Why Railpack and not the Dockerfile?** Railway automatically builds with a
+> root file named `Dockerfile` and ignores the `builder` setting. To keep Railway
+> on **Railpack**, the image used for Docker self-hosting is named
+> [`Dockerfile.standalone`](../Dockerfile.standalone) — Railway does not
+> auto-detect that name, so `railway.toml`'s `builder = "RAILPACK"` takes effect.
+> Docker Compose (`docker compose up`) is unaffected.
+
 ---
 
 ## A. Environment variables

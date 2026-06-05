@@ -4,6 +4,9 @@
 
 [build]
 builder = "RAILPACK"
+# Il Dockerfile di self-hosting è rinominato `Dockerfile.standalone` di proposito:
+# Railway userebbe in automatico un file chiamato esattamente `Dockerfile`,
+# scavalcando questo `builder = "RAILPACK"`. Con l'altro nome, Railpack ha effetto.
 # Railpack rileva uv.lock + pyproject.toml + manage.py ed esegue `uv sync`.
 # Non esegue collectstatic da solo: lo facciamo qui, sul sorgente completo.
 buildCommand = "uv run python manage.py collectstatic --noinput"

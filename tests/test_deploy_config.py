@@ -11,13 +11,13 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_dockerfile_exists_and_uses_gunicorn() -> None:
-    dockerfile = (ROOT / "Dockerfile").read_text()
+    dockerfile = (ROOT / "Dockerfile.standalone").read_text()
     assert "gunicorn mantecato.wsgi:application" in dockerfile
     assert "collectstatic --noinput" in dockerfile
 
 
 def test_docker_configs_run_migrations() -> None:
-    dockerfile = (ROOT / "Dockerfile").read_text()
+    dockerfile = (ROOT / "Dockerfile.standalone").read_text()
     assert "manage.py migrate" in dockerfile
     assert "makemigrations" not in dockerfile
 
