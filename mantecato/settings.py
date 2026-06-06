@@ -218,7 +218,10 @@ WSGI_APPLICATION = "mantecato.wsgi.application"
 
 DATABASE_URL = get_database_url(debug=DEBUG)
 # Refuse the silent SQLite fallback in production: Mantecato is PostgreSQL-only.
-require_database_url(DATABASE_URL, debug=DEBUG)
+# Skip during build-time commands (collectstatic) that don't need a database.
+_is_build_command = len(os.sys.argv) > 1 and os.sys.argv[1] in ("collectstatic", "help", "version")
+if not _is_build_command:
+    require_database_url(DATABASE_URL, debug=DEBUG)
 if DATABASE_URL:
     validate_database_host(DATABASE_URL, DEBUG)
 
