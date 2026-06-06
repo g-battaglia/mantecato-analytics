@@ -125,7 +125,7 @@ def get_overview_data(
         "os_data": device_breakdown["os"],
         "device_data": device_breakdown["device"],
         "country": country_data,
-        "geo": get_geo_metrics(website_id, start, end, level="country", limit=50, filters=filters),
+        "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
         "realtime": get_active_pageviews(website_id),
         "recent_events": get_recent_pageviews(website_id),
         "current_pages": get_current_pages(website_id),
@@ -385,7 +385,7 @@ def get_overview_tab_geo(website_id: str, date_range: DateRange, filters: list[F
     _add_percentage(country, "pageviews")
     return {
         "country": country,
-        "geo": get_geo_metrics(website_id, start, end, level="country", limit=50, filters=filters),
+        "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
     }
 
 def get_overview_tab_sources(*args: Any, **kwargs: Any) -> dict[str, Any]:
