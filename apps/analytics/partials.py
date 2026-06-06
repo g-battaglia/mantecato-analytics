@@ -71,6 +71,7 @@ from apps.analytics.services import (
 from apps.common.mixins import (
     DateRangeMixin,
     FiltersMixin,
+    GranularityMixin,
     WebsiteContextMixin,
 )
 from core.mantecato_core.queries.filter_values import get_filter_values
@@ -90,6 +91,7 @@ class _HtmxPartialBase(
     LoginRequiredMixin,
     WebsiteContextMixin,
     DateRangeMixin,
+    GranularityMixin,
     FiltersMixin,
     View,
 ):
@@ -280,7 +282,7 @@ class EventPropertiesView(_HtmxPartialBase):
     required_param = "event_name"
 
     def get_partial_data(self, request: HttpRequest, param_value: str | None) -> dict:
-        return get_event_properties_data(self.website_id, param_value, self.date_range)
+        return get_event_properties_data(self.website_id, param_value, self.date_range, granularity=self.granularity)
 
 
 class EngagementBucketDetailView(_HtmxPartialBase):

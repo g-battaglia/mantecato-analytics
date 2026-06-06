@@ -48,6 +48,10 @@ from core.mantecato_core.date_utils import (
     DateRange,
     get_comparison_range,
     resolve_date_range,
+    resolve_granularity,
+)
+from core.mantecato_core.date_utils import (
+    VALID_GRANULARITIES,
 )
 from core.mantecato_core.filters import Filter, parse_filters_from_params
 
@@ -298,6 +302,53 @@ class DateRangeMixin:
                 self.date_range.start_date - shift,
                 self.date_range.end_date - shift,
             )
+
+
+class GranularityMixin:
+    """Resolve the time-bucket granularity from ``?granularity=``.
+
+    After :meth:`setup` the following attributes are available:
+
+    Attributes:
+        granularity (str): the raw granularity string from the query string.
+            One of ``"auto"``, ``"minute"``, ``"hour"``, ``"day"``,
+            ``"week"``, ``"month"``.  Defaults to ``"auto"``.
+        resolved_granularity (str | None): the concrete bucket size after
+            resolving ``"auto"`` via :func:`~core.mantecato_core.date_utils.resolve_granularity`.
+            ``None`` when ``date_range`` is not available.
+
+    This mixin must appear **after** :class:`DateRangeMixin` in the MRO
+    because it reads ``self.date_range`` set by that mixin.
+
+    Cross-refs:
+        - :func:`core.mantecato_core.date_utils.resolve_granularity`
+        - :data:`core.mantecato_core.date_utils.VALID_GRANULARITIES`
+    """
+
+    def setup(self, request: HttpRequest, *args: object, **kwargs: object) -> None:
+        """Parse the granularity query parameter.
+
+        Resolution order:
+            1. ``?granularity=`` with a valid value (``"day"``, ``"month"``, ...).
+            2. ``?granularity=auto`` (default) -- resolved via
+               :func:`resolve_granularity` based on the date-range span.
+            3. Invalid values silently fall back to ``"auto"``.
+
+        Args:
+            request: The incoming HTTP request.
+            *args: Positional URL arguments.
+            **kwargs: URL keyword arguments.
+        """
+        super().setup(request, *args, **kwargs)
+        raw = request.GET.get("granularity", "auto")
+        if raw != "auto" and raw not in VALID_GRANULARITIES:
+            raw = "auto"
+        self.granularity: str = raw
+        date_range = getattr(self, "date_range", None)
+        if date_range is not None:
+            self.resolved_granularity: str | None = resolve_granularity(raw, date_range)
+        else:
+            self.resolved_granularity = None
 
 
 class FiltersMixin:
@@ -573,6 +624,7 @@ class BaseContextMixin:
         # user is viewing when ``range_offset`` > 0.
         ctx.setdefault("range_offset", getattr(self, "range_offset", 0))
         ctx.setdefault("current_range", getattr(self, "date_range", None))
+        ctx.setdefault("granularity", getattr(self, "granularity", "auto"))
         return ctx
 
 

@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from core.mantecato_core.date_utils import (
     DateRange,
-    get_auto_granularity,
     get_comparison_range,
+    resolve_granularity,
 )
 
 if TYPE_CHECKING:
@@ -231,6 +231,8 @@ def get_overview_data(
     website_id: str,
     date_range: DateRange,
     filters: list[Filter] | None = None,
+    *,
+    granularity: str = "auto",
 ) -> dict[str, Any]:
     """Execute all read-only queries needed by the main overview/dashboard page.
 
@@ -271,7 +273,7 @@ def get_overview_data(
     filters = filters or []
     start = date_range.start_date
     end = date_range.end_date
-    granularity = get_auto_granularity(date_range)
+    granularity = resolve_granularity(granularity, date_range)
     prev_range = get_comparison_range(date_range, "previous_period")
 
     # Current + previous period in one round trip each (byte-identical to
@@ -686,6 +688,8 @@ def get_events_data(
     website_id: str,
     date_range: DateRange,
     filters: list[Filter] | None = None,
+    *,
+    granularity: str = "auto",
 ) -> dict[str, Any]:
     """Fetch custom-event analytics for the Events page.
 
@@ -720,7 +724,7 @@ def get_events_data(
     events = get_event_metrics(website_id, start, end, limit=100, filters=filters)
     _add_percentage(events, "count")
 
-    granularity = get_auto_granularity(date_range)
+    granularity = resolve_granularity(granularity, date_range)
     # Fetch the top-5 event series in one query instead of a per-event loop.
     top_names = [ev["eventName"] for ev in events[:5]]
     ts_by_event = get_event_time_series_multi(
@@ -924,6 +928,8 @@ def get_compare_data(
     date_range: DateRange,
     filters: list[Filter] | None = None,
     comparison_mode: str = "previous_period",
+    *,
+    granularity: str = "auto",
 ) -> dict[str, Any]:
     """Compute current-vs-previous period comparison for the Compare page.
 
@@ -978,7 +984,7 @@ def get_compare_data(
         zero_stats = {"pageviews": 0, "visitors": 0, "visits": 0, "bounces": 0, "totaltime": 0}
         stats = _stats_with_change(zero_stats, zero_stats)
 
-    granularity = get_auto_granularity(date_range)
+    granularity = resolve_granularity(granularity, date_range)
     current_ts = get_pageview_time_series(website_id, start, end, granularity, filters=filters)
     previous_ts = get_pageview_time_series(
         website_id,
@@ -1159,6 +1165,8 @@ def get_journeys_data(
 def get_revenue_data(
     website_id: str,
     date_range: DateRange,
+    *,
+    granularity: str = "auto",
 ) -> dict[str, Any]:
     """Fetch revenue analytics data for the Revenue page.
 
@@ -1182,7 +1190,7 @@ def get_revenue_data(
     """
     start = date_range.start_date
     end = date_range.end_date
-    granularity = get_auto_granularity(date_range)
+    granularity = resolve_granularity(granularity, date_range)
 
     summary = get_revenue_summary(website_id, start, end)
     time_series = get_revenue_time_series(website_id, start, end, granularity)
@@ -1318,6 +1326,8 @@ def get_event_properties_data(
     website_id: str,
     event_name: str,
     date_range: DateRange,
+    *,
+    granularity: str = "auto",
 ) -> dict[str, Any]:
     """Fetch property breakdowns and time-series data for a single event type.
 
@@ -1346,7 +1356,7 @@ def get_event_properties_data(
         date_range.start_date,
         date_range.end_date,
     )
-    granularity = get_auto_granularity(date_range)
+    granularity = resolve_granularity(granularity, date_range)
     ts = get_event_time_series(
         website_id,
         event_name,

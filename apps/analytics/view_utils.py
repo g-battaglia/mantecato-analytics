@@ -42,6 +42,7 @@ from apps.common.mixins import (
     BaseContextMixin,
     DateRangeMixin,
     FiltersMixin,
+    GranularityMixin,
     WebsiteContextMixin,
 )
 
@@ -127,6 +128,7 @@ class AnalyticsBase(
     LoginRequiredMixin,
     WebsiteContextMixin,
     DateRangeMixin,
+    GranularityMixin,
     FiltersMixin,
     BaseContextMixin,
     TemplateView,

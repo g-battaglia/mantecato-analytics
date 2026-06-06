@@ -63,6 +63,7 @@ from apps.common.mixins import (
     ApiWriteMixin,
     DateRangeMixin,
     FiltersMixin,
+    GranularityMixin,
     WebsiteContextMixin,
 )
 from apps.dashboards.services import (
@@ -192,7 +193,7 @@ class SitesListView(ApiAuthMixin, JSONView):
 # ============================================================================
 
 
-class _AnalyticsJSONView(ApiAuthMixin, WebsiteContextMixin, DateRangeMixin, FiltersMixin, JSONView):
+class _AnalyticsJSONView(ApiAuthMixin, WebsiteContextMixin, DateRangeMixin, GranularityMixin, FiltersMixin, JSONView):
     """Base for analytics ``GET`` endpoints needing website + date range.
 
     Subclasses define:

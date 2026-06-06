@@ -336,6 +336,16 @@
         });
       }
 
+      // Granularity selector (group by: auto / minute / hour / day / week / month)
+      var granularitySelector = document.getElementById("granularity-selector");
+      if (granularitySelector) {
+        granularitySelector.addEventListener("change", function () {
+          var u = new URL(window.location.href);
+          u.searchParams.set("granularity", this.value);
+          window.location.href = u.toString();
+        });
+      }
+
       // Panel tabs (client-side tab switching)
       document.addEventListener("click", function (e) {
         var btn = e.target.closest(".panel-tab");

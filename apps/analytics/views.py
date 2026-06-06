@@ -93,7 +93,7 @@ class OverviewView(AnalyticsBase):
     template_name = "analytics/overview.html"
 
     def get_service_data(self) -> dict:
-        data = get_overview_data(self.website_id, self.date_range, self.filters)
+        data = get_overview_data(self.website_id, self.date_range, self.filters, granularity=self.granularity)
         return {
             "stats": data["stats"],
             "timeseries_data": build_timeseries_chart_data(
@@ -182,7 +182,7 @@ class EventsView(AnalyticsBase):
     template_name = "analytics/events.html"
 
     def get_service_data(self) -> dict:
-        data = get_events_data(self.website_id, self.date_range, self.filters)
+        data = get_events_data(self.website_id, self.date_range, self.filters, granularity=self.granularity)
         # Events list is reused by three chart builders, so extract once
         events = data.get("events", [])
         return {
@@ -268,6 +268,7 @@ class CompareView(AnalyticsBase):
             self.date_range,
             self.filters,
             comparison_mode=mode,
+            granularity=self.granularity,
         )
         return {
             # build_comparison_chart_data takes two separate lists (current + previous),
@@ -357,7 +358,7 @@ class RevenueView(AnalyticsBase):
     _charts = [ChartMapping("country_chart_data", build_revenue_country_chart_data, "by_country")]
 
     def _call_service(self) -> dict:
-        return get_revenue_data(self.website_id, self.date_range)
+        return get_revenue_data(self.website_id, self.date_range, granularity=self.granularity)
 
 
 class EngagementView(AnalyticsBase):

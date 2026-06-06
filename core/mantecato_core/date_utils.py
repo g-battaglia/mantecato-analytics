@@ -11,6 +11,11 @@ from typing import Literal
 DateRangePreset = str
 Granularity = str
 
+# Accepted values for the ``?granularity=`` query parameter.  ``"auto"`` is
+# also accepted (resolved per-range by :func:`resolve_granularity`) but is
+# deliberately excluded here because it is not a concrete bucket size.
+VALID_GRANULARITIES: frozenset[str] = frozenset({"minute", "hour", "day", "week", "month"})
+
 
 def _now() -> datetime:
     """Return the current moment in UTC.
