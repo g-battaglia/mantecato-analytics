@@ -1,0 +1,12 @@
+{% load i18n fmt %}
+<div class="mt-2 rounded-lg border border-border bg-muted/30 p-4">
+  <h3 class="mb-2 text-sm font-medium text-foreground">{% trans "Pages in" %} <code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ section }}</code></h3>
+  {% for p in pages %}
+  <div class="flex items-center justify-between py-1 text-sm">
+    <span class="truncate font-mono text-foreground" title="{{ p.urlPath }}">{{ p.urlPath }}</span>
+    <span class="ml-2 shrink-0 tabular-nums text-muted-foreground">{{ p.views|intcomma }} {% trans "views" %}</span>
+  </div>
+  {% empty %}
+  <p class="text-xs text-muted-foreground">{% trans "No pages found." %}</p>
+  {% endfor %}
+</div>

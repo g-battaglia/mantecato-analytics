@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Settings" %}{% endblock %}
+{% block page_title %}{% trans "Settings" %}{% endblock %}
+
+{% block content %}
+<div class="mb-5">
+  <h2 class="text-xl font-medium tracking-tight text-foreground">{% trans "Settings" %}</h2>
+  <p class="mt-1 text-[13px] text-muted-foreground">{% trans "Manage API keys, users, and bot detection." %}</p>
+</div>
+
+<div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+  <a href="{% url 'site_list' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="database" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Sites" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Add and manage tracked websites." %}</p>
+    </div>
+  </a>
+
+  <a href="{% url 'api_key_list' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="key" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "API Keys" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Manage API keys for CLI and MCP access." %}</p>
+    </div>
+  </a>
+
+  <a href="{% url 'bot_config' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="bot" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Bot Config" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Configure bot detection rules." %}</p>
+    </div>
+  </a>
+
+  {% if user.is_staff %}
+  <a href="{% url 'user_list' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="users" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Users" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Manage user accounts and roles." %}</p>
+    </div>
+  </a>
+
+  <a href="{% url 'umami_import' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="download" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Import from Umami" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Import analytics data from an Umami database." %}</p>
+    </div>
+  </a>
+  {% endif %}
+
+  <a href="{% url 'account' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="user" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "Account" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Change your password." %}</p>
+    </div>
+  </a>
+
+</div>
+{% endblock %}

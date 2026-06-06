@@ -1,0 +1,31 @@
+{% load i18n %}
+
+<div class="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+  {% for key, card in stats.items %}
+  <div class="flex flex-col gap-2 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+    <div class="flex items-center justify-between">
+      <p class="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {% if key == "pageviews" %}{% trans "Pageviews" %}
+        {% elif key == "visitors" %}{% trans "Visitors" %}
+        {% elif key == "visits" %}{% trans "Visits" %}
+        {% elif key == "bounce_rate" %}{% trans "Bounce Rate" %}
+        {% elif key == "avg_duration" %}{% trans "Avg Duration" %}
+        {% elif key == "pages_per_visit" %}{% trans "Pages / Visit" %}
+        {% endif %}
+      </p>
+      {% if card.change %}
+      <span class="flex items-center gap-0.5 font-mono text-[11px] font-medium
+                   {% if key == 'bounce_rate' %}{% if card.change.trend == 'up' %}text-red-500{% elif card.change.trend == 'down' %}text-green-500{% else %}text-muted-foreground{% endif %}{% else %}{% if card.change.trend == 'up' %}text-green-500{% elif card.change.trend == 'down' %}text-red-500{% else %}text-muted-foreground{% endif %}{% endif %}">
+        {% if card.change.trend == 'up' %}<i data-lucide="trending-up" class="size-3"></i>
+        {% elif card.change.trend == 'down' %}<i data-lucide="trending-down" class="size-3"></i>
+        {% else %}<i data-lucide="minus" class="size-3"></i>{% endif %}
+        {{ card.change.value }}
+      </span>
+      {% endif %}
+    </div>
+    <div class="text-[28px] font-medium leading-none tracking-tight tabular-nums">
+      {% if key == "bounce_rate" %}{{ card.value }}%{% else %}{{ card.value }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>

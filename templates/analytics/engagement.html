@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Engagement" %}{% endblock %}
+{% block page_title %}{% trans "Engagement" %}{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+{# ── Percentile cards (always visible) ─────────────────────── #}
+{% if percentiles %}
+<div class="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Median" %}</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ percentiles.median|floatformat:0 }}s</p>
+  </div>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">P75</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ percentiles.p75|floatformat:0 }}s</p>
+  </div>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">P90</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ percentiles.p90|floatformat:0 }}s</p>
+  </div>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">P95</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ percentiles.p95|floatformat:0 }}s</p>
+  </div>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visits" %}</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ percentiles.totalVisits|intcomma }}</p>
+  </div>
+</div>
+{% endif %}
+
+{# ── Tab bar ───────────────────────────────────────────────── #}
+<div class="mb-4 flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm" data-panel-group>
+  <div class="flex items-center border-b border-border px-4 pt-3">
+    <div class="flex gap-0 border-b border-border">
+      <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="eng-overview">{% trans "Overview" %}</button>
+      <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="eng-duration">{% trans "Duration" %}</button>
+      <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="eng-bounce">{% trans "Bounce" %}</button>
+      <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="eng-heatmap">{% trans "Heatmap" %}</button>
+    </div>
+  </div>
+
+  {# ── Tab: Overview ─────────────────────────────────────────── #}
+  <div class="panel-content p-4" id="eng-overview">
+    <h2 class="mb-3 text-sm font-medium">{% trans "Visit Duration Distribution" %}</h2>
+    <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-distribution"></canvas></div>
+    {{ distribution_chart_data|json_script:"distribution-chart-data" }}
+    <div id="bucket-detail"></div>
+  </div>
+
+  {# ── Tab: Duration ─────────────────────────────────────────── #}
+  <div class="panel-content hidden p-4" id="eng-duration">
+    {% if duration_chart_data.labels %}
+    <div class="mb-4">
+      <h2 class="mb-3 text-sm font-medium">{% trans "Duration by Page" %}</h2>
+      <div class="relative h-48 sm:h-64"><canvas id="chart-duration-page" data-chart-pending="duration"></canvas></div>
+      {{ duration_chart_data|json_script:"duration-page-chart-data" }}
+    </div>
+    {% endif %}
+    <h2 class="mb-3 text-sm font-medium">{% trans "Avg Duration by Page" %}</h2>
+    {% if duration_by_page %}
+    <div class="space-y-0">
+      <div class="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <span>{% trans "Page" %}</span>
+        <div class="flex gap-4 text-right">
+          <span class="w-14">{% trans "Views" %}</span>
+          <span class="w-14">{% trans "Avg" %}</span>
+          <span class="hidden w-14 sm:inline">{% trans "Median" %}</span>
+        </div>
+      </div>
+      {% for p in duration_by_page %}
+      <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors cursor-pointer"
+           hx-get="{% url 'analytics_time_on_page' %}?url_path={{ p.urlPath|urlencode }}&website={{ selected_website }}&range={{ range_preset }}"
+           hx-target="#time-on-page-detail" hx-swap="innerHTML">
+        <span class="truncate font-mono text-sm" title="{{ p.urlPath }}">{{ p.urlPath }}</span>
+        <div class="flex gap-4 text-right tabular-nums">
+          <span class="w-14 text-muted-foreground">{{ p.views|intcomma }}</span>
+          <span class="w-14 font-medium">{{ p.avgDuration|floatformat:1 }}s</span>
+          <span class="hidden w-14 text-muted-foreground sm:inline">{{ p.medianDuration|floatformat:1 }}s</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div id="time-on-page-detail"></div>
+    {% else %}
+    <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No duration data." %}</p>
+    {% endif %}
+  </div>
+
+  {# ── Tab: Bounce ───────────────────────────────────────────── #}
+  <div class="panel-content hidden p-4" id="eng-bounce">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div>
+        <h2 class="mb-3 text-sm font-medium">{% trans "Bounce Rate by Page" %}</h2>
+        {% if bounce_by_page %}
+        <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-bounce-page" data-chart-pending="bounce"></canvas></div>
+        {{ bounce_chart_data|json_script:"bounce-chart-data" }}
+        {% else %}
+        <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No bounce rate data." %}</p>
+        {% endif %}
+      </div>
+      <div>
+        <h2 class="mb-3 text-sm font-medium">{% trans "Bounce Rate by Source" %}</h2>
+        {% if bounce_source_chart_data.labels %}
+        <div class="mb-3 relative h-48 sm:h-64 lg:h-80"><canvas id="chart-bounce-source" data-chart-pending="bounce-source"></canvas></div>
+        {{ bounce_source_chart_data|json_script:"bounce-source-chart-data" }}
+        {% endif %}
+        {% if bounce_by_source %}
+        <div class="space-y-0">
+          <div class="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <span>{% trans "Source" %}</span>
+            <div class="flex gap-4 text-right">
+              <span class="w-14">{% trans "Visits" %}</span>
+              <span class="hidden w-14 sm:inline">{% trans "Bounces" %}</span>
+              <span class="w-16">{% trans "Rate" %}</span>
+            </div>
+          </div>
+          {% for s in bounce_by_source %}
+          <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+            <span class="truncate">{{ s.referrerDomain }}</span>
+            <div class="flex gap-4 text-right tabular-nums">
+              <span class="w-14 text-muted-foreground">{{ s.totalVisits|intcomma }}</span>
+              <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.bounces|intcomma }}</span>
+              <span class="w-16 font-medium {% if s.bounceRate > 60 %}text-red-500{% elif s.bounceRate > 40 %}text-amber-500{% else %}text-green-500{% endif %}">{{ s.bounceRate|floatformat:1 }}%</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No source data." %}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Tab: Heatmap ──────────────────────────────────────────── #}
+  <div class="panel-content hidden p-4" id="eng-heatmap">
+    <h2 class="mb-3 text-sm font-medium">{% trans "Traffic by Day & Hour" %}</h2>
+    {% if grid %}
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse text-xs">
+        <thead>
+          <tr>
+            <th class="px-1 py-1 text-left text-muted-foreground font-medium w-10"></th>
+            {% for val in grid.0 %}<th class="px-0.5 py-1 text-center text-muted-foreground font-medium">{{ forloop.counter0 }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for day_row in grid %}
+          <tr>
+            <td class="px-1 py-0.5 text-muted-foreground font-medium whitespace-nowrap text-[11px]">{% with di=forloop.counter0 %}{% if di == 0 %}{% trans "Sun" %}{% elif di == 1 %}{% trans "Mon" %}{% elif di == 2 %}{% trans "Tue" %}{% elif di == 3 %}{% trans "Wed" %}{% elif di == 4 %}{% trans "Thu" %}{% elif di == 5 %}{% trans "Fri" %}{% elif di == 6 %}{% trans "Sat" %}{% endif %}{% endwith %}</td>
+            {% for val in day_row %}
+            <td class="px-0"><div class="heatmap-cell h-6 w-full rounded-sm {% if val == 0 %}bg-muted/20{% else %}bg-indigo-500{% endif %}" title="{{ val }} {% trans 'pageviews' %}"></div></td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No heatmap data." %}</p>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var dEl = document.getElementById('distribution-chart-data');
+    if (dEl) {
+      initBarChart('chart-distribution', JSON.parse(dEl.textContent));
+      var canvas = document.getElementById('chart-distribution');
+      if (canvas) {
+        canvas.addEventListener('click', function (evt) {
+          var chart = Chart.getChart(canvas);
+          if (!chart) return;
+          var points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+          if (points.length > 0) {
+            var label = chart.data.labels[points[0].index];
+            htmx.ajax('GET', '{% url "analytics_engagement_bucket" %}?bucket=' + encodeURIComponent(label) + '&website={{ selected_website }}&range={{ range_preset }}', { target: '#bucket-detail', swap: 'innerHTML' });
+          }
+        });
+      }
+    }
+
+    var pendingCharts = { duration: false, bounce: false, heatmap: false };
+    function initPending(tabId) {
+      if (tabId === 'eng-duration' && !pendingCharts.duration) {
+        var dpEl = document.getElementById('duration-page-chart-data');
+        if (dpEl) initBarChart('chart-duration-page', JSON.parse(dpEl.textContent));
+        pendingCharts.duration = true;
+      }
+      if (tabId === 'eng-bounce' && !pendingCharts.bounce) {
+        var bEl = document.getElementById('bounce-chart-data');
+        if (bEl) initBarChart('chart-bounce-page', JSON.parse(bEl.textContent));
+        var bsEl = document.getElementById('bounce-source-chart-data');
+        if (bsEl) initBarChart('chart-bounce-source', JSON.parse(bsEl.textContent));
+        pendingCharts.bounce = true;
+      }
+      if (tabId === 'eng-heatmap' && !pendingCharts.heatmap) {
+        var cells = document.querySelectorAll('.heatmap-cell');
+        if (cells.length) {
+          var mx = 0;
+          cells.forEach(function (c) { var v = parseInt(c.title); if (v > mx) mx = v; });
+          if (mx > 0) cells.forEach(function (c) {
+            var v = parseInt(c.title);
+            if (v > 0) c.style.opacity = (0.15 + (v / mx) * 0.85).toFixed(2);
+          });
+        }
+        pendingCharts.heatmap = true;
+      }
+    }
+
+    document.querySelectorAll('.panel-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = btn.getAttribute('data-panel');
+        setTimeout(function () { initPending(target); }, 50);
+      });
+    });
+  })();
+</script>
+{% endblock %}

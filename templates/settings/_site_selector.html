@@ -1,0 +1,38 @@
+{% load i18n %}
+{% comment %}
+  Reusable site selector for settings sub-pages that scope to a website.
+
+  Context expected:
+    sites       — list of {id, name} dicts (from ``_accessible_sites``).
+    website_id  — currently-selected website id (string), empty when none.
+
+  The form submits as ``GET`` so the chosen ``?website=<id>`` ends up in the
+  URL and is picked up by the view's ``request.GET.get("website")`` lookup.
+{% endcomment %}
+
+<form method="get" class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+  <div class="flex-1">
+    <label for="id_site_picker" class="block text-sm font-medium text-foreground">
+      {% trans "Website" %}
+    </label>
+    <select id="id_site_picker" name="website"
+            class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+      <option value="">{% trans "— pick a site —" %}</option>
+      {% for site in sites %}
+      <option value="{{ site.id }}" {% if site.id == website_id %}selected{% endif %}>
+        {{ site.name }}{% if site.domain %} · {{ site.domain }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit"
+          class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
+    {% trans "Switch" %}
+  </button>
+  {% if not sites %}
+  <a href="{% url 'site_create' %}"
+     class="rounded-md border border-input bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/50 whitespace-nowrap">
+    {% trans "Add site" %}
+  </a>
+  {% endif %}
+</form>

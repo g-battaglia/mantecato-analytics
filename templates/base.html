@@ -1,0 +1,373 @@
+{% load i18n static fmt %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE }}" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% trans "Dashboard" %}{% endblock %} — Mantecato</title>
+
+  {# Apply saved theme before paint to avoid a flash #}
+  <script>
+    (function () {
+      var t = localStorage.getItem("mantecato-theme");
+      if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+        document.documentElement.classList.add("dark");
+      }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-mono/style.css">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+            mono: ['"Geist Mono"', "ui-monospace", "monospace"],
+          },
+          colors: {
+            background: "oklch(var(--background) / <alpha-value>)",
+            foreground: "oklch(var(--foreground) / <alpha-value>)",
+            card: {
+              DEFAULT: "oklch(var(--card) / <alpha-value>)",
+              foreground: "oklch(var(--card-foreground) / <alpha-value>)",
+            },
+            popover: {
+              DEFAULT: "oklch(var(--popover) / <alpha-value>)",
+              foreground: "oklch(var(--popover-foreground) / <alpha-value>)",
+            },
+            primary: {
+              DEFAULT: "oklch(var(--primary) / <alpha-value>)",
+              foreground: "oklch(var(--primary-foreground) / <alpha-value>)",
+            },
+            secondary: {
+              DEFAULT: "oklch(var(--secondary) / <alpha-value>)",
+              foreground: "oklch(var(--secondary-foreground) / <alpha-value>)",
+            },
+            muted: {
+              DEFAULT: "oklch(var(--muted) / <alpha-value>)",
+              foreground: "oklch(var(--muted-foreground) / <alpha-value>)",
+            },
+            accent: {
+              DEFAULT: "oklch(var(--accent) / <alpha-value>)",
+              foreground: "oklch(var(--accent-foreground) / <alpha-value>)",
+            },
+            destructive: {
+              DEFAULT: "oklch(var(--destructive) / <alpha-value>)",
+              foreground: "oklch(var(--destructive-foreground) / <alpha-value>)",
+            },
+            border: "oklch(var(--border) / <alpha-value>)",
+            input: "oklch(var(--input) / <alpha-value>)",
+            ring: "oklch(var(--ring) / <alpha-value>)",
+            sidebar: {
+              DEFAULT: "oklch(var(--sidebar) / <alpha-value>)",
+              foreground: "oklch(var(--sidebar-foreground) / <alpha-value>)",
+              primary: "oklch(var(--sidebar-primary) / <alpha-value>)",
+              "primary-foreground": "oklch(var(--sidebar-primary-foreground) / <alpha-value>)",
+              accent: "oklch(var(--sidebar-accent) / <alpha-value>)",
+              "accent-foreground": "oklch(var(--sidebar-accent-foreground) / <alpha-value>)",
+              border: "oklch(var(--sidebar-border) / <alpha-value>)",
+              ring: "oklch(var(--sidebar-ring) / <alpha-value>)",
+            },
+          },
+          borderRadius: {
+            sm: "calc(var(--radius) - 4px)",
+            md: "calc(var(--radius) - 2px)",
+            lg: "var(--radius)",
+            xl: "calc(var(--radius) + 4px)",
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+
+  <script src="https://unpkg.com/htmx.org@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-background font-sans text-foreground antialiased">
+
+  {% with url_name=request.resolver_match.url_name %}
+  <div class="flex h-full">
+
+    {# ── Sidebar ─────────────────────────────────────────── #}
+    <aside id="sidebar"
+           class="fixed inset-y-0 left-0 z-30 flex w-[232px] flex-col border-r border-sidebar-border/50 bg-sidebar text-sidebar-foreground transition-transform duration-200 -translate-x-full lg:translate-x-0">
+
+      {# Brand + Site selector #}
+      <div class="flex flex-col gap-3 px-3 py-4">
+        <a href="/" class="flex items-center gap-2.5 px-1 transition-colors">
+          <span class="flex size-[22px] shrink-0 items-center justify-center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <rect x="2" y="2" width="20" height="20" rx="5" class="fill-sidebar-primary"/>
+              <path d="M6 17V8L9 8L12 13L15 8L18 8V17" stroke="oklch(var(--sidebar-primary-foreground))" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+          </span>
+          <span class="text-[15px] font-semibold tracking-tight text-sidebar-foreground">Mantecato</span>
+          <span class="rounded border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">v3</span>
+        </a>
+        {% block site_selector %}
+        <div class="relative">
+          <select id="site-selector"
+                  name="website"
+                  class="h-9 w-full appearance-none rounded-md border border-sidebar-border bg-sidebar px-3 pr-7 text-[13px] text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus:ring-1 focus:ring-sidebar-ring"
+                  aria-label="{% trans 'Select website' %}">
+            {% for w in websites %}
+            <option value="{{ w.id }}" {% if w.id == selected_website %}selected{% endif %}>{{ w.name }}</option>
+            {% empty %}
+            <option>{% trans "Select website" %}</option>
+            {% endfor %}
+          </select>
+          <i data-lucide="chevron-down" class="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"></i>
+        </div>
+        {% endblock %}
+      </div>
+
+      {# Navigation #}
+      <nav class="no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-3">
+
+        <div>
+          <div class="mb-1 px-2.5 font-mono text-[10px] font-medium uppercase tracking-[1.2px] text-muted-foreground">{% trans "Analytics" %}</div>
+          <ul class="space-y-0.5">
+            <li><a href="{% url 'overview' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'overview' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="bar-chart-3" class="size-4 shrink-0 {% if url_name == 'overview' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Overview" %}</span></a></li>
+            <li><a href="{% url 'analytics_pages' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_pages' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="file-text" class="size-4 shrink-0 {% if url_name == 'analytics_pages' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Pages" %}</span></a></li>
+            <li><a href="{% url 'analytics_sections' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_sections' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="folder-tree" class="size-4 shrink-0 {% if url_name == 'analytics_sections' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Sections" %}</span></a></li>
+            <li><a href="{% url 'analytics_sources' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_sources' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="globe" class="size-4 shrink-0 {% if url_name == 'analytics_sources' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Sources" %}</span></a></li>
+            <li><a href="{% url 'analytics_events' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_events' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="mouse-pointer-click" class="size-4 shrink-0 {% if url_name == 'analytics_events' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Events" %}</span></a></li>
+            <li><a href="{% url 'analytics_sessions' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_sessions' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="users" class="size-4 shrink-0 {% if url_name == 'analytics_sessions' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Sessions" %}</span></a></li>
+            <li><a href="{% url 'analytics_devices' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_devices' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="monitor" class="size-4 shrink-0 {% if url_name == 'analytics_devices' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Devices" %}</span></a></li>
+            <li><a href="{% url 'analytics_geo' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_geo' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="globe" class="size-4 shrink-0 {% if url_name == 'analytics_geo' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Geo" %}</span></a></li>
+            <li><a href="{% url 'analytics_engagement' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_engagement' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="timer" class="size-4 shrink-0 {% if url_name == 'analytics_engagement' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Engagement" %}</span></a></li>
+            <li><a href="{% url 'analytics_compare' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_compare' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="git-compare" class="size-4 shrink-0 {% if url_name == 'analytics_compare' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Compare" %}</span></a></li>
+            <li><a href="{% url 'analytics_realtime' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_realtime' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="radio" class="size-4 shrink-0 {% if url_name == 'analytics_realtime' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Realtime" %}</span></a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="mb-1 px-2.5 font-mono text-[10px] font-medium uppercase tracking-[1.2px] text-muted-foreground">{% trans "Advanced" %}</div>
+          <ul class="space-y-0.5">
+            <li><a href="{% url 'analytics_retention' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_retention' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="trending-up" class="size-4 shrink-0 {% if url_name == 'analytics_retention' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Retention" %}</span></a></li>
+            <li><a href="{% url 'analytics_funnels' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_funnels' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="filter" class="size-4 shrink-0 {% if url_name == 'analytics_funnels' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Funnels" %}</span></a></li>
+            <li><a href="{% url 'analytics_journeys' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_journeys' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="shuffle" class="size-4 shrink-0 {% if url_name == 'analytics_journeys' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Journeys" %}</span></a></li>
+            <li><a href="{% url 'analytics_revenue' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'analytics_revenue' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="dollar-sign" class="size-4 shrink-0 {% if url_name == 'analytics_revenue' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Revenue" %}</span></a></li>
+          </ul>
+        </div>
+
+        <div>
+          <ul class="space-y-0.5">
+            <li><a href="{% url 'dashboard_list' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'dashboard_list' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+              <i data-lucide="layout-dashboard" class="size-4 shrink-0 {% if url_name == 'dashboard_list' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Dashboards" %}</span></a></li>
+          </ul>
+        </div>
+
+      </nav>
+
+      {# Footer #}
+      <div class="border-t border-sidebar-border p-3">
+        <a href="{% url 'settings_index' %}?{% view_query %}" class="relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors {% if url_name == 'settings_index' %}nav-active bg-sidebar-accent font-medium text-sidebar-accent-foreground{% else %}text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}">
+          <i data-lucide="settings" class="size-4 shrink-0 {% if url_name == 'settings_index' %}text-sidebar-primary{% endif %}"></i><span class="truncate">{% trans "Settings" %}</span>
+        </a>
+      </div>
+    </aside>
+
+    {# ── Main content area ───────────────────────────────── #}
+    <div class="flex min-w-0 flex-1 flex-col lg:pl-[232px]">
+
+      {# Header #}
+      <header class="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-3 border-b border-border/50 bg-background px-4 sm:px-6">
+        <button type="button"
+                id="sidebar-toggle"
+                class="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+                aria-label="{% trans 'Toggle sidebar' %}">
+          <i data-lucide="menu" class="size-5"></i>
+        </button>
+
+        <div class="flex items-center gap-1.5 text-[13px]">
+          {% if selected_website_name %}<span class="text-muted-foreground">{{ selected_website_name }}</span><span class="text-muted-foreground/50">/</span>{% endif %}
+          <span class="font-medium text-foreground">{% block page_title %}{% endblock %}</span>
+        </div>
+
+        <div class="ml-auto flex items-center gap-1.5">
+          <button type="button"
+                  id="theme-toggle"
+                  class="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="{% trans 'Toggle theme' %}">
+            <i data-lucide="sun" class="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"></i>
+            <i data-lucide="moon" class="absolute size-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"></i>
+          </button>
+          {% if user.is_authenticated %}
+          <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title="{% trans 'Sign out' %}"
+                    aria-label="{% trans 'Sign out' %}">
+              <i data-lucide="log-out" class="size-4"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </header>
+
+      {# Default password warning banner #}
+      {% if user.is_authenticated and user.password_is_default %}
+      {% url 'account' as account_url %}
+      <div class="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 sm:px-6">
+        <i data-lucide="alert-triangle" class="size-4 shrink-0 text-amber-600 dark:text-amber-400"></i>
+        <span class="text-sm text-amber-600 dark:text-amber-400">
+          {% blocktrans with change_url=account_url %}You are still using the default password. <a href="{{ change_url }}" class="font-medium underline hover:no-underline">Change it now</a>.{% endblocktrans %}
+        </span>
+      </div>
+      {% endif %}
+
+      {# Django messages #}
+      {% if messages %}
+      <div class="px-4 pt-3 sm:px-6">
+        {% for message in messages %}
+        <div class="mb-2 rounded-md border px-4 py-2 text-sm
+                    {% if message.level == DEFAULT_MESSAGE_LEVELS.ERROR %}border-destructive/30 bg-destructive/10 text-destructive{% endif %}
+                    {% if message.level == DEFAULT_MESSAGE_LEVELS.WARNING %}border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400{% endif %}
+                    {% if message.level == DEFAULT_MESSAGE_LEVELS.SUCCESS %}border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400{% endif %}
+                    {% if message.level == DEFAULT_MESSAGE_LEVELS.INFO %}border-border bg-muted text-foreground{% endif %}">
+          {{ message }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# Filter bar #}
+      {% block filter_bar %}{% endblock %}
+
+      {# Page content #}
+      <main class="min-w-0 flex-1 overflow-auto p-4 sm:p-5">
+        {% block content %}{% endblock %}
+      </main>
+
+    </div>
+  </div>
+  {% endwith %}
+
+  {# Mobile sidebar backdrop #}
+  <div id="sidebar-backdrop"
+       class="fixed inset-0 z-20 hidden bg-black/40 lg:hidden"
+       aria-hidden="true"></div>
+
+  {# ── Scripts ──────────────────────────────────────────── #}
+  <script src="{% static 'js/charts.js' %}"></script>
+  <script>
+    (function () {
+      function renderIcons() {
+        if (window.lucide) window.lucide.createIcons();
+      }
+      renderIcons();
+      document.addEventListener("htmx:afterSwap", renderIcons);
+
+      // Sidebar (mobile)
+      var sidebar = document.getElementById("sidebar");
+      var backdrop = document.getElementById("sidebar-backdrop");
+      var toggle = document.getElementById("sidebar-toggle");
+      function closeSidebar() {
+        sidebar.classList.add("-translate-x-full");
+        backdrop.classList.add("hidden");
+      }
+      if (toggle) {
+        toggle.addEventListener("click", function () {
+          var open = !sidebar.classList.contains("-translate-x-full");
+          if (open) { closeSidebar(); }
+          else {
+            sidebar.classList.remove("-translate-x-full");
+            backdrop.classList.remove("hidden");
+          }
+        });
+      }
+      if (backdrop) backdrop.addEventListener("click", closeSidebar);
+
+      // Theme toggle
+      var themeToggle = document.getElementById("theme-toggle");
+      if (themeToggle) {
+        themeToggle.addEventListener("click", function () {
+          var isDark = document.documentElement.classList.toggle("dark");
+          localStorage.setItem("mantecato-theme", isDark ? "dark" : "light");
+          window.dispatchEvent(new CustomEvent("mantecato:themechange"));
+        });
+      }
+
+      // Site selector
+      var siteSelector = document.getElementById("site-selector");
+      if (siteSelector) {
+        siteSelector.addEventListener("change", function () {
+          var u = new URL(window.location.href);
+          u.searchParams.set("website", this.value);
+          window.location.href = u.toString();
+        });
+      }
+
+      // Date range selector
+      var rangeSelector = document.getElementById("range-selector");
+      if (rangeSelector) {
+        rangeSelector.addEventListener("change", function () {
+          var u = new URL(window.location.href);
+          u.searchParams.set("range", this.value);
+          // Picking a new preset resets prev/next navigation to the most
+          // recent window; a stale offset would otherwise carry over.
+          u.searchParams.delete("offset");
+          window.location.href = u.toString();
+        });
+      }
+
+      // Granularity selector (group by: auto / minute / hour / day / week / month)
+      var granularitySelector = document.getElementById("granularity-selector");
+      if (granularitySelector) {
+        granularitySelector.addEventListener("change", function () {
+          var u = new URL(window.location.href);
+          u.searchParams.set("granularity", this.value);
+          window.location.href = u.toString();
+        });
+      }
+
+      // Panel tabs (client-side tab switching)
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".panel-tab");
+        if (!btn) return;
+        var panelId = btn.getAttribute("data-panel");
+        if (!panelId) return;
+        var container = btn.closest("[data-panel-group]") || btn.parentElement.parentElement;
+        container.querySelectorAll(".panel-tab").forEach(function (t) {
+          t.classList.remove("border-b-[1.5px]", "border-primary", "text-foreground");
+          t.classList.add("text-muted-foreground");
+        });
+        btn.classList.remove("text-muted-foreground");
+        btn.classList.add("border-b-[1.5px]", "border-primary", "text-foreground");
+        container.querySelectorAll(".panel-content").forEach(function (p) {
+          p.classList.add("hidden");
+        });
+        var target = container.querySelector("#" + panelId);
+        if (target) target.classList.remove("hidden");
+      });
+    })();
+  </script>
+  {% block extra_scripts %}{% endblock %}
+
+</body>
+</html>

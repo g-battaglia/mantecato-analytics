@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "API Keys" %}{% endblock %}
+{% block page_title %}{% trans "API Keys" %}{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+  <div>
+    <h2 class="text-xl font-semibold text-foreground">{% trans "API Keys" %}</h2>
+    <p class="mt-1 text-sm text-muted-foreground">{% trans "Keys for CLI and MCP authentication." %}</p>
+  </div>
+</div>
+
+{% if new_key %}
+<div class="mb-6 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+  <h3 class="text-sm font-semibold text-emerald-500">{% trans "New API Key Created" %}</h3>
+  <p class="mt-1 text-xs text-emerald-500">{% trans "Copy this key now. It will not be shown again." %}</p>
+  <div class="mt-2 rounded bg-card px-3 py-2 font-mono text-sm text-foreground select-all break-all">
+    {{ new_key.key }}
+  </div>
+  <p class="mt-2 text-sm text-emerald-500">
+    <strong>{% trans "Name:" %}</strong> {{ new_key.name }}
+    &nbsp;&middot;&nbsp;
+    <strong>{% trans "Prefix:" %}</strong> {{ new_key.prefix }}
+    &nbsp;&middot;&nbsp;
+    <strong>{% trans "Scopes:" %}</strong> {{ new_key.scopes|join:", " }}
+  </p>
+</div>
+{% endif %}
+
+<div class="mb-6 rounded-lg border border-border bg-card px-4 sm:px-6 py-5 shadow-sm">
+  <h3 class="text-base font-semibold text-foreground mb-4">{% trans "Create New Key" %}</h3>
+  <form method="post" action="{% url 'api_key_create' %}">
+    {% csrf_token %}
+    <div class="flex flex-col gap-2.5 sm:flex-row sm:items-end sm:gap-4">
+      <div class="flex-1">
+        <label for="id_key_name" class="block text-sm font-medium text-foreground">{% trans "Name" %}</label>
+        <input type="text" id="id_key_name" name="name" required
+               class="mt-1 block w-full rounded-md border border-input px-3 py-2 text-sm shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+      </div>
+      <div class="flex-1">
+        <label for="id_key_scopes" class="block text-sm font-medium text-foreground">{% trans "Scopes" %}</label>
+        <input type="text" id="id_key_scopes" name="scopes" value="read,write"
+               class="mt-1 block w-full rounded-md border border-input px-3 py-2 text-sm shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+      </div>
+      <button type="submit"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 whitespace-nowrap">
+        {% trans "Create Key" %}
+      </button>
+    </div>
+  </form>
+</div>
+
+{% if api_keys %}
+<div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+  <div class="overflow-x-auto">
+  <table class="min-w-full divide-y divide-border">
+    <thead class="bg-muted/50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Name" %}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Prefix" %}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Scopes" %}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Created" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Actions" %}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border">
+      {% for key in api_keys %}
+      <tr class="hover:bg-muted/50">
+        <td class="px-4 py-3 text-sm font-medium text-foreground">{{ key.name }}</td>
+        <td class="px-4 py-3 text-sm font-mono text-muted-foreground">{{ key.prefix }}</td>
+        <td class="px-4 py-3 text-sm text-muted-foreground">{{ key.scopes|join:", " }}</td>
+        <td class="px-4 py-3 text-sm text-muted-foreground">{{ key.createdAt }}</td>
+        <td class="px-4 py-3 text-right text-sm">
+          <form method="post" action="{% url 'api_key_delete' key.id %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="text-destructive hover:text-destructive/80"
+                    onclick="return confirm('{% trans 'Revoke this API key?' %}')">
+              {% trans "Revoke" %}
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="rounded-lg border-2 border-dashed border-input p-12 text-center">
+  <p class="text-sm text-muted-foreground">{% trans "No API keys yet. Create one above." %}</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Bot Detection Config" %}{% endblock %}
+{% block page_title %}{% trans "Bot Detection Config" %}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="{% url 'settings_index' %}" class="text-sm text-primary hover:text-primary">
+    &larr; {% trans "Back to Settings" %}
+  </a>
+</div>
+
+<div class="mx-auto max-w-2xl">
+  <h2 class="text-xl font-semibold text-foreground mb-4">{% trans "Bot Detection Configuration" %}</h2>
+
+  {% include "settings/_site_selector.html" %}
+
+  {% if not website_id %}
+  <div class="rounded-lg border-2 border-dashed border-input p-12 text-center">
+    <p class="text-sm text-muted-foreground">{% trans "Pick a site from the dropdown above to edit its bot detection rules." %}</p>
+  </div>
+  {% else %}
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="website_id" value="{{ website_id }}">
+
+    <div class="rounded-lg border border-border bg-card px-4 sm:px-6 py-6 shadow-sm space-y-5">
+      <div>
+        <p class="text-sm font-medium text-foreground mb-3">{% trans "Website" %}: <span class="font-mono text-muted-foreground">{{ website_id }}</span></p>
+      </div>
+
+      <fieldset>
+        <legend class="text-sm font-semibold text-foreground mb-3">{% trans "Detection Rules" %}</legend>
+        <div class="space-y-3">
+          <label class="flex items-start gap-3">
+            <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %}
+                   class="mt-0.5 h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">
+              {% trans "Filter bots by default" %}
+              <span class="block text-xs text-muted-foreground">{% trans "Apply bot filtering automatically on every view. You can still toggle it per-view from the dashboard." %}</span>
+            </span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="knownBots" {% if config.knownBots %}checked{% endif %}
+                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{% trans "Filter known bots" %}</span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="emptyUa" {% if config.emptyUa %}checked{% endif %}
+                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{% trans "Filter empty User-Agent" %}</span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="clusterDetection" {% if config.clusterDetection %}checked{% endif %}
+                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{% trans "Cluster detection" %}</span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="zeroEngagement" {% if config.zeroEngagement %}checked{% endif %}
+                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{% trans "Zero engagement filter" %}</span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="missingScreen" {% if config.missingScreen %}checked{% endif %}
+                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{% trans "Missing screen info" %}</span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="missingLanguage" {% if config.missingLanguage %}checked{% endif %}
+                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{% trans "Missing language" %}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="text-sm font-semibold text-foreground mb-3">{% trans "Thresholds" %}</legend>
+        <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-4">
+          <div>
+            <label for="id_clusterBounceThreshold" class="block text-sm text-foreground">{% trans "Cluster bounce threshold" %}</label>
+            <input type="number" id="id_clusterBounceThreshold" name="clusterBounceThreshold"
+                   value="{{ config.clusterBounceThreshold|default:90 }}"
+                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+          </div>
+          <div>
+            <label for="id_clusterMinSize" class="block text-sm text-foreground">{% trans "Cluster min size" %}</label>
+            <input type="number" id="id_clusterMinSize" name="clusterMinSize"
+                   value="{{ config.clusterMinSize|default:100 }}"
+                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+          </div>
+          <div>
+            <label for="id_minDuration" class="block text-sm text-foreground">{% trans "Min duration (seconds)" %}</label>
+            <input type="number" id="id_minDuration" name="minDuration"
+                   value="{{ config.minDuration|default:0 }}"
+                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+          </div>
+          <div>
+            <label for="id_highVelocityThreshold" class="block text-sm text-foreground">{% trans "High velocity threshold" %}</label>
+            <input type="number" id="id_highVelocityThreshold" name="highVelocityThreshold"
+                   value="{{ config.highVelocityThreshold|default:60 }}"
+                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+          </div>
+        </div>
+      </fieldset>
+
+      <div>
+        <label for="country-search" class="block text-sm text-foreground">{% trans "Excluded countries" %}</label>
+        <p class="mb-1.5 mt-0.5 text-xs text-muted-foreground">{% trans "Tick the countries to exclude from analytics. Type to search." %}</p>
+        <input type="text" id="country-search" autocomplete="off"
+               placeholder="{% trans 'Search countries…' %}"
+               class="mb-2 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
+        <div id="country-list"
+             class="max-h-64 space-y-0.5 overflow-y-auto rounded-md border border-input bg-background p-2">
+          {% for code, name in country_choices %}
+          <label class="flex items-center gap-2.5 rounded px-2 py-1 hover:bg-muted" data-search="{{ name|lower }} {{ code|lower }}">
+            <input type="checkbox" name="excludedCountries" value="{{ code }}" {% if code in config.excludedCountries %}checked{% endif %}
+                   class="h-4 w-4 shrink-0 rounded border-input text-primary focus:ring-ring">
+            <span class="text-sm text-foreground">{{ name }} <span class="text-muted-foreground">({{ code }})</span></span>
+          </label>
+          {% endfor %}
+        </div>
+        <p id="country-empty" class="mt-1 hidden text-xs text-muted-foreground">{% trans "No countries match your search." %}</p>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button type="submit"
+                class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
+          {% trans "Save Configuration" %}
+        </button>
+      </div>
+    </div>
+  </form>
+
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    // Client-side filter for the excluded-countries checkbox list: matches the
+    // typed query against each row's data-search (lowercased "name code").
+    var search = document.getElementById('country-search');
+    var list = document.getElementById('country-list');
+    if (!search || !list) return;
+    var rows = list.querySelectorAll('label[data-search]');
+    var empty = document.getElementById('country-empty');
+
+    search.addEventListener('input', function () {
+      var q = search.value.trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function (row) {
+        var match = !q || row.getAttribute('data-search').indexOf(q) !== -1;
+        row.classList.toggle('hidden', !match);
+        if (match) shown++;
+      });
+      if (empty) empty.classList.toggle('hidden', shown !== 0);
+    });
+  })();
+</script>
+{% endblock %}

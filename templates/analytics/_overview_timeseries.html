@@ -1,0 +1,11 @@
+{% load i18n %}
+
+{# Time series chart — Card wrapper matching legacy style #}
+<div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+  <div>
+    <div class="relative h-48 sm:h-64 lg:h-80">
+      <canvas id="timeseries-canvas"></canvas>
+    </div>
+  </div>
+  {{ timeseries_data|json_script:"ts-data" }}
+</div>

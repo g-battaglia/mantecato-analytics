@@ -1,0 +1,95 @@
+{% load i18n fmt %}
+
+{# ── Active visitors count ─────────────────────────────────── #}
+<div class="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium text-muted-foreground">{% trans "Active Visitors" %}</p>
+    <div class="flex items-center gap-2">
+      <span class="relative flex h-3 w-3">
+        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+        <span class="relative inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
+      </span>
+      <p class="mt-1 text-2xl font-bold text-foreground">{{ active.count|intcomma }}</p>
+    </div>
+  </div>
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium text-muted-foreground">{% trans "Pages Being Viewed" %}</p>
+    <p class="mt-1 text-2xl font-bold text-foreground">{{ current_pages|length }}</p>
+  </div>
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-xs font-medium text-muted-foreground">{% trans "Recent Events" %}</p>
+    <p class="mt-1 text-2xl font-bold text-foreground">{{ recent_events|length }}</p>
+  </div>
+</div>
+
+{# ── Current pages ─────────────────────────────────────────── #}
+{% if current_pages %}
+<div class="mb-6 rounded-lg border border-border bg-card p-4 shadow-sm">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Currently Viewing" %}</h2>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="border-b border-border/60">
+      <tr>
+        <th class="pb-2 text-left text-xs font-medium text-muted-foreground">{% trans "Page" %}</th>
+        <th class="pb-2 text-right text-xs font-medium text-muted-foreground">{% trans "Visitors" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for page in current_pages %}
+      <tr class="border-b border-border/60">
+        <td class="py-1 text-foreground">{{ page.urlPath }}</td>
+        <td class="py-1 text-right text-foreground">{{ page.visitors|intcomma }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Active visitors detail ────────────────────────────────── #}
+{% if active.visitors %}
+<div class="mb-6 rounded-lg border border-border bg-card p-4 shadow-sm">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Active Visitors" %}</h2>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="border-b border-border/60">
+      <tr>
+        <th class="pb-2 text-left text-xs font-medium text-muted-foreground">{% trans "Page" %}</th>
+        <th class="pb-2 text-left text-xs font-medium text-muted-foreground">{% trans "Country" %}</th>
+        <th class="hidden pb-2 text-left text-xs font-medium text-muted-foreground sm:table-cell">{% trans "Browser" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in active.visitors %}
+      <tr class="border-b border-border/60">
+        <td class="max-w-[200px] py-1 text-foreground"><span class="block truncate">{{ v.urlPath }}</span></td>
+        <td class="py-1 text-muted-foreground">{{ v.country }}</td>
+        <td class="hidden py-1 text-muted-foreground sm:table-cell">{{ v.browser }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Recent events stream ──────────────────────────────────── #}
+{% if recent_events %}
+<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+  <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Live Event Stream" %}</h2>
+  <div class="space-y-1 max-h-64 overflow-y-auto">
+    {% for event in recent_events %}
+    <div class="flex min-w-0 items-center gap-3 text-sm">
+      <span class="shrink-0 text-xs text-muted-foreground">{{ event.createdAt|slice:"11:19" }}</span>
+      <span class="shrink-0 inline-block rounded px-1.5 py-0.5 text-xs font-medium
+        {% if event.eventType == 1 %}bg-secondary text-secondary-foreground{% else %}bg-secondary text-secondary-foreground{% endif %}">
+        {% if event.eventType == 1 %}{% trans "Pageview" %}{% else %}{{ event.eventName }}{% endif %}
+      </span>
+      <span class="min-w-0 truncate text-foreground">{{ event.urlPath }}</span>
+      <span class="text-muted-foreground">{{ event.country }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

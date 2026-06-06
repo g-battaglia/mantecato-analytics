@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Overview" %}{% endblock %}
+{% block page_title %}{% trans "Overview" %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css" />
+{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+{% if realtime %}
+<span class="mb-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-500">
+  <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+  {% blocktrans count counter=realtime.count %}
+    {{ counter }} visitor online
+  {% plural %}
+    {{ counter }} visitors online
+  {% endblocktrans %}
+</span>
+{% endif %}
+
+{% if no_data %}
+<div class="rounded-lg border border-border bg-card p-8 text-center">
+  <p class="text-muted-foreground">{% trans "No websites available. Contact an administrator to get access." %}</p>
+</div>
+{% else %}
+
+<div class="space-y-2.5">
+
+  {# ── Stat cards ────────────────────────────────────────────────────── #}
+  {% include "analytics/_overview_metrics.html" %}
+
+  {# ── Time series chart ─────────────────────────────────────────────── #}
+  {% include "analytics/_overview_timeseries.html" %}
+
+  {# ── 2-column panel grid ───────────────────────────────────────────── #}
+  {% include "analytics/_overview_tables.html" %}
+
+  {# ── World map ─────────────────────────────────────────────────────── #}
+  <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+    <div>
+      <div class="mb-3 text-sm font-medium">{% trans "Visitors by Country" %}</div>
+      <div id="world-map" class="h-48 sm:h-64 lg:h-80 rounded-md"></div>
+    </div>
+    {{ geo|json_script:"geo-data" }}
+  </div>
+
+  {# ── Traffic heatmap + Events table ────────────────────────────── #}
+  {% include "analytics/_overview_bottom.html" %}
+
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>
+<script>
+  (function () {
+    {# ── Initialize time series chart ── #}
+    var tsEl = document.getElementById('ts-data');
+    if (tsEl) {
+      initTimeSeriesChart('timeseries-canvas', JSON.parse(tsEl.textContent));
+    }
+
+    {# ── Initialize world map ── #}
+    var geoEl = document.getElementById('geo-data');
+    var mapContainer = document.getElementById('world-map');
+    if (geoEl && mapContainer) {
+      var geoData = JSON.parse(geoEl.textContent);
+      var map = L.map('world-map').setView([20, 0], 2);
+      var isDark = document.documentElement.classList.contains('dark');
+      var tileUrl = isDark
+        ? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png';
+      L.tileLayer(tileUrl, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 6,
+      }).addTo(map);
+
+      if (geoData && geoData.length > 0) {
+        var countryCenters = {
+          AU: [-25.3, 133.8], BR: [-14.2, -51.9], CA: [56.1, -106.3],
+          DE: [51.2, 10.4], ES: [40.5, -3.7], FR: [46.2, 2.2],
+          GB: [55.4, -3.4], IN: [20.6, 78.9], IT: [41.9, 12.6],
+          JP: [36.2, 138.3], NL: [52.1, 5.3], US: [37.1, -95.7],
+        };
+        var maxVisitors = Math.max.apply(null, geoData.map(function (g) { return g.visitors || 0; }));
+        geoData.forEach(function (g) {
+          var center = countryCenters[g.country];
+          if (center) {
+            var radius = maxVisitors > 0 ? Math.max(4, (g.visitors / maxVisitors) * 20) : 4;
+            var circle = L.circleMarker(center, {
+              radius: radius,
+              fillColor: '#6366f1',
+              color: '#4f46e5',
+              weight: 1,
+              fillOpacity: 0.7,
+            }).addTo(map);
+            circle.bindPopup('<strong>' + g.country + '</strong><br>' + g.visitors + ' {% trans "visitors" %}');
+          }
+        });
+      }
+    }
+
+    {# ── Initialize traffic heatmap ── #}
+    var hmEl = document.getElementById('heatmap-data');
+    var hmContainer = document.getElementById('traffic-heatmap');
+    if (hmEl && hmContainer) {
+      var hmData = JSON.parse(hmEl.textContent);
+      var days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      var pgDowToIdx = {1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6};
+      var hours = [];
+      for (var h = 0; h < 24; h++) {
+        var ampm = h === 0 ? '12am' : h < 12 ? h + 'am' : h === 12 ? '12pm' : (h - 12) + 'pm';
+        hours.push(ampm);
+      }
+      var grid = {};
+      var maxVal = 0;
+      hmData.forEach(function (d) {
+        var key = pgDowToIdx[d.dayOfWeek] + '-' + d.hour;
+        var val = d.pageviews || 0;
+        grid[key] = val;
+        if (val > maxVal) maxVal = val;
+      });
+      var isDark = document.documentElement.classList.contains('dark');
+      var cellW = 100 / 7;
+      var cellH = 28;
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 420 ' + (24 * cellH + 30) + '" style="font-family:Geist,ui-sans-serif,system-ui,sans-serif">';
+      svg += '<g transform="translate(50,20)">';
+      for (var di = 0; di < 7; di++) {
+        svg += '<text x="' + (di * 50 + 25) + '" y="-4" text-anchor="middle" fill="' + (isDark ? '#94a3b8' : '#64748b') + '" font-size="11">' + days[di] + '</text>';
+      }
+      for (var hi = 0; hi < 24; hi++) {
+        svg += '<text x="-6" y="' + (hi * cellH + cellH / 2 + 4) + '" text-anchor="end" fill="' + (isDark ? '#94a3b8' : '#64748b') + '" font-size="10">' + hours[hi] + '</text>';
+        for (var di = 0; di < 7; di++) {
+          var val = grid[di + '-' + hi] || 0;
+          var intensity = maxVal > 0 ? val / maxVal : 0;
+          var r = Math.round(99 + (99 - 99) * intensity);
+          var g = Math.round(102 + (102 - 102) * intensity);
+          var b = Math.round(241 + (241 - 241) * intensity);
+          var opacity = intensity > 0 ? 0.15 + intensity * 0.85 : 0.04;
+          svg += '<circle cx="' + (di * 50 + 25) + '" cy="' + (hi * cellH + cellH / 2) + '" r="' + (3 + intensity * 11) + '" fill="rgb(99,102,241)" fill-opacity="' + opacity.toFixed(2) + '"/>';
+        }
+      }
+      svg += '</g></svg>';
+      hmContainer.innerHTML = svg;
+    }
+
+    {# ── HTMX re-init after swap ── #}
+    document.addEventListener('htmx:afterSwap', function () {
+      var newTsEl = document.getElementById('ts-data');
+      if (newTsEl) {
+        initTimeSeriesChart('timeseries-canvas', JSON.parse(newTsEl.textContent));
+      }
+    });
+  })();
+</script>
+{% endblock %}

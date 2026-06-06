@@ -1,0 +1,22 @@
+{% load i18n fmt %}
+{% spaceless %}
+<div class="space-y-0">
+  {% for event in top_events %}
+  <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=event_name:eq:{{ event.eventName }}"
+     class="relative flex items-center rounded px-2.5 py-[6px] text-[12.5px] transition-colors hover:bg-muted/30">
+    {% if top_events.0.count %}
+    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio event.count top_events.0.count 100 %}%"></div>
+    {% endif %}
+    <span class="relative flex items-center gap-2 flex-1 truncate font-mono text-foreground">
+      <span class="h-1.5 w-1.5 shrink-0 rounded-sm bg-primary"></span>{{ event.eventName }}
+    </span>
+    <div class="relative flex gap-3 font-mono text-[12px]">
+      <span class="text-muted-foreground">{{ event.visitors|intcomma }}</span>
+      <span class="min-w-[50px] text-right text-foreground">{{ event.count|intcomma }}</span>
+    </div>
+  </a>
+  {% empty %}
+  <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No event data" %}</p>
+  {% endfor %}
+</div>
+{% endspaceless %}

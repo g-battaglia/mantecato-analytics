@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Realtime" %}{% endblock %}
+{% block page_title %}{% trans "Realtime" %}{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+
+<div id="realtime-content"
+     hx-get="{% url 'analytics_realtime_partial' %}{% if selected_website %}?website={{ selected_website }}{% endif %}"
+     hx-trigger="every 5s"
+     hx-target="#realtime-content"
+     hx-swap="innerHTML">
+
+  {% if no_data %}
+  <div class="rounded-lg border border-border bg-card p-8 text-center shadow-sm">
+    <p class="text-sm text-muted-foreground">{% trans "Select a website to see realtime data." %}</p>
+  </div>
+  {% else %}
+  {% include "analytics/_realtime_data.html" %}
+  {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Events" %}{% endblock %}
+{% block page_title %}{% trans "Events" %}{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+{% if events %}
+
+{# ── Stat cards ────────────────────────────────────────────── #}
+<div class="mb-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Total Events" %}</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ total_events|intcomma }}</p>
+  </div>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Event Types" %}</p>
+    <p class="mt-1 text-[28px] font-medium tabular-nums">{{ event_types }}</p>
+  </div>
+  <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{% trans "Top Event" %}</p>
+    <p class="mt-1 text-lg font-medium truncate">{{ top_event }}</p>
+  </div>
+</div>
+
+{# ── Chart toggle + charts ─────────────────────────────────── #}
+<div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+  <div class="mb-3 flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-foreground">{% trans "Events Overview" %}</h2>
+    <div class="flex gap-1" id="chart-toggle">
+      <button class="chart-toggle-btn rounded-md px-2.5 py-1 text-xs font-medium bg-primary text-primary-foreground" data-chart="bar">{% trans "Bar" %}</button>
+      <button class="chart-toggle-btn rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground" data-chart="pie">{% trans "Pie" %}</button>
+      <button class="chart-toggle-btn rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground" data-chart="timeline">{% trans "Timeline" %}</button>
+    </div>
+  </div>
+  <div id="chart-bar-wrap" class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-events-bar"></canvas></div>
+  <div id="chart-pie-wrap" class="relative h-48 sm:h-64 lg:h-80 hidden"><canvas id="chart-events-pie"></canvas></div>
+  <div id="chart-timeline-wrap" class="relative h-48 sm:h-64 lg:h-80 hidden"><canvas id="chart-events-timeline"></canvas></div>
+  {{ events_chart_data|json_script:"events-bar-data" }}
+  {{ events_pie_data|json_script:"events-pie-data" }}
+  {{ events_timeline_data|json_script:"events-timeline-data" }}
+</div>
+
+{# ── Events table ──────────────────────────────────────────── #}
+<div class="max-w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+  <div class="overflow-x-auto">
+  <table class="min-w-full divide-y divide-border">
+    <thead class="bg-muted/50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Event" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Count" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "%" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
+        <th class="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Last Triggered" %}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border">
+      {% for e in events %}
+      <tr class="hover:bg-muted/50 cursor-pointer"
+          hx-get="{% url 'analytics_event_properties' %}?event_name={{ e.eventName|urlencode }}&website={{ selected_website }}&range={{ range_preset }}"
+          hx-target="#event-properties-detail" hx-swap="innerHTML">
+        <td class="px-4 py-3 text-sm font-medium text-foreground">{{ e.eventName }}</td>
+        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ e.count|intcomma }}</td>
+        <td class="px-4 py-3 text-right text-sm text-muted-foreground tabular-nums">{{ e.pct|floatformat:1 }}%</td>
+        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ e.visitors|intcomma }}</td>
+        <td class="hidden px-4 py-3 text-right text-sm text-muted-foreground sm:table-cell">{{ e.lastTriggered|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<div id="event-properties-detail"></div>
+{% else %}
+<div class="rounded-lg border border-border bg-card p-8 text-center">
+  <p class="text-muted-foreground">{% trans "No custom events tracked in this period." %}</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var barEl = document.getElementById('events-bar-data');
+    var pieEl = document.getElementById('events-pie-data');
+    var tlEl = document.getElementById('events-timeline-data');
+
+    if (barEl) initBarChart('chart-events-bar', JSON.parse(barEl.textContent));
+    if (pieEl) initPieChart('chart-events-pie', JSON.parse(pieEl.textContent));
+    if (tlEl) initTimeSeriesChart('chart-events-timeline', JSON.parse(tlEl.textContent));
+
+    var wraps = {
+      bar: document.getElementById('chart-bar-wrap'),
+      pie: document.getElementById('chart-pie-wrap'),
+      timeline: document.getElementById('chart-timeline-wrap'),
+    };
+    var btns = document.querySelectorAll('.chart-toggle-btn');
+    btns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = btn.getAttribute('data-chart');
+        btns.forEach(function (b) {
+          b.className = b.className.replace('bg-primary text-primary-foreground', 'bg-muted text-muted-foreground hover:text-foreground');
+        });
+        btn.className = btn.className.replace('bg-muted text-muted-foreground hover:text-foreground', 'bg-primary text-primary-foreground');
+        for (var k in wraps) {
+          if (wraps[k]) wraps[k].classList.toggle('hidden', k !== target);
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

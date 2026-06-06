@@ -1,0 +1,203 @@
+{% load i18n %}
+<div class="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2 sm:px-6">
+  <select id="range-selector"
+          name="range"
+          class="h-9 rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus:ring-1 focus:ring-ring/40"
+          aria-label="{% trans 'Date range' %}">
+    <option value="1h" {% if range_preset == "1h" %}selected{% endif %}>{% trans "Last 1 hour" %}</option>
+    <option value="3h" {% if range_preset == "3h" %}selected{% endif %}>{% trans "Last 3 hours" %}</option>
+    <option value="24h" {% if range_preset == "24h" %}selected{% endif %}>{% trans "Last 24 hours" %}</option>
+    <option value="7d" {% if range_preset == "7d" %}selected{% endif %}>{% trans "Last 7 days" %}</option>
+    <option value="14d" {% if range_preset == "14d" %}selected{% endif %}>{% trans "Last 14 days" %}</option>
+    <option value="30d" {% if range_preset == "30d" %}selected{% endif %}>{% trans "Last 30 days" %}</option>
+    <option value="90d" {% if range_preset == "90d" %}selected{% endif %}>{% trans "Last 90 days" %}</option>
+    <option value="12m" {% if range_preset == "12m" %}selected{% endif %}>{% trans "Last 12 months" %}</option>
+  </select>
+
+  <select id="granularity-selector"
+          name="granularity"
+          class="h-9 rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus:ring-1 focus:ring-ring/40"
+          aria-label="{% trans 'Group by' %}">
+    <option value="auto" {% if granularity == "auto" %}selected{% endif %}>{% trans "Auto" %}</option>
+    <option value="minute" {% if granularity == "minute" %}selected{% endif %}>{% trans "Minute" %}</option>
+    <option value="hour" {% if granularity == "hour" %}selected{% endif %}>{% trans "Hour" %}</option>
+    <option value="day" {% if granularity == "day" %}selected{% endif %}>{% trans "Day" %}</option>
+    <option value="week" {% if granularity == "week" %}selected{% endif %}>{% trans "Week" %}</option>
+    <option value="month" {% if granularity == "month" %}selected{% endif %}>{% trans "Month" %}</option>
+  </select>
+
+  {# ── Period navigation (older ← / → newer) — only for navigable presets ── #}
+  {% if range_preset and range_preset != "custom" %}
+  <div class="inline-flex items-center gap-1">
+    {# Older period: always available. #}
+    <a href="?{% for key, vals in request.GET.lists %}{% for val in vals %}{% if key != 'offset' %}{{ key }}={{ val }}&{% endif %}{% endfor %}{% endfor %}offset={{ range_offset|add:1 }}"
+       class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+       aria-label="{% trans 'Previous period' %}" title="{% trans 'Previous period' %}">
+      <i data-lucide="chevron-left" class="size-4"></i>
+    </a>
+    {# Newer period: disabled on the most recent window (offset 0). When stepping #}
+    {# down to the most recent window the offset param is dropped for a clean URL. #}
+    {% if range_offset > 0 %}
+    <a href="?{% for key, vals in request.GET.lists %}{% for val in vals %}{% if key != 'offset' %}{{ key }}={{ val }}&{% endif %}{% endfor %}{% endfor %}{% if range_offset > 1 %}offset={{ range_offset|add:'-1' }}{% endif %}"
+       class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+       aria-label="{% trans 'Next period' %}" title="{% trans 'Next period' %}">
+      <i data-lucide="chevron-right" class="size-4"></i>
+    </a>
+    {% else %}
+    <span class="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-md border border-input bg-background text-muted-foreground/40"
+          aria-disabled="true" aria-label="{% trans 'Next period' %}" title="{% trans 'Next period' %}">
+      <i data-lucide="chevron-right" class="size-4"></i>
+    </span>
+    {% endif %}
+    {# Which window you're on, shown only once navigated into the past. #}
+    {% if range_offset > 0 and current_range %}
+    <span class="ml-1 hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
+      {{ current_range.start_date|date:"j M H:i" }} → {{ current_range.end_date|date:"j M H:i" }}
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="hidden h-4 w-px bg-border sm:block"></div>
+
+  {# ── Active filter chips ── #}
+  {% for f in active_filters %}
+  {% if f.column != "__bot_filter__" %}
+  <span class="inline-flex h-7 items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 font-mono text-[11px] text-foreground">
+    <span class="text-muted-foreground">{{ f.column }}</span>
+    <span>{{ f.value }}</span>
+    <a href="?{% for key, vals in request.GET.lists %}{% for val in vals %}{% if key == 'filter' or key == 'f' %}{% if val != f.column|add:":"|add:f.operator|add:":"|add:f.value %}{{ key }}={{ val }}&{% endif %}{% else %}{{ key }}={{ val }}&{% endif %}{% endfor %}{% endfor %}"
+       class="ml-0.5 text-muted-foreground hover:text-destructive" title="{% trans 'Remove filter' %}">×</a>
+  </span>
+  {% endif %}
+  {% endfor %}
+
+  {# ── Add-filter popover (right-aligned on desktop, just left of the bot filter) ── #}
+  <div class="relative sm:ml-auto">
+    <button type="button" data-filter-toggle
+            class="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+      <i data-lucide="plus" class="size-3.5"></i>{% trans "Filter" %}
+    </button>
+
+    <div id="filter-popover"
+         class="absolute left-0 top-10 z-30 hidden w-72 rounded-lg border border-border bg-popover p-3 shadow-lg sm:left-auto sm:right-0">
+      <div class="flex flex-col gap-2">
+        <label class="text-[11px] font-medium text-muted-foreground">{% trans "Field" %}</label>
+        <select id="filter-column" name="column"
+                hx-get="{% url 'analytics_filter_values' %}" hx-trigger="change"
+                hx-target="#filter-value-list" hx-swap="innerHTML" hx-include="#filter-state"
+                class="h-9 rounded-md border border-input bg-background px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring/40">
+          <option value="url_path">{% trans "Page" %}</option>
+          <option value="page_title">{% trans "Page title" %}</option>
+          <option value="referrer_domain">{% trans "Referrer" %}</option>
+          <option value="hostname">{% trans "Hostname" %}</option>
+          <option value="event_name">{% trans "Event" %}</option>
+          <option value="country">{% trans "Country" %}</option>
+          <option value="region">{% trans "Region" %}</option>
+          <option value="city">{% trans "City" %}</option>
+          <option value="browser">{% trans "Browser" %}</option>
+          <option value="os">{% trans "OS" %}</option>
+          <option value="device">{% trans "Device" %}</option>
+          <option value="language">{% trans "Language" %}</option>
+          <option value="screen">{% trans "Screen" %}</option>
+          <option value="utm_source">{% trans "UTM Source" %}</option>
+          <option value="utm_medium">{% trans "UTM Medium" %}</option>
+          <option value="utm_campaign">{% trans "UTM Campaign" %}</option>
+          <option value="tag">{% trans "Tag" %}</option>
+        </select>
+
+        <label class="text-[11px] font-medium text-muted-foreground">{% trans "Condition" %}</label>
+        <select id="filter-operator" name="operator"
+                class="h-9 rounded-md border border-input bg-background px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring/40">
+          <option value="eq">{% trans "is" %}</option>
+          <option value="neq">{% trans "is not" %}</option>
+          <option value="contains">{% trans "contains" %}</option>
+          <option value="not_contains">{% trans "does not contain" %}</option>
+          <option value="starts_with">{% trans "starts with" %}</option>
+          <option value="not_starts_with">{% trans "does not start with" %}</option>
+        </select>
+
+        <label class="text-[11px] font-medium text-muted-foreground">{% trans "Value" %}</label>
+        <input id="filter-value" name="search" list="filter-value-list" autocomplete="off"
+               placeholder="{% trans 'Type or pick a value…' %}"
+               hx-get="{% url 'analytics_filter_values' %}" hx-trigger="keyup changed delay:300ms, focus"
+               hx-target="#filter-value-list" hx-swap="innerHTML" hx-include="#filter-column, #filter-state"
+               class="h-9 rounded-md border border-input bg-background px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring/40">
+        <datalist id="filter-value-list"></datalist>
+
+        {# Hidden current view-state, included in the typeahead requests so values are scoped. #}
+        <span id="filter-state" hidden>
+          <input type="hidden" name="website" value="{{ selected_website }}">
+          {% if range_preset and range_preset != "custom" %}<input type="hidden" name="range" value="{{ range_preset }}">{% endif %}
+          {% if request.GET.start %}<input type="hidden" name="start" value="{{ request.GET.start }}">{% endif %}
+          {% if request.GET.end %}<input type="hidden" name="end" value="{{ request.GET.end }}">{% endif %}
+        </span>
+
+        <button type="button" data-filter-apply
+                class="mt-1 inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+          {% trans "Apply filter" %}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <a href="?{% for key, val in request.GET.items %}{% if key != 'bot_filter' %}{{ key }}={{ val }}&{% endif %}{% endfor %}bot_filter={% if bot_filter %}0{% else %}1{% endif %}"
+       data-bot-filter-toggle
+       class="group/bot inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors aria-busy:pointer-events-none aria-busy:opacity-60
+              {% if bot_filter %}border-primary/40 bg-primary/10 text-foreground{% else %}border-input bg-background text-muted-foreground hover:bg-muted{% endif %}">
+      <i data-lucide="bot" class="size-3.5 group-aria-busy/bot:hidden"></i>
+      <svg class="hidden size-3.5 animate-spin group-aria-busy/bot:inline" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="14 42"></circle>
+      </svg>
+      <span class="hidden sm:inline">{% trans "Bot filter" %}</span>
+      <span class="relative inline-flex h-[14px] w-[26px] shrink-0 rounded-full transition-colors {% if bot_filter %}bg-primary{% else %}bg-muted{% endif %}">
+        <span class="absolute top-[1px] h-3 w-3 rounded-full bg-background shadow-sm transition-transform {% if bot_filter %}right-[1px]{% else %}left-[1px]{% endif %}"></span>
+      </span>
+    </a>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // Visual feedback while the bot-filter toggle triggers a full page reload.
+    document.querySelectorAll('[data-bot-filter-toggle]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        el.setAttribute('aria-busy', 'true');
+      });
+    });
+
+    var popover = document.getElementById('filter-popover');
+
+    // Toggle the add-filter popover; close it when clicking elsewhere.
+    document.addEventListener('click', function (e) {
+      if (!popover) return;
+      if (e.target.closest('[data-filter-toggle]')) {
+        popover.classList.toggle('hidden');
+        return;
+      }
+      if (!e.target.closest('#filter-popover')) {
+        popover.classList.add('hidden');
+      }
+    });
+
+    // Apply: append the chosen filter to the current URL and reload. Using
+    // the current URL preserves website, range, bot_filter and any filters
+    // already active (filter is multi-valued, so we append).
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('[data-filter-apply]')) return;
+      var col = document.getElementById('filter-column');
+      var op = document.getElementById('filter-operator');
+      var val = document.getElementById('filter-value');
+      if (!col || !op || !val) return;
+      var value = val.value.trim();
+      if (!value) {
+        val.focus();
+        return;
+      }
+      var u = new URL(window.location.href);
+      u.searchParams.append('filter', col.value + ':' + op.value + ':' + value);
+      window.location.href = u.toString();
+    });
+  })();
+</script>

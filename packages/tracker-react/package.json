@@ -1,0 +1,49 @@
+{
+  "name": "@mantecato/tracker-react",
+  "version": "0.1.0",
+  "description": "React hooks and provider for @mantecato/tracker",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "dependencies": {
+    "@mantecato/tracker": "^0.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.0",
+    "@types/react": "^19.0.0",
+    "jsdom": "^29.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.2"
+  },
+  "keywords": [
+    "analytics",
+    "tracker",
+    "react",
+    "hooks",
+    "umami"
+  ],
+  "license": "MIT"
+}

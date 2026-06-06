@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% load i18n fmt %}
+
+{% block title %}{% trans "Devices" %}{% endblock %}
+{% block page_title %}{% trans "Devices" %}{% endblock %}
+
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+
+<div class="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+
+  <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+    <div class="px-4">
+      <h2 class="mb-3 text-sm font-medium">{% trans "Browser" %}</h2>
+      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-browser"></canvas></div>
+      {% if browser %}
+      <div class="mt-3 space-y-0">
+        {% for b in browser %}
+        <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+          <span>{{ b.value }}</span>
+          <div class="flex gap-2 tabular-nums text-right">
+            <span class="font-medium">{{ b.visitors|intcomma }}</span>
+            <span class="w-14 text-muted-foreground">{{ b.percentage|floatformat:1 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {{ browser_chart_data|json_script:"browser-chart-data" }}
+  </div>
+
+  <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+    <div class="px-4">
+      <h2 class="mb-3 text-sm font-medium">{% trans "Operating System" %}</h2>
+      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-os"></canvas></div>
+      {% if os %}
+      <div class="mt-3 space-y-0">
+        {% for o in os %}
+        <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+          <span>{{ o.value }}</span>
+          <div class="flex gap-2 tabular-nums text-right">
+            <span class="font-medium">{{ o.visitors|intcomma }}</span>
+            <span class="w-14 text-muted-foreground">{{ o.percentage|floatformat:1 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {{ os_chart_data|json_script:"os-chart-data" }}
+  </div>
+
+  <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+    <div class="px-4">
+      <h2 class="mb-3 text-sm font-medium">{% trans "Device Type" %}</h2>
+      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-device"></canvas></div>
+      {% if device %}
+      <div class="mt-3 space-y-0">
+        {% for d in device %}
+        <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+          <span>{{ d.value }}</span>
+          <div class="flex gap-2 tabular-nums text-right">
+            <span class="font-medium">{{ d.visitors|intcomma }}</span>
+            <span class="w-14 text-muted-foreground">{{ d.percentage|floatformat:1 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {{ device_chart_data|json_script:"device-chart-data" }}
+  </div>
+
+  <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+    <div class="px-4">
+      <h2 class="mb-3 text-sm font-medium">{% trans "Language" %}</h2>
+      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-language"></canvas></div>
+      {% if language %}
+      <div class="space-y-0">
+        {% for l in language %}
+        <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+          <span>{{ l.value }}</span>
+          <div class="flex gap-2 tabular-nums text-right">
+            <span class="font-medium">{{ l.visitors|intcomma }}</span>
+            <span class="w-14 text-muted-foreground">{{ l.percentage|floatformat:1 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No language data." %}</p>
+      {% endif %}
+    </div>
+    {{ language_chart_data|json_script:"language-chart-data" }}
+  </div>
+
+</div>
+
+<div class="mt-4 flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+  <div class="px-4">
+    <h2 class="mb-3 text-sm font-medium">{% trans "Screen Size" %}</h2>
+    <div class="relative h-48 sm:h-64"><canvas id="chart-screen"></canvas></div>
+    {{ screen_chart_data|json_script:"screen-chart-data" }}
+    {% if screen %}
+    <div class="space-y-0">
+      <div class="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <span>{% trans "Resolution" %}</span>
+        <div class="flex gap-4 text-right">
+          <span class="w-16">{% trans "Visitors" %}</span>
+          <span class="hidden w-14 sm:inline">{% trans "%" %}</span>
+        </div>
+      </div>
+      {% for s in screen %}
+      <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
+        <span class="font-mono text-sm">{{ s.value }}</span>
+        <div class="flex gap-4 text-right tabular-nums">
+          <span class="w-16 font-medium">{{ s.visitors|intcomma }}</span>
+          <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.percentage|floatformat:1 }}%</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No screen data." %}</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var bEl = document.getElementById('browser-chart-data');
+    if (bEl) initPieChart('chart-browser', JSON.parse(bEl.textContent));
+
+    var oEl = document.getElementById('os-chart-data');
+    if (oEl) initPieChart('chart-os', JSON.parse(oEl.textContent));
+
+    var dEl = document.getElementById('device-chart-data');
+    if (dEl) initPieChart('chart-device', JSON.parse(dEl.textContent));
+
+    var lEl = document.getElementById('language-chart-data');
+    if (lEl) initPieChart('chart-language', JSON.parse(lEl.textContent));
+    var sEl = document.getElementById('screen-chart-data');
+    if (sEl) initBarChart('chart-screen', JSON.parse(sEl.textContent));
+  })();
+</script>
+{% endblock %}
