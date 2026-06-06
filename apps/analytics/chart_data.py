@@ -53,10 +53,9 @@ def build_timeseries_chart_data(
 ) -> dict:
     """Convert ``[{"time", "pageviews", "visitors"}, ...]`` to Chart.js shape.
 
-    When *prev_timeseries* is provided, two additional dashed datasets are
-    appended representing the previous period (same duration, shifted back).
-    The previous series is aligned to the current labels by index — if it
-    is shorter it is zero-padded, if longer it is truncated.
+    When *prev_timeseries* is provided, a dashed dataset is appended
+    representing the previous period. Aligned by index — zero-padded if shorter,
+    truncated if longer.
     """
     if not timeseries:
         return {"labels": [], "datasets": []}
@@ -69,39 +68,21 @@ def build_timeseries_chart_data(
             "borderColor": _TS_PAGEVIEWS_BORDER,
             "backgroundColor": _TS_PAGEVIEWS_BG,
         },
-        {
-            "label": "Visitors",
-            "data": [p["visitors"] for p in timeseries],
-            "borderColor": _TS_VISITORS_BORDER,
-            "backgroundColor": _TS_VISITORS_BG,
-        },
     ]
 
     if prev_timeseries:
         prev_pv = [p["pageviews"] for p in prev_timeseries]
-        prev_vis = [p["visitors"] for p in prev_timeseries]
         n = len(labels)
         if len(prev_pv) < n:
             prev_pv.extend([0] * (n - len(prev_pv)))
-            prev_vis.extend([0] * (n - len(prev_vis)))
-        datasets.extend([
-            {
-                "label": "Prev Pageviews",
-                "data": prev_pv[:n],
-                "borderColor": _TS_PREV_PAGEVIEWS_BORDER,
-                "backgroundColor": "transparent",
-                "borderDash": [5, 5],
-                "fill": False,
-            },
-            {
-                "label": "Prev Visitors",
-                "data": prev_vis[:n],
-                "borderColor": _TS_PREV_VISITORS_BORDER,
-                "backgroundColor": "transparent",
-                "borderDash": [5, 5],
-                "fill": False,
-            },
-        ])
+        datasets.append({
+            "label": "Prev Pageviews",
+            "data": prev_pv[:n],
+            "borderColor": _TS_PREV_PAGEVIEWS_BORDER,
+            "backgroundColor": "transparent",
+            "borderDash": [5, 5],
+            "fill": False,
+        })
 
     return {"labels": labels, "datasets": datasets}
 
@@ -110,7 +91,7 @@ def build_dimension_chart_data(dimensions: list[dict]) -> dict:
     """Convert device-dimension rows to a Chart.js doughnut payload.
 
     Args:
-        dimensions: rows shaped ``[{"value": "<label>", "visitors": <int>}, ...]``
+        dimensions: rows shaped ``[{"value": "<label>", "pageviews": <int>}, ...]``
             (the format returned by :func:`core.mantecato_core.queries.devices.get_device_metrics`
             for ``browser`` / ``os`` / ``device``).
 
@@ -121,7 +102,7 @@ def build_dimension_chart_data(dimensions: list[dict]) -> dict:
         return {"labels": [], "datasets": []}
 
     labels = [d["value"] for d in dimensions]
-    values = [d["visitors"] for d in dimensions]
+    values = [d.get("pageviews", d.get("visitors", 0)) for d in dimensions]
     return {
         "labels": labels,
         "datasets": [
@@ -471,7 +452,7 @@ def build_geo_bubble_data(geo: list[dict]) -> list[dict]:
             result.append(
                 {
                     "country": code,
-                    "visitors": g.get("visitors", 0),
+                    "pageviews": g.get("pageviews", g.get("visitors", 0)),
                     "lat": lat,
                     "lng": lng,
                 }
@@ -479,21 +460,6 @@ def build_geo_bubble_data(geo: list[dict]) -> list[dict]:
     return result
 
 
-def build_geo_regions_bar_data(regions: list[dict], limit: int = 10) -> dict:
-    """Convert geo-region rows to a Chart.js horizontal bar payload."""
-    if not regions:
-        return {"labels": [], "datasets": []}
-    top = regions[:limit]
-    return {
-        "labels": [r.get("region") or "(unknown)" for r in top],
-        "datasets": [
-            {
-                "label": "Visitors",
-                "data": [r["visitors"] for r in top],
-                "backgroundColor": "rgba(99, 102, 241, 0.7)",
-            }
-        ],
-    }
 
 
 def build_geo_duration_bar_data(geo: list[dict], limit: int = 10) -> dict:

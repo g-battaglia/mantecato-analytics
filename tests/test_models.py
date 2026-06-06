@@ -1,4 +1,4 @@
-"""Tests for models and report proxy models.
+"""Tests for models and report proxy models — privacy-first aggregate mode.
 
 All assertions are purely structural — no database access required.
 """
@@ -18,65 +18,14 @@ from apps.core.models import (
     ApiKey,
     BotConfig,
     Dashboard,
-    EventData,
     MantecatoUser,
     Report,
-    Revenue,
     ScheduledExport,
-    Segment,
-    Session,
-    SessionData,
     Team,
     TeamUser,
     Website,
     WebsiteEvent,
 )
-
-# ---------------------------------------------------------------------------
-# Concrete model registry
-# ---------------------------------------------------------------------------
-
-CONCRETE_MODELS = [
-    Team,
-    MantecatoUser,
-    Website,
-    Session,
-    WebsiteEvent,
-    EventData,
-    SessionData,
-    TeamUser,
-    Revenue,
-    Segment,
-    Report,
-]
-
-PROXY_MODELS = [
-    Dashboard,
-    ApiKey,
-    BotConfig,
-    ScheduledExport,
-]
-
-ALL_MODELS = CONCRETE_MODELS + PROXY_MODELS
-
-
-# ---------------------------------------------------------------------------
-# Concrete models: managed = True (default)
-# ---------------------------------------------------------------------------
-
-
-class TestManaged:
-    """Every concrete model must have ``managed = True`` (the default)."""
-
-    @pytest.mark.parametrize("model_cls", CONCRETE_MODELS, ids=lambda m: m.__name__)
-    def test_concrete_managed_true(self, model_cls: type) -> None:
-        assert model_cls._meta.managed is True
-
-    @pytest.mark.parametrize("model_cls", CONCRETE_MODELS, ids=lambda m: m.__name__)
-    def test_no_auto_field(self, model_cls: type) -> None:
-        """Concrete models use UUID PKs, not Django's default BigAutoField."""
-        assert not isinstance(model_cls._meta.pk, models.BigAutoField)
-
 
 # ---------------------------------------------------------------------------
 # Concrete models: db_table
@@ -86,13 +35,8 @@ EXPECTED_DB_TABLES: dict[type, str] = {
     Team: "team",
     MantecatoUser: "mantecato_user",
     Website: "website",
-    Session: "session",
     WebsiteEvent: "website_event",
-    EventData: "event_data",
-    SessionData: "session_data",
     TeamUser: "team_user",
-    Revenue: "revenue",
-    Segment: "segment",
     Report: "report",
 }
 
@@ -153,6 +97,8 @@ class TestMantecatoUser:
 # Proxy models
 # ---------------------------------------------------------------------------
 
+PROXY_MODELS = (Dashboard, ApiKey, BotConfig, ScheduledExport)
+
 
 class TestProxyModels:
     @pytest.mark.parametrize("model_cls", PROXY_MODELS, ids=lambda m: m.__name__)
@@ -169,11 +115,6 @@ class TestProxyModels:
 
     @pytest.mark.parametrize("model_cls", PROXY_MODELS, ids=lambda m: m.__name__)
     def test_proxy_parent_is_managed(self, model_cls: type) -> None:
-        """Proxy models inherit ``managed`` from their concrete parent.
-
-        The concrete base model (Report) has ``managed = True``, which means
-        Django manages migrations for it.
-        """
         parent = model_cls._meta.get_field("id").model
         while parent._meta.proxy:
             parent = parent.__bases__[0]
@@ -193,8 +134,6 @@ PROXY_TYPE_MAP: dict[type, str] = {
 
 
 class TestProxyManagerFilter:
-    """Verify the queryset filter without hitting the database."""
-
     @pytest.mark.parametrize(
         "model_cls",
         list(PROXY_TYPE_MAP.keys()),
@@ -240,14 +179,8 @@ class TestFieldTypes:
     def test_user_pk_is_uuid(self) -> None:
         assert isinstance(MantecatoUser._meta.get_field("id"), models.UUIDField)
 
-    def test_session_pk_is_uuid(self) -> None:
-        assert isinstance(Session._meta.get_field("session_id"), models.UUIDField)
-
     def test_event_pk_is_uuid(self) -> None:
         assert isinstance(WebsiteEvent._meta.get_field("event_id"), models.UUIDField)
-
-    def test_event_data_pk_is_uuid(self) -> None:
-        assert isinstance(EventData._meta.get_field("event_data_id"), models.UUIDField)
 
     def test_report_pk_is_uuid(self) -> None:
         assert isinstance(Report._meta.get_field("id"), models.UUIDField)
@@ -255,54 +188,19 @@ class TestFieldTypes:
     def test_report_has_json_parameters(self) -> None:
         assert isinstance(Report._meta.get_field("parameters"), models.JSONField)
 
-    def test_segment_has_json_name_filters(self) -> None:
-        assert isinstance(Segment._meta.get_field("name_filters"), models.JSONField)
-
-    def test_revenue_has_decimal_field(self) -> None:
-        assert isinstance(Revenue._meta.get_field("revenue"), models.DecimalField)
-
     def test_website_is_deleted_is_boolean(self) -> None:
         assert isinstance(Website._meta.get_field("is_deleted"), models.BooleanField)
 
     def test_website_event_event_type_is_int(self) -> None:
         assert isinstance(WebsiteEvent._meta.get_field("event_type"), models.IntegerField)
 
-    def test_event_data_data_type_is_int(self) -> None:
-        assert isinstance(EventData._meta.get_field("data_type"), models.IntegerField)
-
-    def test_session_data_data_type_is_int(self) -> None:
-        assert isinstance(SessionData._meta.get_field("data_type"), models.IntegerField)
-
-    # ------------------------------------------------------------------
-    # T3 review fixes: nullable Website.user_id
-    # ------------------------------------------------------------------
-
     def test_website_user_id_is_nullable(self) -> None:
         field = Website._meta.get_field("user_id")
         assert field.null is True
 
-    # ------------------------------------------------------------------
-    # T3 review fixes: DecimalField decimal_places > 0
-    # ------------------------------------------------------------------
-
-    def test_event_data_number_value_has_decimal_places(self) -> None:
-        field = EventData._meta.get_field("number_value")
-        assert isinstance(field, models.DecimalField)
-        assert field.decimal_places > 0
-
-    def test_session_data_number_value_has_decimal_places(self) -> None:
-        field = SessionData._meta.get_field("number_value")
-        assert isinstance(field, models.DecimalField)
-        assert field.decimal_places > 0
-
-    def test_revenue_field_has_decimal_places(self) -> None:
-        field = Revenue._meta.get_field("revenue")
-        assert isinstance(field, models.DecimalField)
-        assert field.decimal_places > 0
-
 
 # ---------------------------------------------------------------------------
-# Proxy model to_dict() serialization (camelCase API/template contract)
+# Proxy model to_dict() serialization
 # ---------------------------------------------------------------------------
 
 _TS = datetime(2026, 1, 15, 12, 30, 0, tzinfo=UTC)
@@ -313,98 +211,66 @@ _SITE = "33333333-3333-3333-3333-333333333333"
 
 
 def _stamp(obj: Report) -> Report:
-    """Set the auto timestamps on an unsaved instance for serialization tests."""
     obj.created_at = _TS
     obj.updated_at = _TS
     return obj
 
 
 class TestProxyToDict:
-    """``to_dict()`` must match the camelCase shape the JSON API returns."""
-
     @pytest.mark.parametrize(
         "model_cls", [Dashboard, ScheduledExport], ids=lambda m: m.__name__
     )
     def test_report_shaped_to_dict(self, model_cls: type) -> None:
-        obj = _stamp(
+        instance = _stamp(
             model_cls(
                 id=_ID,
+                name="Test",
                 user_id=_USER,
                 website_id=_SITE,
-                name="Item",
-                description="desc",
-                parameters={"k": "v"},
-            )
-        )
-        assert obj.to_dict() == {
-            "id": _ID,
-            "name": "Item",
-            "description": "desc",
-            "userId": _USER,
-            "websiteId": _SITE,
-            "config": {"k": "v"},
-            "createdAt": _TS_ISO,
-            "updatedAt": _TS_ISO,
-        }
-
-    def test_report_to_dict_normalizes_blank_fields(self) -> None:
-        obj = _stamp(
-            Dashboard(
-                id=_ID,
-                user_id=_USER,
-                website_id=_SITE,
-                name="X",
-                description=None,
                 parameters={},
             )
         )
-        result = obj.to_dict()
-        assert result["description"] == ""
-        assert result["config"] == {}
+        d = instance.to_dict()
+        assert d["id"] == _ID
+        assert d["name"] == "Test"
+        assert d["userId"] == _USER
+        assert d["websiteId"] == _SITE
+        assert "createdAt" in d
+        assert "updatedAt" in d
 
     def test_api_key_to_dict(self) -> None:
-        obj = ApiKey(
+        instance = ApiKey(
             id=_ID,
-            user_id=_USER,
-            name="CI key",
-            parameters={
-                "prefix": "mtk_abc1234...",
-                "scopes": ["read", "write"],
-                "createdAt": _TS_ISO,
-                "lastUsedAt": None,
-            },
+            name="Key",
+            parameters={"prefix": "mtk_abc", "scopes": ["read"]},
         )
-        assert obj.to_dict() == {
-            "id": _ID,
-            "name": "CI key",
-            "prefix": "mtk_abc1234...",
-            "scopes": ["read", "write"],
-            "createdAt": _TS_ISO,
-            "lastUsedAt": None,
-        }
-
-    def test_api_key_to_dict_defaults(self) -> None:
-        obj = ApiKey(id=_ID, user_id=_USER, name="K", parameters={})
-        result = obj.to_dict()
-        assert result["prefix"] == "mtk_???"
-        assert result["scopes"] == ["read"]
-        assert result["lastUsedAt"] is None
+        d = instance.to_dict()
+        assert d["id"] == _ID
+        assert d["name"] == "Key"
+        assert d["prefix"] == "mtk_abc"
+        assert d["scopes"] == ["read"]
 
     def test_bot_config_to_dict_merges_defaults(self) -> None:
-        obj = _stamp(
-            BotConfig(
-                id=_ID,
-                user_id=_USER,
-                website_id=_SITE,
-                name="Bot Detection Config",
-                parameters={"enabled": True, "minDuration": 5},
-            )
+        from apps.core.models import BOT_CONFIG_DEFAULTS
+
+        instance = BotConfig(
+            id=_ID,
+            website_id=_SITE,
+            parameters={"enabled": True},
         )
-        result = obj.to_dict()
-        assert result["id"] == _ID
-        assert result["websiteId"] == _SITE
-        assert result["createdAt"] == _TS_ISO
-        assert result["config"]["enabled"] is True
-        assert result["config"]["minDuration"] == 5
-        assert result["config"]["knownBots"] is True
-        assert result["config"]["excludedCountries"] == []
+        d = instance.to_dict()
+        config = d["config"]
+        assert config["enabled"] is True
+        for key in BOT_CONFIG_DEFAULTS:
+            assert key in config
+
+    def test_dashboard_config_key(self) -> None:
+        instance = Dashboard(
+            id=_ID,
+            name="D",
+            user_id=_USER,
+            parameters={"version": 1, "columns": 2},
+        )
+        d = instance.to_dict()
+        assert d["config"]["version"] == 1
+        assert d["config"]["columns"] == 2

@@ -26,7 +26,7 @@
         <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="referrers-tab">{% trans "Referrers" %}</button>
         <button class="panel-tab pb-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground px-3" data-panel="channels-tab">{% trans "Channels" %}</button>
       </div>
-      <a href="{% url 'analytics_sources' %}?{% view_query %}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+      <a href="#" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
     </div>
     <div class="panel-content flex-1 p-2" id="referrers-tab">
       {% include "analytics/_tab_referrers.html" %}

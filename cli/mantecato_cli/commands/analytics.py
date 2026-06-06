@@ -109,14 +109,12 @@ def devices(
 def geo(
     website: str = WEBSITE_OPT,
     range: str = RANGE_OPT,
-    country: str | None = typer.Option(None, "--country"),
-    region: str | None = typer.Option(None, "--region"),
     format: str = FORMAT_OPTION,
 ) -> None:
-    """Geographic breakdown."""
+    """Geographic breakdown (country-level)."""
     from apps.analytics.services import get_geo_data
 
-    run_with_range(get_geo_data, website, range, format, country=country, region=region)
+    run_with_range(get_geo_data, website, range, format)
 
 
 @app.command("compare")

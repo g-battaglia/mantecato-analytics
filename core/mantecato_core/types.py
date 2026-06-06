@@ -61,12 +61,10 @@ class DeviceRow(TypedDict, total=False):
 
 
 class GeoRow(TypedDict, total=False):
-    """One row of the geographic breakdown (country/region/city)."""
+    """One row of the geographic breakdown (country-level only)."""
 
     country: str
-    region: str
-    city: str
-    visitors: int
+    pageviews: int
 
 
 class EventRow(TypedDict, total=False):

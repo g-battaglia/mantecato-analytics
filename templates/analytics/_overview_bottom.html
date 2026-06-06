@@ -19,7 +19,7 @@
       <div class="flex gap-0 border-b border-border">
         <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="events-overview-tab">{% trans "Events" %}</button>
       </div>
-      <a href="{% url 'analytics_events' %}?website={{ selected_website }}&range={{ range_preset }}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+      <a href="#" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
     </div>
     <div class="panel-content flex-1 p-2" id="events-overview-tab">
       {% if event_metrics %}

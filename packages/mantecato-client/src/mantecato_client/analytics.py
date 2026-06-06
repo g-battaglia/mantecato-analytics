@@ -261,13 +261,8 @@ class AnalyticsEndpoints:
         end: str | None = None,
         filters: list[str] | None = None,
         bot_filter: bool = False,
-        country: str | None = None,
-        region: str | None = None,
     ) -> dict[str, Any]:
-        """Fetch geographic visitor breakdown with drill-down support.
-
-        Returns country-level data by default.  Pass ``country`` to drill
-        into regions, or both ``country`` and ``region`` for cities.
+        """Fetch geographic pageview breakdown (country-level only).
 
         Args:
             website_id: UUID of the tracked website.
@@ -276,25 +271,15 @@ class AnalyticsEndpoints:
             end: ISO end date.
             filters: Column-level filter expressions.
             bot_filter: Exclude bot traffic if ``True``.
-            country: ISO 3166-1 alpha-2 code to drill into (e.g. ``"US"``).
-            region: Region name to drill into (requires ``country``).
 
         Returns:
-            Dict with keys ``geo``, ``level``, ``country``, ``region``.
+            Dict with keys ``geo`` (list of country rows) and ``level`` ("country").
 
         Example::
 
-            # Country-level
             geo = client.analytics.geo("uuid", date_range="30d")
-
-            # Drill into US regions
-            geo = client.analytics.geo("uuid", date_range="30d", country="US")
         """
         params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
-        if country:
-            params["country"] = country
-        if region:
-            params["region"] = region
         return self._client._get("/api/analytics/geo/", params)
 
     def compare(

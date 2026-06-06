@@ -411,23 +411,13 @@ class AnalyticsGeoView(_AnalyticsJSONView):
         Requires API key with access to the specified website.
 
     Query params:
-        ``website`` (required), ``start_at``, ``end_at``, ``country``
-        (optional ISO 3166-1 alpha-2 code for region drill-down), ``region``
-        (optional ISO 3166-2 code for city drill-down), plus filter params.
+        ``website`` (required), ``start_at``, ``end_at``, plus filter params.
 
     Response:
-        200 JSON with visitor counts grouped by country, or by region/city
-        when drill-down params are provided.
+        200 JSON with pageview counts grouped by country (ISO 3166-1 alpha-2).
     """
 
     service_name = "get_geo_data"
-
-    def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
-        """Extract optional ``country`` and ``region`` params for geo drill-down."""
-        return {
-            "country": request.GET.get("country") or None,
-            "region": request.GET.get("region") or None,
-        }
 
 
 class AnalyticsCompareView(_AnalyticsJSONView):

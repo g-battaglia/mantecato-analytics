@@ -21,15 +21,16 @@ from core.mantecato_core.queries import (
     get_filter_values,
     get_first_event_date,
     get_geo_metrics,
-    get_next_pages,
     get_page_metrics,
-    get_page_referrers,
     get_page_time_series,
     get_pageview_time_series,
-    get_time_on_page_distribution,
-    get_top_events,
     get_top_pages,
-    get_top_referrers,
+    get_top_sections,
+    get_traffic_heatmap,
+    get_active_visitors,
+    get_current_pages,
+    get_recent_events,
+    get_top_pages,
     get_top_sections,
     get_website_stats,
 )
@@ -234,18 +235,6 @@ class TestStatsLive:
             assert "views" in result[0]
             assert "visitors" in result[0]
 
-    def test_get_top_referrers(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_top_referrers(self.website_id, start, end)
-        assert isinstance(result, list)
-
-    def test_get_top_events(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_top_events(self.website_id, start, end)
-        assert isinstance(result, list)
-
     def test_get_country_breakdown(self, django_db_blocker: object) -> None:
         start, end = self._date_range
         with django_db_blocker.unblock():
@@ -253,7 +242,7 @@ class TestStatsLive:
         assert isinstance(result, list)
         if result:
             assert "country" in result[0]
-            assert "visitors" in result[0]
+            assert "pageviews" in result[0]
             assert "pageviews" in result[0]
 
     def test_get_top_sections(self, django_db_blocker: object) -> None:
@@ -306,27 +295,6 @@ class TestPageviewsLive:
             assert "entries" in row
             assert "exits" in row
             assert "bounceRate" in row
-
-    def test_get_page_referrers(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_page_referrers(self.website_id, self.url_path, start, end)
-        assert isinstance(result, list)
-
-    def test_get_next_pages(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_next_pages(self.website_id, self.url_path, start, end)
-        assert isinstance(result, list)
-
-    def test_get_time_on_page_distribution(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_time_on_page_distribution(self.website_id, self.url_path, start, end)
-        assert isinstance(result, list)
-        if result:
-            assert "bucket" in result[0]
-            assert "count" in result[0]
 
     def test_get_page_time_series(self, django_db_blocker: object) -> None:
         start, end = self._date_range

@@ -11,7 +11,7 @@
 
 <p align="center">
   <strong>Web analytics for agents and humans.</strong><br>
-  No cookies. No consent banners. No third-party data sharing.<br>
+  Cookieless aggregate analytics. No analytics consent banners. No third-party tracking.<br>
   Self-hosted, privacy-first, AI-native — built with Django + HTMX.
 </p>
 
@@ -45,9 +45,9 @@ Every metric available in the dashboard is also available through the CLI, the R
 
 | | |
 |---|---|
-| 🔒 **Privacy-first** | No cookies, no fingerprinting, no personal data collection. GDPR/CCPA/ePrivacy compliant — no consent banners needed |
+| 🔒 **Privacy-first** | Cookieless aggregate analytics with no fingerprinting, no persistent visitor/session identifiers, and no third-party tracking |
 | 🪶 **Lightweight tracker** | ~2 KB JavaScript — your site stays fast, your Lighthouse score stays high |
-| 🏠 **Self-hosted** | Your data lives on your server. No third parties, no data processing agreements to sign |
+| 🏠 **Self-hosted** | Your analytics infrastructure can run on your own server. Hosted or third-party deployments may require appropriate agreements |
 | ⚡ **Real-time** | See who's on your site right now, where they come from, and what they're doing |
 | 📈 **17 analytics views** | Pages, sources, events, funnels, journeys, retention, revenue, geo maps, engagement, custom dashboards, and more |
 | 🤖 **AI-native** | MCP server with 41 tools, REST API, Python SDK, CLI with JSON output — every interface an agent needs to work autonomously |
@@ -68,7 +68,7 @@ Add one script tag to your site:
         data-website-id="your-website-id"></script>
 ```
 
-That's it. Anonymous pageview and event data flows into your dashboard instantly. No build step, no npm install, no configuration files.
+That's it. Aggregate pageview data starts flowing into your dashboard instantly. No build step, no npm install, no configuration files.
 
 Want custom events? Revenue tracking? Visitor identification?
 
