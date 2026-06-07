@@ -1,14 +1,14 @@
 /**
  * @mantecato/tracker
  *
- * Analytics tracking script for Mantecato.
- * Wire-compatible with the Umami /api/send endpoint.
+ * Privacy-first analytics tracking script for Mantecato.
+ * Collects only anonymous aggregate pageview data — no cookies, no identifiers,
+ * no fingerprinting, no session tracking.
  *
  * Usage (npm):
  *   import { createTracker } from '@mantecato/tracker';
  *   const tracker = createTracker({ websiteId: '...', baseUrl: 'https://your-instance.com' });
  *   tracker.pageview();
- *   tracker.event('signup', { plan: 'pro' });
  *
  * Usage (script tag):
  *   <script defer src="https://your-instance.com/api/script" data-website-id="..."></script>
@@ -30,8 +30,6 @@ interface TrackerConfig {
     hostname?: string;
     /** Tag to identify this tracker instance */
     tag?: string;
-    /** Enable session replay data collection — click coordinates, scroll depth (default: false) */
-    sessionReplay?: boolean;
     /** Strip query string from tracked URLs (default: false) */
     excludeSearch?: boolean;
     /** Strip hash from tracked URLs (default: false) */
@@ -41,62 +39,29 @@ interface TrackerConfig {
     /** Fetch credentials mode (default: "omit") */
     credentials?: RequestCredentials;
 }
-interface RevenueData {
-    /** Revenue amount */
-    amount: number;
-    /** ISO 4217 currency code (e.g. "USD", "EUR") */
-    currency: string;
-}
 interface EventPayload {
-    /** Custom event name */
-    name?: string;
-    /** Custom event data (key-value pairs) */
-    data?: Record<string, string | number | boolean>;
     /** Override page URL */
     url?: string;
     /** Override page title */
     title?: string;
-    /** Override referrer */
-    referrer?: string;
-    /** Revenue data for this event */
-    revenue?: RevenueData;
 }
 interface UmamiPayload {
     website: string;
     hostname: string;
-    screen: string;
-    language: string;
     title: string;
     url: string;
-    referrer: string;
-    name?: string;
-    data?: Record<string, string | number | boolean>;
     tag?: string;
-    revenue?: RevenueData;
-    id?: string;
 }
 /** Function that receives default payload and returns a modified payload */
 type TrackCallback = (props: UmamiPayload) => UmamiPayload;
 interface Tracker {
     /** Track a pageview for the current URL (or override with options) */
-    pageview: (options?: Pick<EventPayload, "url" | "title" | "referrer">) => Promise<void>;
-    /** Track a custom event */
-    event: (name: string, data?: Record<string, string | number | boolean>) => Promise<void>;
-    /** Track a revenue event */
-    revenue: (amount: number, currency: string, data?: Record<string, string | number | boolean>) => Promise<void>;
-    /** Send a raw payload (advanced) */
-    send: (payload: EventPayload) => Promise<void>;
-    /** Umami-compatible track() — overloaded: no args = pageview, string = event, object = raw payload, function = callback */
+    pageview: (options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+    /** Umami-compatible track() — overloaded: no args = pageview, string = named pageview, object = raw payload, function = callback */
     track: {
         (): Promise<void>;
-        (name: string, data?: Record<string, string | number | boolean>): Promise<void>;
         (payload: Partial<UmamiPayload>): Promise<void>;
         (callback: TrackCallback): Promise<void>;
-    };
-    /** Identify the current visitor — accepts data object or (id, data) like Umami */
-    identify: {
-        (data: Record<string, string | number | boolean>): Promise<void>;
-        (id: string, data?: Record<string, string | number | boolean>): Promise<void>;
     };
     /** Enable tracking (if it was disabled) */
     enable: () => void;
@@ -109,4 +74,4 @@ interface Tracker {
 }
 declare function createTracker(config: TrackerConfig): Tracker;
 
-export { type EventPayload, type RevenueData, type TrackCallback, type Tracker, type TrackerConfig, type UmamiPayload, createTracker };
+export { type EventPayload, type TrackCallback, type Tracker, type TrackerConfig, type UmamiPayload, createTracker };

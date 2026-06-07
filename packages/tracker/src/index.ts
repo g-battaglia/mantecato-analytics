@@ -7,7 +7,6 @@ export { createTracker } from "./tracker";
 export type {
   TrackerConfig,
   EventPayload,
-  RevenueData,
   Tracker,
   TrackCallback,
   UmamiPayload,

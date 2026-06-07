@@ -1,12 +1,4 @@
 // src/tracker.ts
-function getScreen() {
-  if (typeof screen === "undefined") return "";
-  return `${screen.width}x${screen.height}`;
-}
-function getLanguage() {
-  if (typeof navigator === "undefined") return "";
-  return navigator.language || "";
-}
 function getHostname() {
   if (typeof location === "undefined") return "";
   return location.hostname;
@@ -14,10 +6,6 @@ function getHostname() {
 function getUrl() {
   if (typeof location === "undefined") return "";
   return location.pathname + location.search + (location.hash || "");
-}
-function getReferrer() {
-  if (typeof document === "undefined") return "";
-  return document.referrer;
 }
 function getTitle() {
   if (typeof document === "undefined") return "";
@@ -32,10 +20,6 @@ function isDNT() {
 function isBot() {
   if (typeof navigator === "undefined") return false;
   return /bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent);
-}
-function isLocalhost() {
-  if (typeof location === "undefined") return false;
-  return location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "::1";
 }
 function isDisabledByUser() {
   try {
@@ -55,18 +39,13 @@ function createTracker(config) {
     domains,
     hostname: customHostname,
     tag,
-    sessionReplay = false,
     excludeSearch = false,
     excludeHash = false,
     beforeSend,
     credentials = "omit"
   } = config;
   let enabled = true;
-  let disabled = false;
   let currentUrl = "";
-  let currentReferrer = "";
-  let cache = "";
-  let identity = "";
   let cleanupFns = [];
   function normalize(raw) {
     if (!raw) return raw;
@@ -81,12 +60,10 @@ function createTracker(config) {
   }
   function shouldTrack() {
     if (!enabled) return false;
-    if (disabled) return false;
     if (!websiteId) return false;
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
     if (respectDNT && isDNT()) return false;
-    if (isLocalhost()) return false;
     if (isDisabledByUser()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();
@@ -96,62 +73,39 @@ function createTracker(config) {
   }
   function buildPayload(eventPayload = {}) {
     const url = normalize(eventPayload.url || getUrl());
-    const referrer = eventPayload.referrer || currentReferrer || getReferrer();
     const title = eventPayload.title || getTitle();
     return {
       website: websiteId,
       hostname: customHostname || getHostname(),
-      screen: getScreen(),
-      language: getLanguage(),
       title,
       url,
-      referrer,
-      ...eventPayload.name ? { name: eventPayload.name } : {},
-      ...eventPayload.data ? { data: eventPayload.data } : {},
-      ...eventPayload.revenue ? { revenue: eventPayload.revenue } : {},
-      ...tag ? { tag } : {},
-      ...identity ? { id: identity } : {}
+      ...tag ? { tag } : {}
     };
   }
-  async function send(payload, type = "event") {
+  async function send(payload) {
     if (!shouldTrack()) return;
     let finalPayload = payload;
     if (beforeSend) {
-      finalPayload = await Promise.resolve(beforeSend(type, payload));
+      finalPayload = await Promise.resolve(beforeSend("event", payload));
       if (!finalPayload) return;
     }
     const apiUrl = `${baseUrl}${endpoint}`;
-    const body = { type, payload: finalPayload };
-    const jsonBody = JSON.stringify(body);
-    const headers = { "Content-Type": "application/json" };
-    if (cache) {
-      headers["x-umami-cache"] = cache;
-    }
+    const body = { type: "event", payload: finalPayload };
     try {
-      const res = await fetch(apiUrl, {
+      await fetch(apiUrl, {
         method: "POST",
-        headers,
-        body: jsonBody,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
         keepalive: true,
         credentials
       });
-      const data = await res.json();
-      if (data) {
-        if (data.cache) cache = data.cache;
-        if (data.disabled) disabled = true;
-      }
     } catch {
     }
-  }
-  function getOrigin() {
-    if (typeof location === "undefined") return "";
-    return location.origin || "";
   }
   function handlePush(_state, _title, url) {
     if (!url) return;
     const newUrl = normalize(new URL(String(url), typeof location !== "undefined" ? location.href : void 0).toString());
     if (newUrl !== currentUrl) {
-      currentReferrer = currentUrl;
       currentUrl = newUrl;
       setTimeout(() => send(buildPayload()), SPA_DELAY);
     }
@@ -160,8 +114,6 @@ function createTracker(config) {
     if (typeof window === "undefined") return;
     if (!autoTrack) return;
     currentUrl = normalize(typeof location !== "undefined" ? location.href : "");
-    const ref = getReferrer();
-    currentReferrer = normalize(ref.startsWith(getOrigin()) ? "" : ref);
     send(buildPayload());
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
@@ -177,7 +129,6 @@ function createTracker(config) {
       setTimeout(() => {
         const newUrl = normalize(typeof location !== "undefined" ? location.href : "");
         if (newUrl !== currentUrl) {
-          currentReferrer = currentUrl;
           currentUrl = newUrl;
           send(buildPayload());
         }
@@ -190,55 +141,11 @@ function createTracker(config) {
       window.removeEventListener("popstate", onPopState);
     });
   }
-  function setupSessionReplay() {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    if (!sessionReplay) return;
-    const onClick = (e) => {
-      if (!shouldTrack()) return;
-      const target = e.target;
-      const selector = target?.tagName?.toLowerCase() || "unknown";
-      send(buildPayload({
-        name: "_replay_click",
-        data: {
-          x: e.clientX,
-          y: e.clientY,
-          target: selector,
-          ...target?.id ? { id: target.id } : {}
-        }
-      }));
-    };
-    let scrollTimer = null;
-    const onScroll = () => {
-      if (!shouldTrack()) return;
-      if (scrollTimer) clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(() => {
-        const scrollTop = window.scrollY || document.documentElement.scrollTop;
-        const docHeight = Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight
-        );
-        const winHeight = window.innerHeight;
-        const depth = docHeight > winHeight ? Math.round(scrollTop / (docHeight - winHeight) * 100) : 100;
-        send(buildPayload({
-          name: "_replay_scroll",
-          data: { depth, scrollTop: Math.round(scrollTop) }
-        }));
-      }, 300);
-    };
-    document.addEventListener("click", onClick);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    cleanupFns.push(() => {
-      document.removeEventListener("click", onClick);
-      window.removeEventListener("scroll", onScroll);
-      if (scrollTimer) clearTimeout(scrollTimer);
-    });
-  }
   let initialized = false;
   function init() {
     if (initialized) return;
     initialized = true;
     setupAutoTrack();
-    if (sessionReplay) setupSessionReplay();
   }
   if (autoTrack && shouldTrack()) {
     if (typeof document !== "undefined" && document.readyState === "complete") {
@@ -251,52 +158,16 @@ function createTracker(config) {
   return {
     pageview(options) {
       const url = normalize(options?.url || getUrl());
-      currentReferrer = currentUrl || getReferrer();
       currentUrl = url;
-      return send(buildPayload({
-        url,
-        title: options?.title,
-        referrer: options?.referrer || currentReferrer
-      }));
+      return send(buildPayload({ url, title: options?.title }));
     },
-    event(name, data) {
-      return send(buildPayload({ name, data }));
-    },
-    revenue(amount, currency, data) {
-      return send(buildPayload({
-        name: "revenue",
-        data: data || {},
-        revenue: { amount, currency }
-      }));
-    },
-    send(payload) {
-      return send(buildPayload(payload));
-    },
-    track(nameOrPayloadOrFn, data) {
-      if (typeof nameOrPayloadOrFn === "string") {
-        return send(buildPayload({ name: nameOrPayloadOrFn, data }));
-      } else if (typeof nameOrPayloadOrFn === "function") {
-        return send(nameOrPayloadOrFn(buildPayload()));
-      } else if (typeof nameOrPayloadOrFn === "object") {
-        return send({ ...nameOrPayloadOrFn });
+    track(payloadOrFn) {
+      if (typeof payloadOrFn === "function") {
+        return send(payloadOrFn(buildPayload()));
+      } else if (typeof payloadOrFn === "object") {
+        return send({ ...payloadOrFn });
       } else {
         return send(buildPayload());
-      }
-    },
-    identify(idOrData, data) {
-      if (typeof idOrData === "string") {
-        identity = idOrData;
-        cache = "";
-        return send(
-          buildPayload({ data: data ?? void 0 }),
-          "identify"
-        );
-      } else {
-        cache = "";
-        return send(
-          buildPayload({ data: idOrData }),
-          "identify"
-        );
       }
     },
     enable() {

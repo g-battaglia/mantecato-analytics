@@ -418,8 +418,8 @@ describe("bot detection", () => {
   });
 });
 
-describe("localhost filtering", () => {
-  it("does not track on localhost", async () => {
+describe("localhost tracking", () => {
+  it("tracks on localhost by default", async () => {
     Object.defineProperty(window, "location", {
       value: { hostname: "localhost", pathname: "/", search: "", hash: "", href: "http://localhost/", origin: "http://localhost" },
       writable: true,
@@ -429,7 +429,7 @@ describe("localhost filtering", () => {
     const tracker = createTracker(makeConfig());
     await tracker.pageview();
 
-    expect(sentPayloads).toHaveLength(0);
+    expect(sentPayloads).toHaveLength(1);
   });
 });
 

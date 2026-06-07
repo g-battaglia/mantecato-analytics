@@ -114,15 +114,6 @@ function isBot(): boolean {
   return /bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent);
 }
 
-function isLocalhost(): boolean {
-  if (typeof location === "undefined") return false;
-  return (
-    location.hostname === "localhost" ||
-    location.hostname === "127.0.0.1" ||
-    location.hostname === "::1"
-  );
-}
-
 function isDisabledByUser(): boolean {
   try {
     return (
@@ -176,7 +167,6 @@ export function createTracker(config: TrackerConfig): Tracker {
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
     if (respectDNT && isDNT()) return false;
-    if (isLocalhost()) return false;
     if (isDisabledByUser()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();
