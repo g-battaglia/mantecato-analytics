@@ -26,7 +26,7 @@ from core.mantecato_core.queries.orm_fallbacks import (
     stats_dict,
     top_sections_from_qs,
 )
-from core.mantecato_core.queries.visitors import visit_metrics, visits_by_bucket
+from core.mantecato_core.queries.visitors import visit_metrics, visitors_by_bucket
 
 # -- URL normalisation regex patterns -----------------------------------------
 _PATTERNS_SMART = [
@@ -124,21 +124,17 @@ def get_website_stats(
     return base
 
 
-def _attach_visits(
+def _attach_visitors(
     website_id: str,
     start_date: datetime,
     end_date: datetime,
     granularity: str,
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Add an exact ``visits`` count per bucket (day+ granularity only)."""
-    by_bucket = visits_by_bucket(website_id, start_date, end_date, granularity)
-    if not by_bucket:
-        return rows
+    """Add an exact unique-``visitors`` count per bucket (any granularity)."""
+    by_bucket = visitors_by_bucket(website_id, start_date, end_date, granularity)
     for row in rows:
-        t = row["time"]
-        bucket = (datetime.fromisoformat(t) if isinstance(t, str) else t).date()
-        row["visits"] = by_bucket.get(bucket, 0)
+        row["visitors"] = by_bucket.get(row["time"], 0)
     return rows
 
 
@@ -159,7 +155,7 @@ def get_pageview_time_series(
 
     if should_use_orm_fallback():
         rows = pageview_time_series_rows(website_id, start_date, end_date, gran, filters)
-        return _attach_visits(website_id, start_date, end_date, gran, rows)
+        return _attach_visitors(website_id, start_date, end_date, gran, rows)
 
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
@@ -215,7 +211,7 @@ def get_pageview_time_series(
         }
         for row in rows
     ]
-    return _attach_visits(website_id, start_date, end_date, gran, series)
+    return _attach_visitors(website_id, start_date, end_date, gran, series)
 
 
 def get_website_stats_comparison(
@@ -303,11 +299,11 @@ def get_pageview_time_series_comparison(
 
     if should_use_orm_fallback():
         return {
-            "current": _attach_visits(
+            "current": _attach_visitors(
                 website_id, cur_start, cur_end, gran,
                 pageview_time_series_rows(website_id, cur_start, cur_end, gran, filters),
             ),
-            "previous": _attach_visits(
+            "previous": _attach_visitors(
                 website_id, prev_start, prev_end, gran,
                 pageview_time_series_rows(website_id, prev_start, prev_end, gran, filters),
             ),
@@ -386,8 +382,8 @@ def get_pageview_time_series_comparison(
                 "pageviews": int(row["pageviews"] or 0),
             }
         )
-    _attach_visits(website_id, cur_start, cur_end, gran, out["current"])
-    _attach_visits(website_id, prev_start, prev_end, gran, out["previous"])
+    _attach_visitors(website_id, cur_start, cur_end, gran, out["current"])
+    _attach_visitors(website_id, prev_start, prev_end, gran, out["previous"])
     return out
 
 

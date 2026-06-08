@@ -16,11 +16,11 @@ the aggregates store only counts, not per-row dimensions.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import timedelta
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 from django.db.models import Count, Sum
+from django.db.models.functions import Trunc
 
 from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
@@ -174,54 +174,45 @@ def read_scope_visitors(
     return out
 
 
-def _bucket_date(d: Any, granularity: str) -> Any:
-    if granularity == "week":
-        return d - timedelta(days=d.weekday())
-    if granularity == "month":
-        return d.replace(day=1)
-    return d
+_GRANULARITIES = ("minute", "hour", "day", "week", "month")
 
 
-def visits_by_bucket(
+def visitors_by_bucket(
     website_id: str,
     start_date: datetime,
     end_date: datetime,
     granularity: str,
-) -> dict[Any, int]:
-    """Return ``{bucket_start_date: visits}`` for a time series.
+) -> dict[str, int]:
+    """Return ``{bucket_iso: unique_visitors}`` for the time series, **any granularity**.
 
-    Visits are a daily metric, so this is only meaningful at day/week/month
-    granularity; finer granularities return ``{}`` (no Visits line is drawn).
-    Combines finalised per-day aggregates with the live (current-window) state.
+    Exact unique visitors per bucket (including per hour) come from the per-event
+    window-salted digest on ``website_event`` — so the Visitors line is always
+    available, even at hourly resolution. Buckets are truncated in UTC to match
+    the pageview series. Finalised windows (digests NULLed at rollup) contribute
+    nothing here; the chart range is normally recent (live) data.
     """
-    if granularity not in ("day", "week", "month"):
-        return {}
-    from apps.core.models import VisitorDaily, VisitorDayState
+    from apps.core.models import WebsiteEvent
 
-    start_day = utc_day(start_date)
-    end_day = utc_day(end_date)
-    window_start = current_window_start()
-    out: dict[Any, int] = defaultdict(int)
-    # Finalised days from VisitorDaily; current-window days from live state —
-    # split on the window boundary so no day is double-counted.
-    for r in VisitorDaily.objects.filter(
-        website_id=website_id,
-        scope="site",
-        scope_value="",
-        day__gte=start_day,
-        day__lte=end_day,
-        day__lt=window_start,
-    ).values("day", "visits"):
-        out[_bucket_date(r["day"], granularity)] += r["visits"] or 0
-    for r in (
-        VisitorDayState.objects.filter(
-            website_id=website_id, day__gte=max(start_day, window_start), day__lte=end_day
+    gran = granularity if granularity in _GRANULARITIES else "day"
+    rows = (
+        WebsiteEvent.objects.filter(
+            website_id=website_id,
+            created_at__gte=start_date,
+            created_at__lte=end_date,
+            event_type=1,
+            is_bot=False,
+            visitor_key__isnull=False,
         )
-        .values("day")
-        .annotate(v=Sum("visits"))
-    ):
-        out[_bucket_date(r["day"], granularity)] += r["v"] or 0
-    return dict(out)
+        .annotate(bucket=Trunc("created_at", gran, tzinfo=UTC))
+        .values("bucket")
+        .annotate(v=Count("visitor_key", distinct=True))
+    )
+    out: dict[str, int] = {}
+    for r in rows:
+        bucket = r["bucket"]
+        key = bucket.isoformat() if hasattr(bucket, "isoformat") else str(bucket)
+        out[key] = r["v"] or 0
+    return out
 
 
 def visit_metrics(

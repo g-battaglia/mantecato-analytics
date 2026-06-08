@@ -42,16 +42,23 @@ compute-and-discard scheme:
    `HMAC-SHA256(window_salt, website_id + IP + User-Agent)` — an ephemeral
    digest. The IP and User-Agent are used only for this computation and are
    **not stored**.
-3. The digest deduplicates a visitor **within that window only** and updates
-   small integer counters (visits, bounces, pageviews, on-site seconds), plus
-   per-page/section/event presence for exact per-scope unique counts.
-4. A **rollup** folds those counters into permanent, fully anonymous aggregates
-   (`visitor_daily` per day, `visitor_period` per window — exact window uniques)
-   and **deletes** the window's digests, scope-presence rows *and its salt*.
-   Once the salt is gone the digests can never be recomputed or linked (forward
-   secrecy). No cross-window or returning-visitor linkage is possible.
+3. The digest deduplicates a visitor **within that window only**. It updates
+   small integer counters (visits, bounces, on-site seconds) and is also stored
+   on the event row (`website_event.visitor_key`) so unique visitors can be
+   counted exactly at **any** time granularity (e.g. per hour) and in realtime
+   ("visitors online"). The digest is not an IP/UA and is not reversible without
+   the salt.
+4. A **rollup** folds the counters into permanent, fully anonymous aggregates
+   (`visitor_daily` per day, `visitor_period` per window — exact window uniques),
+   **deletes** the window's salt and ephemeral state, and **NULLs the per-event
+   digests** of finalised windows. Once the salt is gone and the digests are
+   nulled they can never be recomputed or linked (forward secrecy). No
+   cross-window or returning-visitor linkage is possible; finalised event rows
+   are fully anonymous.
 
-The salt is independent from `SECRET_KEY`.
+The salt is independent from `SECRET_KEY`. During the live window the event log
+carries the window digest (pseudonymous within the window); it is discarded at
+rollup — schedule `rollup_visitors` to bound this to the window length.
 
 ### What "exact" means
 

@@ -190,11 +190,15 @@ class Website(models.Model):
 
 
 class WebsiteEvent(models.Model):
-    """An anonymous pageview event — the core aggregate analytics data unit.
+    """A pageview event — the core analytics data unit.
 
-    Every row is an independent, standalone pageview or custom-event count. No
-    session_id, visit_id, referrer, UTM parameters, click IDs, or event payload
-    data is stored.
+    Every row is an independent pageview or custom-event count. No session_id,
+    visit_id, referrer, UTM parameters, click IDs, or event payload data is
+    stored, and no IP/User-Agent. The only per-person field is ``visitor_key``,
+    an ephemeral window-salted dedup digest (not derived-reversibly from stored
+    data) that the rollup NULLs once the window is finalised — so finalised rows
+    are fully anonymous. It exists only to count exact unique visitors at any
+    time granularity within the live window.
 
     Device/browser metadata is stored directly on the event for aggregate
     breakdown queries (no session join needed). Geo data comes from IP
@@ -219,6 +223,10 @@ class WebsiteEvent(models.Model):
     # Aggregate bot classification. The raw User-Agent is never stored.
     is_bot = models.BooleanField(default=False)
     bot_reason = models.CharField(max_length=80, null=True, blank=True)
+    # Ephemeral, window-salted dedup digest (NOT an IP/UA). Enables exact unique
+    # visitors at ANY granularity (e.g. per hour) and realtime visitors-online.
+    # NULLed by the rollup once the window is finalised → anonymous thereafter.
+    visitor_key = models.CharField(max_length=64, null=True, blank=True)
 
     class Meta:
         db_table = "website_event"

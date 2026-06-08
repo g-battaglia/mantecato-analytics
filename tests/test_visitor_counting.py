@@ -249,16 +249,51 @@ def test_no_ip_or_user_agent_columns():
         assert "ua" not in names
 
 
-def test_visits_by_bucket_day_granularity():
-    from core.mantecato_core.queries.visitors import visits_by_bucket
+def _ingest(ip="1.2.3.4", ua="Mozilla/5.0 Chrome", path="/x"):
+    ingest_pageview(
+        website_id=WEBSITE_ID,
+        payload={"url": path, "title": "X"},
+        device_info={"browser": "Chrome", "os": "Mac OS X", "device": "desktop"},
+        country=None,
+        ip=ip,
+        user_agent=ua,
+    )
 
-    base = _this_month(10)
-    _visit(ip="1.1.1.1", when=base)
-    _visit(ip="2.2.2.2", when=base)
-    vb = visits_by_bucket(WEBSITE_ID, _this_month(1), _this_month(28), "day")
-    assert vb[base.date()] == 2
-    # Visits are daily → no series at finer granularity.
-    assert visits_by_bucket(WEBSITE_ID, _this_month(1), _this_month(28), "hour") == {}
+
+def test_visitors_by_bucket_hourly():
+    from core.mantecato_core.queries.visitors import visitors_by_bucket
+
+    _ingest(ip="1.1.1.1")
+    _ingest(ip="2.2.2.2")
+    _ingest(ip="1.1.1.1")  # same visitor again → still 1 unique
+    now = timezone.now()
+    vb = visitors_by_bucket(WEBSITE_ID, now - timedelta(hours=1), now + timedelta(hours=1), "hour")
+    assert sum(vb.values()) == 2  # exact unique visitors per hour, available hourly
+
+
+def test_realtime_visitors_online():
+    from core.mantecato_core.queries.realtime import get_active_pageviews
+
+    _ingest(ip="1.1.1.1")
+    _ingest(ip="2.2.2.2")
+    _ingest(ip="1.1.1.1")
+    rt = get_active_pageviews(WEBSITE_ID)
+    assert rt["count"] == 3  # three pageviews in the last 5 min
+    assert rt["visitors"] == 2  # two distinct visitors online
+
+
+def test_event_visitor_key_nulled_at_rollup():
+    # A finalised-window event keeps no per-person digest after rollup.
+    from apps.core.models import WebsiteEvent
+
+    when = _last_month(15)
+    ev = WebsiteEvent.objects.create(
+        website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key="abc123"
+    )
+    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)  # auto_now_add bypass
+    rollup_finished_periods()
+    ev.refresh_from_db()
+    assert ev.visitor_key is None  # discarded for the finalised window
 
 
 def test_query_string_not_persisted():

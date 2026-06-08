@@ -70,11 +70,11 @@ def build_timeseries_chart_data(
         },
     ]
 
-    # Exact "Visits" series — present only at day+ granularity (visits are daily).
-    if any("visits" in p for p in timeseries):
+    # Exact unique "Visitors" series — available at any granularity (incl. hourly).
+    if any("visitors" in p for p in timeseries):
         datasets.append({
-            "label": "Visits",
-            "data": [p.get("visits", 0) for p in timeseries],
+            "label": "Visitors",
+            "data": [p.get("visitors", 0) for p in timeseries],
             "borderColor": _TS_VISITORS_BORDER,
             "backgroundColor": _TS_VISITORS_BG,
         })

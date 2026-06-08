@@ -15,10 +15,10 @@
 {% if realtime %}
 <span class="mb-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-500">
   <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-  {% blocktrans count counter=realtime.count %}
-    {{ counter }} active pageview
+  {% blocktrans count counter=realtime.visitors|default:0 %}
+    {{ counter }} visitor online
   {% plural %}
-    {{ counter }} active pageviews
+    {{ counter }} visitors online
   {% endblocktrans %}
 </span>
 {% endif %}

@@ -16,19 +16,32 @@ from core.mantecato_core.queries.orm_fallbacks import should_use_orm_fallback
 
 
 def get_active_pageviews(website_id: str) -> dict[str, Any]:
-    """Aggregate pageview count in the last 5 minutes."""
+    """Realtime activity in the last 5 minutes: pageviews + distinct visitors online.
+
+    ``visitors`` counts distinct (non-bot) window digests seen in the last 5
+    minutes — the "visitors online" figure.
+    """
     if should_use_orm_fallback():
         from apps.core.models import WebsiteEvent
 
-        count = WebsiteEvent.objects.filter(
+        qs = WebsiteEvent.objects.filter(
             website_id=website_id,
             created_at__gte=timezone.now() - timedelta(minutes=5),
             event_type=1,
-        ).count()
-        return {"count": count}
+        )
+        count = qs.count()
+        visitors = (
+            qs.filter(is_bot=False, visitor_key__isnull=False)
+            .values("visitor_key")
+            .distinct()
+            .count()
+        )
+        return {"count": count, "visitors": visitors}
 
     rows = raw_query(
-        """SELECT COUNT(*)::bigint AS count
+        """SELECT
+      COUNT(*)::bigint AS count,
+      COUNT(DISTINCT visitor_key) FILTER (WHERE COALESCE(is_bot, false) = false)::bigint AS visitors
     FROM website_event
     WHERE website_id = {{websiteId::uuid}}
       AND created_at >= NOW() - INTERVAL '5 minutes'
@@ -36,7 +49,8 @@ def get_active_pageviews(website_id: str) -> dict[str, Any]:
         {"websiteId": website_id},
     )
     count = int(rows[0]["count"]) if rows else 0
-    return {"count": count}
+    visitors = int(rows[0]["visitors"] or 0) if rows else 0
+    return {"count": count, "visitors": visitors}
 
 
 def get_recent_pageviews(website_id: str) -> list[dict[str, Any]]:

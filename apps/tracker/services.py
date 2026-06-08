@@ -115,6 +115,17 @@ def ingest_pageview(
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
 
+    # Fold into visit/bounce state first; the returned digest (None for bots) is
+    # stored on the event row to power exact unique visitors at any granularity.
+    key = record_visit(
+        website_id=website_id,
+        occurred_at=now,
+        ip=ip,
+        user_agent=user_agent,
+        is_bot=is_bot,
+        url_path=url_path,
+    )
+
     raw_query(
         """
         INSERT INTO website_event
@@ -122,13 +133,13 @@ def ingest_pageview(
              url_path, url_query,
              page_title, event_type, event_name, hostname,
              browser, os, device,
-             country, is_bot, bot_reason)
+             country, is_bot, bot_reason, visitor_key)
         VALUES
             ({{eventId::uuid}}, {{websiteId::uuid}}, {{createdAt::timestamptz}},
              {{urlPath}}, {{urlQuery}},
              {{pageTitle}}, 1, NULL, {{hostname}},
              {{browser}}, {{os}}, {{device}},
-             {{country}}, {{isBot}}, {{botReason}})
+             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}})
         """,
         {
             "eventId": event_id,
@@ -144,15 +155,8 @@ def ingest_pageview(
             "country": country,
             "isBot": is_bot,
             "botReason": bot_reason[:80] if bot_reason else None,
+            "visitorKey": key,
         },
-    )
-    key = record_visit(
-        website_id=website_id,
-        occurred_at=now,
-        ip=ip,
-        user_agent=user_agent,
-        is_bot=is_bot,
-        url_path=url_path,
     )
     if key:
         record_scope_presence(
@@ -191,6 +195,14 @@ def ingest_custom_event(
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
 
+    key = (
+        None
+        if is_bot
+        else visitor_key_for(
+            website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
+        )
+    )
+
     raw_query(
         """
         INSERT INTO website_event
@@ -198,13 +210,13 @@ def ingest_custom_event(
              url_path, url_query,
              page_title, event_type, event_name, hostname,
              browser, os, device,
-             country, is_bot, bot_reason)
+             country, is_bot, bot_reason, visitor_key)
         VALUES
             ({{eventId::uuid}}, {{websiteId::uuid}}, {{createdAt::timestamptz}},
              {{urlPath}}, {{urlQuery}},
              {{pageTitle}}, 2, {{eventName}}, {{hostname}},
              {{browser}}, {{os}}, {{device}},
-             {{country}}, {{isBot}}, {{botReason}})
+             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}})
         """,
         {
             "eventId": event_id,
@@ -221,12 +233,10 @@ def ingest_custom_event(
             "country": country,
             "isBot": is_bot,
             "botReason": bot_reason[:80] if bot_reason else None,
+            "visitorKey": key,
         },
     )
-    if not is_bot:
-        key = visitor_key_for(
-            website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
-        )
+    if key:
         record_scope_presence(
             website_id=website_id,
             occurred_at=now,

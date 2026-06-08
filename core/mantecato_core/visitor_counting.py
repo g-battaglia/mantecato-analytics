@@ -439,7 +439,16 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
                 unique_visitors=g["unique_visitors"] or 0,
             )
 
-        # 5) Discard the window's ephemeral data + salt.
+        # 5) Discard the window's ephemeral data + salt, and NULL the per-event
+        #    visitor digests of finalised windows so those events are anonymous.
+        from apps.core.models import WebsiteEvent
+
+        window_start_dt = datetime.combine(
+            _period_bounds(utc_day(timezone.now()), window)[0], datetime.min.time(), tzinfo=UTC
+        )
+        WebsiteEvent.objects.filter(
+            created_at__lt=window_start_dt, visitor_key__isnull=False
+        ).update(visitor_key=None)
         result["scope_rows"], _ = scope_qs.delete()
         result["rows"], _ = finished.delete()
         result["salts"], _ = VisitorSalt.objects.exclude(period=cur).delete()
