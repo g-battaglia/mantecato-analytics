@@ -49,6 +49,7 @@ from apps.settings_app.services import (
     get_latest_umami_import_job,
     get_umami_import_job,
     get_user,
+    purge_website_data,
     remove_api_key,
     save_bot_config,
     soft_delete_user,
@@ -429,6 +430,44 @@ class SiteDeleteView(LoginRequiredMixin, View):
             messages.error(request, "Site not found.")
         else:
             messages.success(request, f"Site '{name}' deleted.")
+        return redirect("site_list")
+
+
+class SitePurgeView(LoginRequiredMixin, View):
+    """Purge ALL tracking data for a website (POST only).
+
+    Requires the user to confirm by submitting the exact site name in a
+    hidden + JS-validated field. The confirmation happens client-side via
+    a modal that forces the user to type the full site name.
+    """
+
+    def get(self, request: HttpRequest, site_id: str) -> HttpResponse:
+        return redirect("site_list")
+
+    def post(self, request: HttpRequest, site_id: str) -> HttpResponse:
+        confirm_name = request.POST.get("confirm_name", "").strip()
+        site = Website.objects.filter(id=site_id, is_deleted=False).first()
+        if site is None:
+            messages.error(request, "Site not found.")
+            return redirect("site_list")
+
+        if confirm_name != site.name:
+            messages.error(request, "Site name confirmation did not match. Purge aborted.")
+            return redirect("site_list")
+
+        result = purge_website_data(
+            site_id=str(site_id),
+            user_id=str(request.user.id),
+            is_admin=request.user.is_staff,
+        )
+        if result is None:
+            messages.error(request, "Site not found or access denied.")
+        else:
+            messages.success(
+                request,
+                f"Purged all data for '{result['name']}': "
+                f"{result['events']:,} events, {result['sketches']:,} visitor sketches.",
+            )
         return redirect("site_list")
 
 

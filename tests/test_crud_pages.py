@@ -139,6 +139,12 @@ class TestURLResolution:
 
         assert reverse("bot_config") == "/settings/bot-config/"
 
+    def test_site_purge_url(self) -> None:
+        from django.urls import reverse
+
+        url = reverse("site_purge", kwargs={"site_id": WEBSITE_ID})
+        assert url == f"/settings/sites/{WEBSITE_ID}/purge/"
+
 
 # ---------------------------------------------------------------------------
 # Login Requirement
@@ -159,6 +165,7 @@ class TestLoginRequired:
         "/dashboards/create/",
         f"/dashboards/{REPORT_ID}/delete/",
         "/settings/api-keys/create/",
+        f"/settings/sites/{WEBSITE_ID}/purge/",
     ]
 
     @pytest.mark.parametrize("url", ROUTES_GET)
@@ -430,6 +437,62 @@ class TestBotConfigView:
         )
         assert response.status_code == 302
         mock_save.assert_called_once()
+
+# ---------------------------------------------------------------------------
+# Site Purge View
+# ---------------------------------------------------------------------------
+
+
+class TestSitePurgeView:
+    @patch("apps.settings_app.views.purge_website_data")
+    @patch("apps.settings_app.views.Website")
+    def test_post_with_correct_name_purges(
+        self, mock_ws: MagicMock, mock_purge: MagicMock, client: Client
+    ) -> None:
+        site = MagicMock()
+        site.name = "My Site"
+        mock_ws.objects.filter.return_value.first.return_value = site
+        mock_purge.return_value = {"name": "My Site", "events": 500, "sketches": 10}
+        response = _authed_post(
+            client,
+            f"/settings/sites/{WEBSITE_ID}/purge/",
+            {"confirm_name": "My Site"},
+        )
+        assert response.status_code == 302
+        mock_purge.assert_called_once()
+
+    @patch("apps.settings_app.views.purge_website_data")
+    @patch("apps.settings_app.views.Website")
+    def test_post_with_wrong_name_aborts(
+        self, mock_ws: MagicMock, mock_purge: MagicMock, client: Client
+    ) -> None:
+        site = MagicMock()
+        site.name = "My Site"
+        mock_ws.objects.filter.return_value.first.return_value = site
+        response = _authed_post(
+            client,
+            f"/settings/sites/{WEBSITE_ID}/purge/",
+            {"confirm_name": "wrong"},
+        )
+        assert response.status_code == 302
+        mock_purge.assert_not_called()
+
+    @patch("apps.settings_app.views.Website")
+    def test_post_missing_site_returns_error(
+        self, mock_ws: MagicMock, client: Client
+    ) -> None:
+        mock_ws.objects.filter.return_value.first.return_value = None
+        response = _authed_post(
+            client,
+            f"/settings/sites/{WEBSITE_ID}/purge/",
+            {"confirm_name": "x"},
+        )
+        assert response.status_code == 302
+
+    def test_get_redirects(self, client: Client) -> None:
+        response = _authed_get(client, f"/settings/sites/{WEBSITE_ID}/purge/")
+        assert response.status_code == 302
+
 
 # ---------------------------------------------------------------------------
 # Settings Index

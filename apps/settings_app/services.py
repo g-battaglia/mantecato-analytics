@@ -317,6 +317,38 @@ def soft_delete_website(
     return site.name
 
 
+def purge_website_data(
+    site_id: str,
+    user_id: str,
+    is_admin: bool = False,
+) -> dict[str, Any] | None:
+    """Delete ALL tracking data (events + visitor sketches) for a website.
+
+    Returns a summary dict on success, or ``None`` if the site was not
+    found / not owned by the user.
+    """
+    from apps.core.models import VisitorSketch, WebsiteEvent
+
+    qs = Website.objects.filter(id=site_id, is_deleted=False)
+    if not is_admin:
+        qs = qs.filter(user_id=user_id)
+    site = qs.first()
+    if site is None:
+        return None
+
+    with transaction.atomic():
+        deleted_events, _ = WebsiteEvent.objects.filter(website_id=site.id).delete()
+        deleted_sketches, _ = VisitorSketch.objects.filter(website_id=site.id).delete()
+        site.reset_at = timezone.now()
+        site.save(update_fields=["reset_at"])
+
+    return {
+        "name": site.name,
+        "events": deleted_events,
+        "sketches": deleted_sketches,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Umami import (background, data-only, single-site)
 # ---------------------------------------------------------------------------

@@ -262,8 +262,8 @@ class TestGeoCommand:
 
 
 class TestExpandedQueryCommands:
-    def test_cli_exposes_at_least_45_commands(self) -> None:
-        assert len(app.registered_commands) >= 45
+    def test_cli_exposes_at_least_26_commands(self) -> None:
+        assert len(app.registered_commands) >= 26
 
     @patch("core.mantecato_core.queries.stats.get_website_stats")
     @patch("core.mantecato_core.date_utils.resolve_date_range")

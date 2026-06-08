@@ -2,9 +2,7 @@
 
 Each command body is a single :func:`run_with_range` call: the shared helper
 takes care of Django bootstrap, date-range parsing, service invocation and
-output formatting. Commands needing endpoint-specific options (``--country``,
-``--granularity``, ``--mode``, ``--window``) declare them locally and pass
-them through ``**extra`` keyword arguments.
+output formatting.
 """
 
 from __future__ import annotations
@@ -56,18 +54,6 @@ def pages(
     run_with_range(get_pages_data, website, range, format, page=page)
 
 
-@app.command("sources")
-def sources(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    format: str = FORMAT_OPTION,
-) -> None:
-    """Traffic source analytics."""
-    from apps.analytics.services import get_sources_data
-
-    run_with_range(get_sources_data, website, range, format)
-
-
 @app.command("events")
 def events(
     website: str = WEBSITE_OPT,
@@ -78,19 +64,6 @@ def events(
     from apps.analytics.services import get_events_data
 
     run_with_range(get_events_data, website, range, format)
-
-
-@app.command("sessions")
-def sessions(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    page: int = typer.Option(1, "--page"),
-    format: str = FORMAT_OPTION,
-) -> None:
-    """Session list."""
-    from apps.analytics.services import get_sessions_data
-
-    run_with_range(get_sessions_data, website, range, format, page=page)
 
 
 @app.command("devices")
@@ -128,72 +101,6 @@ def compare(
     from apps.analytics.services import get_compare_data
 
     run_with_range(get_compare_data, website, range, format, comparison_mode=mode)
-
-
-@app.command("retention")
-def retention(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    granularity: str = typer.Option("week", "--granularity"),
-    format: str = FORMAT_OPTION,
-) -> None:
-    """Cohort retention analysis."""
-    from apps.analytics.services import get_retention_data
-
-    run_with_range(get_retention_data, website, range, format, granularity=granularity)
-
-
-@app.command("funnels")
-def funnels(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    window: int = typer.Option(60, "--window", help="Funnel window in minutes"),
-    format: str = FORMAT_OPTION,
-) -> None:
-    """Funnel conversion analysis."""
-    from apps.analytics.services import get_funnels_data
-
-    run_with_range(get_funnels_data, website, range, format, window_minutes=window)
-
-
-@app.command("journeys")
-def journeys(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    path_length: int = typer.Option(3, "--path-length"),
-    limit: int = typer.Option(20, "--limit"),
-    format: str = FORMAT_OPTION,
-) -> None:
-    """User journey paths."""
-    from apps.analytics.services import get_journeys_data
-
-    run_with_range(
-        get_journeys_data, website, range, format, path_length=path_length, limit=limit
-    )
-
-
-@app.command("revenue")
-def revenue(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    format: str = FORMAT_OPTION,
-) -> None:
-    """Revenue breakdown."""
-    from apps.analytics.services import get_revenue_data
-
-    run_with_range(get_revenue_data, website, range, format)
-
-
-@app.command("engagement")
-def engagement(
-    website: str = WEBSITE_OPT,
-    range: str = RANGE_OPT,
-    format: str = FORMAT_OPTION,
-) -> None:
-    """Engagement metrics."""
-    from apps.analytics.services import get_engagement_data
-
-    run_with_range(get_engagement_data, website, range, format)
 
 
 @app.command("realtime")
