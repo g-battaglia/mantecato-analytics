@@ -124,6 +124,12 @@ def current_period_key() -> str:
     return period_key(timezone.now())
 
 
+def current_window_start() -> date:
+    """First calendar day of the current (live) exactness window."""
+    start, _ = _period_bounds(utc_day(timezone.now()), _window())
+    return start
+
+
 # ---------------------------------------------------------------------------
 # Salt + digest
 # ---------------------------------------------------------------------------

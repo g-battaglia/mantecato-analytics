@@ -3,8 +3,9 @@
 Pageview aggregates plus **exact** site-level visitor/visit/bounce/duration
 metrics from the cookieless compute-and-discard counter. No referrer, UTM,
 revenue, retention, funnel, journey, or engagement metrics, and no persistent
-per-person identifier. Unique visitors are exact per day; over a multi-day range
-the total is the sum of daily uniques (no cross-day linkage).
+per-person identifier. Unique visitors are exact over the configured exactness
+window (``VISITOR_EXACT_WINDOW``, default month); a range spanning several
+windows sums per-window uniques (no cross-window linkage).
 """
 
 from __future__ import annotations
@@ -90,7 +91,6 @@ def _stats_with_change(
         "visitors": _exact_card(
             "visitors",
             _format_compact(visitors) if visitors is not None else "N/A",
-            note="Sum of daily uniques" if visitors is not None else None,
         ),
         "visits": _exact_card("visits", _format_compact(visits) if visits is not None else "N/A"),
         "bounce_rate": _exact_card("bounce_rate", bounce),
@@ -102,8 +102,6 @@ def _stats_with_change(
             "pages_per_visit",
             f"{ppv:.2f}" if ppv is not None else "N/A",
         ),
-        "human_pageviews": _pageview_card("human_pageviews"),
-        "bot_pageviews": _pageview_card("bot_pageviews"),
     }
 
 

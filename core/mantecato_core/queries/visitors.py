@@ -27,6 +27,7 @@ from core.mantecato_core.visitor_counting import (
     aggregate_state,
     current_period_key,
     current_window,
+    current_window_start,
     has_only_bot_filter,
     periods_in_range,
     utc_day,
@@ -91,13 +92,18 @@ def read_visit_stats(
     start_day = utc_day(start_date)
     end_day = utc_day(end_date)
 
-    # Additive metrics: finalised per-day aggregates + the live (current-window) state.
+    # Additive metrics: finalised per-day aggregates (days strictly before the
+    # current window) + the live state (current window). Splitting on the window
+    # boundary guarantees each day is counted once (no VisitorDaily/VisitorDayState
+    # overlap → visits never exceed pageviews).
+    window_start = current_window_start()
     daily = VisitorDaily.objects.filter(
         website_id=website_id,
         scope="site",
         scope_value="",
         day__gte=start_day,
         day__lte=end_day,
+        day__lt=window_start,
     ).aggregate(
         visits=Sum("visits"),
         bounces=Sum("bounces"),
@@ -107,7 +113,7 @@ def read_visit_stats(
     live = aggregate_state(
         VisitorDayState.objects.filter(
             website_id=website_id,
-            day__gte=start_day,
+            day__gte=max(start_day, window_start),
             day__lte=end_day,
         )
     )
@@ -194,13 +200,23 @@ def visits_by_bucket(
 
     start_day = utc_day(start_date)
     end_day = utc_day(end_date)
+    window_start = current_window_start()
     out: dict[Any, int] = defaultdict(int)
+    # Finalised days from VisitorDaily; current-window days from live state —
+    # split on the window boundary so no day is double-counted.
     for r in VisitorDaily.objects.filter(
-        website_id=website_id, scope="site", scope_value="", day__gte=start_day, day__lte=end_day
+        website_id=website_id,
+        scope="site",
+        scope_value="",
+        day__gte=start_day,
+        day__lte=end_day,
+        day__lt=window_start,
     ).values("day", "visits"):
         out[_bucket_date(r["day"], granularity)] += r["visits"] or 0
     for r in (
-        VisitorDayState.objects.filter(website_id=website_id, day__gte=start_day, day__lte=end_day)
+        VisitorDayState.objects.filter(
+            website_id=website_id, day__gte=max(start_day, window_start), day__lte=end_day
+        )
         .values("day")
         .annotate(v=Sum("visits"))
     ):
