@@ -8,7 +8,7 @@
     <span class="relative flex-1 truncate font-mono text-foreground" title="{{ s.section }}">{{ s.section }}</span>
     <div class="relative flex gap-3 font-mono text-[12px]">
       <span class="text-muted-foreground">{{ s.views|intcomma }} v</span>
-      <span class="min-w-[50px] text-right text-foreground">{{ s.visitors|intcomma }}</span>
+      <span class="min-w-[50px] text-right text-foreground">{% if s.visitors is not None %}~{{ s.visitors|intcomma }}{% else %}—{% endif %}</span>
     </div>
   </a>
   {% empty %}

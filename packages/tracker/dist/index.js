@@ -21,13 +21,6 @@ function isBot() {
   if (typeof navigator === "undefined") return false;
   return /bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent);
 }
-function isDisabledByUser() {
-  try {
-    return localStorage.getItem("mantecato.disabled") === "1" || localStorage.getItem("umami.disabled") === "1";
-  } catch {
-    return false;
-  }
-}
 var SPA_DELAY = 300;
 function createTracker(config) {
   const {
@@ -64,7 +57,6 @@ function createTracker(config) {
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
     if (respectDNT && isDNT()) return false;
-    if (isDisabledByUser()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();
       if (!domains.includes(host)) return false;
@@ -82,6 +74,19 @@ function createTracker(config) {
       ...tag ? { tag } : {}
     };
   }
+  function sanitizePayload(payload) {
+    const base = buildPayload({
+      url: payload.url,
+      title: payload.title
+    });
+    const name = typeof payload.name === "string" ? payload.name.trim().slice(0, 100) : "";
+    return {
+      ...base,
+      hostname: payload.hostname || base.hostname,
+      ...name ? { name } : {},
+      ...tag ? { tag } : {}
+    };
+  }
   async function send(payload) {
     if (!shouldTrack()) return;
     let finalPayload = payload;
@@ -90,7 +95,7 @@ function createTracker(config) {
       if (!finalPayload) return;
     }
     const apiUrl = `${baseUrl}${endpoint}`;
-    const body = { type: "event", payload: finalPayload };
+    const body = { type: "event", payload: sanitizePayload(finalPayload) };
     try {
       await fetch(apiUrl, {
         method: "POST",
@@ -161,11 +166,18 @@ function createTracker(config) {
       currentUrl = url;
       return send(buildPayload({ url, title: options?.title }));
     },
+    event(name, options) {
+      const url = normalize(options?.url || getUrl());
+      currentUrl = url;
+      return send({ ...buildPayload({ url, title: options?.title }), name });
+    },
     track(payloadOrFn) {
       if (typeof payloadOrFn === "function") {
         return send(payloadOrFn(buildPayload()));
+      } else if (typeof payloadOrFn === "string") {
+        return send({ ...buildPayload(), name: payloadOrFn });
       } else if (typeof payloadOrFn === "object") {
-        return send({ ...payloadOrFn });
+        return send(sanitizePayload(payloadOrFn));
       } else {
         return send(buildPayload());
       }

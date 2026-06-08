@@ -29,7 +29,6 @@ from apps.common.mixins import (
     _parse_offset,
     load_bot_filter_payload,
 )
-from core.mantecato_core.date_utils import get_comparison_range
 from tests.conftest import ADMIN_USER_ID, WEBSITE_ID, make_admin_user
 
 if TYPE_CHECKING:
@@ -259,13 +258,13 @@ class TestFiltersMixin:
         bot_filter = next(f for f in filters if f.column == "__bot_filter__")
         assert json.loads(bot_filter.value) == {"enabled": True, "knownBots": True}
 
-    def test_bot_filter_precomputes_current_and_comparison_ranges(
+    def test_bot_filter_passes_only_website_id(
         self, request_factory: RequestFactory
     ) -> None:
-        """Heavy-heuristic bots are scoped to BOTH the current and comparison windows.
+        """The payload lookup is keyed on the website id alone (no precompute scan).
 
-        Regression guard: a single current-period scan let the previous
-        period's bots leak into the period-over-period overlay.
+        Privacy-first mode has no session/visitor identifiers, so bot exclusion
+        is a pure event-level clause — there is nothing to precompute per range.
         """
         mock = MagicMock(return_value=json.dumps({"enabled": True, "knownBots": True}))
         with patch("apps.common.mixins.load_bot_filter_payload", mock):
@@ -274,13 +273,7 @@ class TestFiltersMixin:
             )
             _ = view.filters
         assert mock.call_count == 1
-        website_id, ranges = mock.call_args.args
-        assert website_id == WEBSITE_ID
-        # Current window first, comparison window second.
-        assert len(ranges) == 2
-        assert ranges[0] == (view.date_range.start_date, view.date_range.end_date)
-        comp = get_comparison_range(view.date_range, "previous_period")
-        assert ranges[1] == (comp.start_date, comp.end_date)
+        assert mock.call_args.args == (WEBSITE_ID,)
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +293,7 @@ class TestLoadBotFilterPayload:
         row.parameters = {"enabled": False, "knownBots": True, "excludedCountries": ["SG"]}
         with patch("apps.core.models.BotConfig") as bot_config:
             bot_config.objects.filter.return_value.first.return_value = row
-            payload = load_bot_filter_payload(WEBSITE_ID, [])
+            payload = load_bot_filter_payload(WEBSITE_ID)
         config = json.loads(payload)["config"]
         assert config["enabled"] is True
         assert config["knownBots"] is True
@@ -310,7 +303,7 @@ class TestLoadBotFilterPayload:
         """No saved config -> the v2 baseline defaults with enabled forced on."""
         with patch("apps.core.models.BotConfig") as bot_config:
             bot_config.objects.filter.return_value.first.return_value = None
-            payload = load_bot_filter_payload(WEBSITE_ID, [])
+            payload = load_bot_filter_payload(WEBSITE_ID)
         config = json.loads(payload)["config"]
         assert config["enabled"] is True
         assert config["knownBots"] is True
@@ -319,7 +312,7 @@ class TestLoadBotFilterPayload:
         """A failing BotConfig lookup degrades to None (no filter), never an exception."""
         with patch("apps.core.models.BotConfig") as bot_config:
             bot_config.objects.filter.side_effect = RuntimeError("db down")
-            assert load_bot_filter_payload(WEBSITE_ID, []) is None
+            assert load_bot_filter_payload(WEBSITE_ID) is None
 
 
 class TestBotFilterDefaultEnabled:

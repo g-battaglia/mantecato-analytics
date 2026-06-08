@@ -10,7 +10,12 @@ from datetime import datetime
 from typing import Any
 
 from core.mantecato_core.database import raw_query
-from core.mantecato_core.filters import Filter, GRANULARITIES, safe_identifier
+from core.mantecato_core.filters import Filter, GRANULARITIES, prepare_filters, safe_identifier
+from core.mantecato_core.queries.orm_fallbacks import (
+    pageview_queryset,
+    pageview_time_series_rows,
+    should_use_orm_fallback,
+)
 
 
 def get_page_metrics(
@@ -41,7 +46,26 @@ def get_page_metrics(
         List of dicts with ``urlPath``, ``pageTitle``, ``views``, sorted by
         views descending.
     """
+    if should_use_orm_fallback():
+        from django.db.models import Count, Max
+
+        rows = (
+            pageview_queryset(website_id, start_date, end_date, filters)
+            .values("url_path")
+            .annotate(page_title=Max("page_title"), views=Count("event_id"))
+            .order_by("-views", "url_path")[offset : offset + limit]
+        )
+        return [
+            {
+                "urlPath": row["url_path"] or "/",
+                "pageTitle": row["page_title"],
+                "views": int(row["views"] or 0),
+            }
+            for row in rows
+        ]
+
     filters = filters or []
+    filter_where, filter_params, _ = prepare_filters(filters)
 
     if page_mode == "slug":
         url_expr = "REGEXP_REPLACE(SPLIT_PART(we.url_path, '?', 1), '/+$', '')"
@@ -58,6 +82,7 @@ def get_page_metrics(
     WHERE we.website_id = {{websiteId::uuid}}
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
+      {filter_where}
     GROUP BY url_path
     ORDER BY views DESC
     LIMIT {limit} OFFSET {offset}""",
@@ -65,6 +90,7 @@ def get_page_metrics(
             "websiteId": website_id,
             "startDate": start_date,
             "endDate": end_date,
+            **filter_params,
         },
     )
 
@@ -87,7 +113,19 @@ def get_page_time_series(
     filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate a time series of pageviews for a specific page."""
+    if should_use_orm_fallback():
+        scoped_filters = [*(filters or []), Filter("url_path", "eq", url_path)]
+        rows = pageview_time_series_rows(
+            website_id,
+            start_date,
+            end_date,
+            safe_identifier(granularity, GRANULARITIES, "day"),
+            scoped_filters,
+        )
+        return [{"time": row["time"], "views": row["pageviews"]} for row in rows]
+
     filters = filters or []
+    filter_where, filter_params, _ = prepare_filters(filters)
     gran = granularity if granularity in ("minute", "hour", "day", "week", "month") else "day"
 
     rows = raw_query(
@@ -99,6 +137,7 @@ def get_page_time_series(
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
       AND we.url_path = {{urlPath}}
+      {filter_where}
     GROUP BY 1
     ORDER BY 1 ASC""",
         {
@@ -106,6 +145,7 @@ def get_page_time_series(
             "startDate": start_date,
             "endDate": end_date,
             "urlPath": url_path,
+            **filter_params,
         },
     )
 

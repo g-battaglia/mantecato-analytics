@@ -122,14 +122,8 @@ class TestBaseHtmlNavigation:
     def test_has_pages_link(self):
         assert "Pages" in self.content, "Must have Pages nav link"
 
-    def test_has_sources_link(self):
-        assert "Sources" in self.content, "Must have Sources nav link"
-
     def test_has_events_link(self):
         assert "Events" in self.content, "Must have Events nav link"
-
-    def test_has_sessions_link(self):
-        assert "Sessions" in self.content, "Must have Sessions nav link"
 
     def test_has_devices_link(self):
         assert "Devices" in self.content, "Must have Devices nav link"

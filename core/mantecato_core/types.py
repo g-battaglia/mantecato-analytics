@@ -12,8 +12,7 @@ Naming convention:
 
 Cross-refs:
     - :mod:`core.mantecato_core.queries.pageviews`
-    - :mod:`core.mantecato_core.queries.sources`
-    - :mod:`core.mantecato_core.queries.engagement`
+    - :mod:`core.mantecato_core.queries.events`
     - :mod:`core.mantecato_core.queries.stats`
 """
 
@@ -29,35 +28,25 @@ class WebsiteStats(TypedDict):
     """
 
     pageviews: int
-    visitors: int
-    visits: int
-    bounces: int
-    totaltime: int
+    human_pageviews: int
+    bot_pageviews: int
 
 
 class PageRow(TypedDict, total=False):
     """One row in the "top pages" result set."""
 
-    url: str
-    pageviews: int
-    visitors: int
-    bounce_rate: float
-
-
-class SourceRow(TypedDict, total=False):
-    """One row in the referrer/channel/UTM result sets."""
-
-    value: str
-    visitors: int
-    visits: int
-    pageviews: int
+    urlPath: str
+    pageTitle: str | None
+    views: int
+    visitors: int | None
 
 
 class DeviceRow(TypedDict, total=False):
     """One row in the device/browser/OS breakdown."""
 
     value: str
-    visitors: int
+    pageviews: int
+    percentage: float
 
 
 class GeoRow(TypedDict, total=False):
@@ -70,56 +59,10 @@ class GeoRow(TypedDict, total=False):
 class EventRow(TypedDict, total=False):
     """One row in the custom-event analytics output."""
 
-    event_name: str
+    eventName: str
     count: int
-    visitors: int
-
-
-class SessionRow(TypedDict, total=False):
-    """One row in the session-list response."""
-
-    session_id: str
-    visitors: int
-    pageviews: int
-    duration_seconds: int
-    started_at: str
-
-
-class FunnelStepRow(TypedDict, total=False):
-    """One step in a funnel analysis result."""
-
-    label: str
-    visitors: int
-    dropoff: int
-    conversion_rate: float
-
-
-class JourneyRow(TypedDict, total=False):
-    """One ordered path in the user-journey result set."""
-
-    path: list[str]
-    count: int
-
-
-class RetentionCohort(TypedDict, total=False):
-    """One cohort row in the retention matrix.
-
-    ``values`` is the per-period retention ratio (0..1), ordered from week 0
-    onwards.
-    """
-
-    cohort_date: str
-    cohort_size: int
-    values: list[float]
-
-
-class RevenueRow(TypedDict, total=False):
-    """One row in the revenue summary / by-country / by-event tables."""
-
-    value: str
-    revenue: float
-    currency: str
-    count: int
+    visitors: int | None
+    lastTriggered: str
 
 
 class TimePoint(TypedDict, total=False):
@@ -127,4 +70,3 @@ class TimePoint(TypedDict, total=False):
 
     time: str
     pageviews: int
-    visitors: int

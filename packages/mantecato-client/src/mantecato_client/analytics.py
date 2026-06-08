@@ -1,9 +1,8 @@
 """Analytics API endpoint methods for the Mantecato Python SDK.
 
-Provides read-only analytics query methods: overview, pages, sources, events,
-sessions, devices, geo, compare, retention, funnels, journeys, revenue,
-engagement, and realtime.  All methods accept date-range and filter parameters
-and return parsed JSON response dicts.
+Provides read-only analytics query methods: overview, pages, events, devices,
+geo, compare, and realtime. Date-range endpoints accept aggregate filters and
+return parsed JSON response dicts.
 """
 
 from __future__ import annotations
@@ -82,8 +81,8 @@ class AnalyticsEndpoints:
     ) -> dict[str, Any]:
         """Fetch the full overview dashboard data for a website.
 
-        Returns stats, time series, top pages, referrers, events, device
-        breakdowns, geo data, channel metrics, and realtime counters.
+        Returns stats, time series, top pages, event counts, device breakdowns,
+        geo data, heatmap data, and realtime counters.
 
         Args:
             website_id: UUID of the tracked website.
@@ -95,7 +94,7 @@ class AnalyticsEndpoints:
 
         Returns:
             Full overview data dict with stats, timeseries, top_pages,
-            top_referrers, top_events, and more.
+            event_metrics, and aggregate breakdowns.
 
         Example::
 
@@ -118,8 +117,8 @@ class AnalyticsEndpoints:
     ) -> dict[str, Any]:
         """Fetch paginated per-URL page metrics.
 
-        Returns each tracked URL with view count, visitors, average duration,
-        bounce rate, entry/exit counts.  50 rows per page.
+        Returns each tracked URL with view count and estimated visitors when
+        filters allow anonymous sketch estimates. 50 rows per page.
 
         Args:
             website_id: UUID of the tracked website.
@@ -138,33 +137,6 @@ class AnalyticsEndpoints:
             params["page"] = page
         return self._client._get("/api/analytics/pages/", params)
 
-    def sources(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        filters: list[str] | None = None,
-        bot_filter: bool = False,
-    ) -> dict[str, Any]:
-        """Fetch traffic source breakdowns: referrers, UTMs, channels, click IDs, hostnames.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"30d"``).
-            start: ISO start date.
-            end: ISO end date.
-            filters: Column-level filter expressions.
-            bot_filter: Exclude bot traffic if ``True``.
-
-        Returns:
-            Dict with keys ``referrers``, ``channels``, ``utm_source``,
-            ``utm_medium``, ``utm_campaign``, ``click_ids``, ``hostnames``.
-        """
-        params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
-        return self._client._get("/api/analytics/sources/", params)
-
     def events(
         self,
         website_id: str,
@@ -175,7 +147,7 @@ class AnalyticsEndpoints:
         filters: list[str] | None = None,
         bot_filter: bool = False,
     ) -> dict[str, Any]:
-        """Fetch custom event analytics: counts, visitors, time series.
+        """Fetch custom event analytics: counts and time series by event name.
 
         Args:
             website_id: UUID of the tracked website.
@@ -192,39 +164,6 @@ class AnalyticsEndpoints:
         params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
         return self._client._get("/api/analytics/events/", params)
 
-    def sessions(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        filters: list[str] | None = None,
-        bot_filter: bool = False,
-        page: int | None = None,
-    ) -> dict[str, Any]:
-        """Fetch a paginated list of individual visitor sessions.
-
-        Each session includes device info, geo location, duration, and
-        page-view count.  50 sessions per page.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"7d"``).
-            start: ISO start date.
-            end: ISO end date.
-            filters: Column-level filter expressions.
-            bot_filter: Exclude bot traffic if ``True``.
-            page: 1-based page number for pagination.
-
-        Returns:
-            ``{"sessions": [...], "page": int}`` dict.
-        """
-        params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
-        if page is not None:
-            params["page"] = page
-        return self._client._get("/api/analytics/sessions/", params)
-
     def devices(
         self,
         website_id: str,
@@ -235,7 +174,7 @@ class AnalyticsEndpoints:
         filters: list[str] | None = None,
         bot_filter: bool = False,
     ) -> dict[str, Any]:
-        """Fetch device dimension breakdowns: browser, OS, device type, screen, language.
+        """Fetch device dimension breakdowns: browser, OS, and device type.
 
         Args:
             website_id: UUID of the tracked website.
@@ -246,8 +185,7 @@ class AnalyticsEndpoints:
             bot_filter: Exclude bot traffic if ``True``.
 
         Returns:
-            Dict with keys ``browser``, ``os``, ``device``, ``screen``,
-            ``language``, each containing a list of ``{value, visitors}`` dicts.
+            Dict with keys ``browser``, ``os``, and ``device``.
         """
         params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
         return self._client._get("/api/analytics/devices/", params)
@@ -314,163 +252,8 @@ class AnalyticsEndpoints:
             params["mode"] = mode
         return self._client._get("/api/analytics/compare/", params)
 
-    def retention(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        granularity: str | None = None,
-    ) -> dict[str, Any]:
-        """Fetch cohort retention analysis data.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"90d"``).
-            start: ISO start date.
-            end: ISO end date.
-            granularity: Cohort bucket size -- ``"week"`` or ``"month"``.
-
-        Returns:
-            Dict with keys ``cohorts`` (list of cohort dicts with ``periods``
-            retention percentages) and ``granularity``.
-        """
-        params = self._base_params(website_id, date_range, start, end)
-        if granularity:
-            params["granularity"] = granularity
-        return self._client._get("/api/analytics/retention/", params)
-
-    def funnels(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        steps: list[tuple[str, str]] | None = None,
-        window: int | None = None,
-    ) -> dict[str, Any]:
-        """Fetch multi-step funnel conversion analysis.
-
-        Steps are encoded as indexed query parameters (``step_type.0``,
-        ``step_value.0``, ``step_type.1``, etc.) for the API.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"30d"``).
-            start: ISO start date.
-            end: ISO end date.
-            steps: Ordered list of ``(type, value)`` tuples where type is
-                ``"url"`` or ``"event"`` and value is the path or event name.
-            window: Maximum minutes between first and last step.
-
-        Returns:
-            Dict with keys ``funnel_steps`` and ``steps_config``.
-
-        Example::
-
-            result = client.analytics.funnels(
-                "uuid",
-                date_range="30d",
-                steps=[("url", "/"), ("url", "/pricing"), ("url", "/signup")],
-                window=60,
-            )
-        """
-        params = self._base_params(website_id, date_range, start, end)
-        if steps:
-            # Encode each step as indexed query params for the API
-            for i, (step_type, step_value) in enumerate(steps):
-                params[f"step_type.{i}"] = step_type
-                params[f"step_value.{i}"] = step_value
-        if window is not None:
-            params["window"] = window
-        return self._client._get("/api/analytics/funnels/", params)
-
-    def journeys(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        path_length: int | None = None,
-        limit: int | None = None,
-    ) -> dict[str, Any]:
-        """Fetch user journey paths with Sankey diagram data.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"30d"``).
-            start: ISO start date.
-            end: ISO end date.
-            path_length: Number of steps per journey path (default 3).
-            limit: Maximum number of journey paths to retrieve.
-
-        Returns:
-            Dict with keys ``journeys``, ``sankey`` (node/link data for
-            D3-sankey rendering), ``mode``, and ``conversions``.
-        """
-        params = self._base_params(website_id, date_range, start, end)
-        if path_length is not None:
-            params["path_length"] = path_length
-        if limit is not None:
-            params["limit"] = limit
-        return self._client._get("/api/analytics/journeys/", params)
-
-    def revenue(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> dict[str, Any]:
-        """Fetch revenue analytics: summary, time series, by-event, by-country.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"30d"``).
-            start: ISO start date.
-            end: ISO end date.
-
-        Returns:
-            Dict with keys ``summary``, ``time_series``, ``by_event``,
-            ``by_country``, ``revenue_chart_data``, ``event_chart_data``.
-        """
-        params = self._base_params(website_id, date_range, start, end)
-        return self._client._get("/api/analytics/revenue/", params)
-
-    def engagement(
-        self,
-        website_id: str,
-        *,
-        date_range: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        filters: list[str] | None = None,
-        bot_filter: bool = False,
-    ) -> dict[str, Any]:
-        """Fetch engagement metrics: duration distribution, percentiles, bounce rates.
-
-        Args:
-            website_id: UUID of the tracked website.
-            date_range: Shorthand range (e.g. ``"30d"``).
-            start: ISO start date.
-            end: ISO end date.
-            filters: Column-level filter expressions.
-            bot_filter: Exclude bot traffic if ``True``.
-
-        Returns:
-            Dict with keys ``distribution``, ``percentiles``,
-            ``duration_by_page``, ``bounce_by_page``, ``bounce_by_source``,
-            ``distribution_chart_data``, ``bounce_chart_data``.
-        """
-        params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
-        return self._client._get("/api/analytics/engagement/", params)
-
     def realtime(self, website_id: str) -> dict[str, Any]:
-        """Fetch realtime visitor data: active count, recent events, current pages.
+        """Fetch realtime pageview data: active count, recent rows, current pages.
 
         Unlike other analytics methods, this endpoint does not accept date
         range parameters -- it always returns data for the live window

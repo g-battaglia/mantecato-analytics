@@ -72,8 +72,8 @@ describe("useTracker", () => {
     expect(tracker).not.toBeNull();
     expect(tracker!.pageview).toBeTypeOf("function");
     expect(tracker!.event).toBeTypeOf("function");
-    expect(tracker!.revenue).toBeTypeOf("function");
-    expect(tracker!.identify).toBeTypeOf("function");
+    expect((tracker as unknown as Record<string, unknown>).revenue).toBeUndefined();
+    expect((tracker as unknown as Record<string, unknown>).identify).toBeUndefined();
   });
 });
 

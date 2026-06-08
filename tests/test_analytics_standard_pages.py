@@ -32,21 +32,17 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 BASE_HTML = TEMPLATES_DIR / "base.html"
 ANALYTICS_DIR = TEMPLATES_DIR / "analytics"
 
-PAGES = ["pages", "sources", "events", "sessions", "devices", "geo", "compare"]
+PAGES = ["pages", "events", "devices", "geo", "compare"]
 ROUTES = {
     "pages": "/pages/",
-    "sources": "/sources/",
     "events": "/events/",
-    "sessions": "/sessions/",
     "devices": "/devices/",
     "geo": "/geo/",
     "compare": "/compare/",
 }
 URL_NAMES = {
     "pages": "analytics_pages",
-    "sources": "analytics_sources",
     "events": "analytics_events",
-    "sessions": "analytics_sessions",
     "devices": "analytics_devices",
     "geo": "analytics_geo",
     "compare": "analytics_compare",
@@ -120,41 +116,26 @@ class TestStandardPagesLoginRequired:
                     return_value={"pages": [], "page": 1},
                 ),
                 patch(
-                    "apps.analytics.views.get_sources_data",
-                    return_value={
-                        "referrers": [], "channels": [],
-                        "utm_source": [], "utm_medium": [],
-                        "utm_campaign": [], "click_ids": [],
-                        "hostnames": [],
-                    },
-                ),
-                patch(
                     "apps.analytics.views.get_events_data",
-                    return_value={"events": []},
-                ),
-                patch(
-                    "apps.analytics.views.get_sessions_data",
-                    return_value={"sessions": [], "page": 1},
+                    return_value={
+                        "events": [], "total_events": 0, "event_types": 0,
+                        "top_event": "—", "event_timeseries": [],
+                    },
                 ),
                 patch(
                     "apps.analytics.views.get_devices_data",
-                    return_value={
-                        "browser": [], "os": [],
-                        "device": [], "screen": [], "language": [],
-                    },
+                    return_value={"browser": [], "os": [], "device": []},
                 ),
                 patch(
                     "apps.analytics.views.get_geo_data",
-                    return_value={
-                        "geo": [], "level": "country",
-                        "country": None, "region": None,
-                    },
+                    return_value={"geo": [], "level": "country"},
                 ),
                 patch(
                     "apps.analytics.views.get_compare_data",
                     return_value={
                         "stats": {}, "comparison": [],
                         "comparison_mode": "previous_period",
+                        "current_ts": [], "previous_ts": [],
                     },
                 ),
             ):
@@ -197,42 +178,6 @@ class TestPagesServiceOrchestration:
 
 
 # ---------------------------------------------------------------------------
-# Service orchestration — Sources
-# ---------------------------------------------------------------------------
-
-
-class TestSourcesServiceOrchestration:
-    @patch("apps.analytics.services.get_hostname_metrics", return_value=[])
-    @patch("apps.analytics.services.get_click_id_metrics", return_value=[])
-    @patch("apps.analytics.services.get_utm_metrics", return_value=[])
-    @patch("apps.analytics.services.get_channel_metrics", return_value=[])
-    @patch("apps.analytics.services.get_referrer_metrics", return_value=[])
-    def test_calls_seven_query_functions(
-        self,
-        mock_ref: MagicMock,
-        mock_ch: MagicMock,
-        mock_utm: MagicMock,
-        mock_click: MagicMock,
-        mock_host: MagicMock,
-    ) -> None:
-        from apps.analytics.services import get_sources_data
-        from core.mantecato_core.date_utils import DateRange
-
-        date_range = DateRange(
-            start_date=datetime(2025, 1, 1, tzinfo=UTC),
-            end_date=datetime(2025, 1, 31, tzinfo=UTC),
-        )
-        result = get_sources_data(WEBSITE_ID, date_range)
-        assert mock_ref.call_count == 1
-        assert mock_ch.call_count == 1
-        assert mock_utm.call_count == 3  # source, medium, campaign
-        assert mock_click.call_count == 1
-        assert mock_host.call_count == 1
-        assert "referrers" in result
-        assert "channels" in result
-
-
-# ---------------------------------------------------------------------------
 # Service orchestration — Overview tab fetchers
 # ---------------------------------------------------------------------------
 
@@ -248,33 +193,36 @@ def _make_date_range():
 
 
 class TestOverviewTabFetchers:
-    @patch("apps.analytics.services.get_top_pages", return_value=[{"views": 10}])
+    @patch("apps.analytics.services.get_top_pages", return_value=[{"urlPath": "/", "views": 10}])
     def test_tab_pages_returns_expected_keys(self, mock_fn: MagicMock) -> None:
         from apps.analytics.services import get_overview_tab_pages
-        result = get_overview_tab_pages(WEBSITE_ID, _make_date_range())
+        from core.mantecato_core.filters import Filter
+
+        # Content filter keeps the call off the anonymous-visitor estimate path
+        # (which would query VisitorSketch rows) so the test stays DB-free.
+        result = get_overview_tab_pages(
+            WEBSITE_ID,
+            _make_date_range(),
+            [Filter(column="country", operator="eq", value="US")],
+        )
         assert "top_pages" in result
         assert mock_fn.call_count == 1
 
-    @patch("apps.analytics.services.get_top_referrers", return_value=[])
-    def test_tab_referrers_returns_expected_keys(self, mock_fn: MagicMock) -> None:
-        from apps.analytics.services import get_overview_tab_referrers
-        result = get_overview_tab_referrers(WEBSITE_ID, _make_date_range())
-        assert "top_referrers" in result
-
-    @patch("apps.analytics.services.get_top_events", return_value=[])
+    @patch("apps.analytics.services.get_event_metrics", return_value=[])
     def test_tab_events_returns_expected_keys(self, mock_fn: MagicMock) -> None:
         from apps.analytics.services import get_overview_tab_events
         result = get_overview_tab_events(WEBSITE_ID, _make_date_range())
-        assert "top_events" in result
+        assert "event_metrics" in result
+        assert mock_fn.call_count == 1
 
     @patch(
         "apps.analytics.services.get_device_metrics_multi",
-        return_value={"browser": [], "os": [], "device": [], "language": []},
+        return_value={"browser": [], "os": [], "device": []},
     )
     def test_tab_devices_returns_expected_keys(self, mock_fn: MagicMock) -> None:
         from apps.analytics.services import get_overview_tab_devices
         result = get_overview_tab_devices(WEBSITE_ID, _make_date_range())
-        for key in ("browser", "os_data", "device_data", "language"):
+        for key in ("browser", "os_data", "device_data"):
             assert key in result, f"missing key: {key}"
         assert mock_fn.call_count == 1
 
@@ -287,16 +235,6 @@ class TestOverviewTabFetchers:
         result = get_overview_tab_geo(WEBSITE_ID, _make_date_range())
         assert "country" in result
         assert "geo" in result
-
-    @patch("apps.analytics.services.get_referrer_metrics", return_value=[])
-    @patch("apps.analytics.services.get_channel_metrics", return_value=[])
-    def test_tab_sources_returns_expected_keys(
-        self, mock_ch: MagicMock, mock_ref: MagicMock,
-    ) -> None:
-        from apps.analytics.services import get_overview_tab_sources
-        result = get_overview_tab_sources(WEBSITE_ID, _make_date_range())
-        assert "channels" in result
-        assert "referrer_metrics" in result
 
 
 # ---------------------------------------------------------------------------
@@ -320,39 +258,16 @@ class TestEventsServiceOrchestration:
 
 
 # ---------------------------------------------------------------------------
-# Service orchestration — Sessions
-# ---------------------------------------------------------------------------
-
-
-class TestSessionsServiceOrchestration:
-    @patch("apps.analytics.services.get_session_list", return_value=[])
-    def test_calls_get_session_list(self, mock_fn: MagicMock) -> None:
-        from apps.analytics.services import get_sessions_data
-        from core.mantecato_core.date_utils import DateRange
-
-        date_range = DateRange(
-            start_date=datetime(2025, 1, 1, tzinfo=UTC),
-            end_date=datetime(2025, 1, 31, tzinfo=UTC),
-        )
-        result = get_sessions_data(WEBSITE_ID, date_range)
-        assert mock_fn.call_count == 1
-        assert "sessions" in result
-
-
-# ---------------------------------------------------------------------------
 # Service orchestration — Devices
 # ---------------------------------------------------------------------------
 
 
 class TestDevicesServiceOrchestration:
-    @patch("apps.analytics.services.get_device_metrics", return_value=[])
     @patch(
         "apps.analytics.services.get_device_metrics_multi",
-        return_value={"browser": [], "os": [], "device": [], "language": []},
+        return_value={"browser": [], "os": [], "device": []},
     )
-    def test_devices_data_uses_merged_helper(
-        self, mock_multi: MagicMock, mock_screen: MagicMock
-    ) -> None:
+    def test_devices_data_uses_merged_helper(self, mock_multi: MagicMock) -> None:
         from apps.analytics.services import get_devices_data
         from core.mantecato_core.date_utils import DateRange
 
@@ -361,10 +276,8 @@ class TestDevicesServiceOrchestration:
             end_date=datetime(2025, 1, 31, tzinfo=UTC),
         )
         result = get_devices_data(WEBSITE_ID, date_range)
-        # One merged call covers 4 dimensions; ``screen`` stays a single call.
+        # One merged call covers all device dimensions (browser/os/device).
         assert mock_multi.call_count == 1
-        assert mock_screen.call_count == 1
-        assert mock_screen.call_args.args[3] == "screen"
         assert "browser" in result
 
 
@@ -374,17 +287,10 @@ class TestDevicesServiceOrchestration:
 
 
 class TestGeoServiceOrchestration:
-    _GEO_ROW = {
-        "country": "US", "region": None, "city": None,
-        "visitors": 100, "pageviews": 300, "visits": 120,
-        "bounceRate": 45.0, "avgDuration": 62.0,
-    }
+    """Privacy-first geo is country-level only — no region/city drilldown."""
 
-    @patch("apps.analytics.services.get_country_breakdown", return_value=[])
     @patch("apps.analytics.services.get_geo_metrics", return_value=[])
-    def test_calls_geo_metrics_country_level(
-        self, mock_geo: MagicMock, mock_cb: MagicMock,
-    ) -> None:
+    def test_calls_geo_metrics_country_level(self, mock_geo: MagicMock) -> None:
         from apps.analytics.services import get_geo_data
         from core.mantecato_core.date_utils import DateRange
 
@@ -395,81 +301,13 @@ class TestGeoServiceOrchestration:
         result = get_geo_data(WEBSITE_ID, date_range)
         assert mock_geo.call_count == 1
         assert result["level"] == "country"
-        assert result["country"] is None
-
-    @patch("apps.analytics.services.get_geo_metrics", return_value=[])
-    def test_drills_to_region_level(self, mock_fn: MagicMock) -> None:
-        from apps.analytics.services import get_geo_data
-        from core.mantecato_core.date_utils import DateRange
-
-        date_range = DateRange(
-            start_date=datetime(2025, 1, 1, tzinfo=UTC),
-            end_date=datetime(2025, 1, 31, tzinfo=UTC),
-        )
-        result = get_geo_data(WEBSITE_ID, date_range, country="US")
-        assert result["level"] == "region"
-
-    @patch("apps.analytics.services.get_geo_metrics", return_value=[])
-    def test_drills_to_city_level(self, mock_fn: MagicMock) -> None:
-        from apps.analytics.services import get_geo_data
-        from core.mantecato_core.date_utils import DateRange
-
-        date_range = DateRange(
-            start_date=datetime(2025, 1, 1, tzinfo=UTC),
-            end_date=datetime(2025, 1, 31, tzinfo=UTC),
-        )
-        result = get_geo_data(WEBSITE_ID, date_range, country="US", region="California")
-        assert result["level"] == "city"
-
-    @patch("apps.analytics.services.get_country_breakdown", return_value=[
-        {"country": "US", "visitors": 80, "pageviews": 200},
-        {"country": "IT", "visitors": 20, "pageviews": 50},
-    ])
-    @patch("apps.analytics.services.get_geo_metrics")
-    def test_country_level_includes_summary_and_charts(
-        self, mock_geo: MagicMock, mock_cb: MagicMock,
-    ) -> None:
-        from apps.analytics.services import get_geo_data
-        from core.mantecato_core.date_utils import DateRange
-
-        mock_geo.return_value = [self._GEO_ROW]
-        date_range = DateRange(
-            start_date=datetime(2025, 1, 1, tzinfo=UTC),
-            end_date=datetime(2025, 1, 31, tzinfo=UTC),
-        )
-        result = get_geo_data(WEBSITE_ID, date_range)
-        assert "geo_summary" in result
-        assert result["geo_summary"]["total_countries"] == 1
-        assert result["geo_summary"]["top_country"] == "US"
-        assert "country_breakdown" in result
-        assert "top_regions" in result
-        assert "top_regions_country" in result
-
-    @patch("apps.analytics.services.get_geo_metrics", return_value=[])
-    def test_drilldown_excludes_summary(self, mock_fn: MagicMock) -> None:
-        from apps.analytics.services import get_geo_data
-        from core.mantecato_core.date_utils import DateRange
-
-        date_range = DateRange(
-            start_date=datetime(2025, 1, 1, tzinfo=UTC),
-            end_date=datetime(2025, 1, 31, tzinfo=UTC),
-        )
-        result = get_geo_data(WEBSITE_ID, date_range, country="US")
-        assert "geo_summary" not in result
-        assert "country_breakdown" not in result
+        assert "geo" in result
 
     @patch("apps.analytics.services.get_geo_metrics", return_value=[
-        {"country": "US", "region": None, "city": None,
-         "visitors": 60, "pageviews": 180, "visits": 70,
-         "bounceRate": 40.0, "avgDuration": 55.0},
-        {"country": "IT", "region": None, "city": None,
-         "visitors": 40, "pageviews": 120, "visits": 50,
-         "bounceRate": 50.0, "avgDuration": 45.0},
+        {"country": "US", "pageviews": 180, "percentage": 60.0},
+        {"country": "IT", "pageviews": 120, "percentage": 40.0},
     ])
-    @patch("apps.analytics.services.get_country_breakdown", return_value=[])
-    def test_geo_rows_have_percentage(
-        self, mock_cb: MagicMock, mock_geo: MagicMock,
-    ) -> None:
+    def test_geo_rows_have_percentage(self, mock_geo: MagicMock) -> None:
         from apps.analytics.services import get_geo_data
         from core.mantecato_core.date_utils import DateRange
 
@@ -479,7 +317,7 @@ class TestGeoServiceOrchestration:
         )
         result = get_geo_data(WEBSITE_ID, date_range)
         for g in result["geo"]:
-            assert "pct" in g
+            assert "percentage" in g
 
 
 # ---------------------------------------------------------------------------
@@ -488,8 +326,15 @@ class TestGeoServiceOrchestration:
 
 
 class TestCompareServiceOrchestration:
+    # A content filter avoids the anonymous-visitor estimate (DB) path so these
+    # stay pure unit tests of the comparison orchestration.
+    @staticmethod
+    def _content_filter():
+        from core.mantecato_core.filters import Filter
+        return [Filter(column="country", operator="eq", value="US")]
+
     @patch("apps.analytics.services.get_pageview_time_series", return_value=[])
-    @patch("apps.analytics.services.get_comparison_stats")
+    @patch("core.mantecato_core.queries.compare.get_comparison_stats")
     def test_calls_get_comparison_stats(
         self, mock_fn: MagicMock, mock_ts: MagicMock,
     ) -> None:
@@ -497,29 +342,21 @@ class TestCompareServiceOrchestration:
         from core.mantecato_core.date_utils import DateRange
 
         mock_fn.return_value = [
-            {
-                "period": "current", "pageviews": 100,
-                "visitors": 50, "visits": 60,
-                "bounces": 20, "totaltime": 1800,
-            },
-            {
-                "period": "previous", "pageviews": 80,
-                "visitors": 40, "visits": 50,
-                "bounces": 15, "totaltime": 1500,
-            },
+            {"period": "current", "pageviews": 100, "human_pageviews": 80, "bot_pageviews": 20},
+            {"period": "previous", "pageviews": 80, "human_pageviews": 64, "bot_pageviews": 16},
         ]
         date_range = DateRange(
             start_date=datetime(2025, 1, 1, tzinfo=UTC),
             end_date=datetime(2025, 1, 31, tzinfo=UTC),
         )
-        result = get_compare_data(WEBSITE_ID, date_range)
+        result = get_compare_data(WEBSITE_ID, date_range, self._content_filter())
         assert mock_fn.call_count == 1
         assert "stats" in result
         assert result["stats"]["pageviews"]["value"] == "100"
         assert result["comparison_mode"] == "previous_period"
 
     @patch("apps.analytics.services.get_pageview_time_series", return_value=[])
-    @patch("apps.analytics.services.get_comparison_stats")
+    @patch("core.mantecato_core.queries.compare.get_comparison_stats")
     def test_handles_previous_year_mode(
         self, mock_fn: MagicMock, mock_ts: MagicMock,
     ) -> None:
@@ -527,22 +364,16 @@ class TestCompareServiceOrchestration:
         from core.mantecato_core.date_utils import DateRange
 
         mock_fn.return_value = [
-            {
-                "period": "current", "pageviews": 100,
-                "visitors": 50, "visits": 60,
-                "bounces": 20, "totaltime": 1800,
-            },
-            {
-                "period": "previous", "pageviews": 90,
-                "visitors": 45, "visits": 55,
-                "bounces": 18, "totaltime": 1600,
-            },
+            {"period": "current", "pageviews": 100, "human_pageviews": 80, "bot_pageviews": 20},
+            {"period": "previous", "pageviews": 90, "human_pageviews": 72, "bot_pageviews": 18},
         ]
         date_range = DateRange(
             start_date=datetime(2025, 1, 1, tzinfo=UTC),
             end_date=datetime(2025, 1, 31, tzinfo=UTC),
         )
-        result = get_compare_data(WEBSITE_ID, date_range, comparison_mode="previous_year")
+        result = get_compare_data(
+            WEBSITE_ID, date_range, self._content_filter(), comparison_mode="previous_year"
+        )
         assert result["comparison_mode"] == "previous_year"
 
 
@@ -605,16 +436,8 @@ class TestTemplateContent:
         content = (ANALYTICS_DIR / "pages.html").read_text()
         assert "Views" in content or "views" in content.lower()
 
-    def test_sources_has_multiple_tables(self) -> None:
-        content = (ANALYTICS_DIR / "sources.html").read_text()
-        assert content.count("<table") >= 3  # channels, referrers, UTM
-
     def test_events_has_table(self) -> None:
         content = (ANALYTICS_DIR / "events.html").read_text()
-        assert "<table" in content
-
-    def test_sessions_has_table(self) -> None:
-        content = (ANALYTICS_DIR / "sessions.html").read_text()
         assert "<table" in content
 
     def test_devices_has_charts(self) -> None:
@@ -622,10 +445,6 @@ class TestTemplateContent:
         assert "canvas" in content.lower()
         assert "json_script" in content
         assert "initPieChart" in content
-
-    def test_geo_has_drilldown_links(self) -> None:
-        content = (ANALYTICS_DIR / "geo.html").read_text()
-        assert "country=" in content or "drill" in content.lower()
 
     def test_compare_has_mode_selector(self) -> None:
         content = (ANALYTICS_DIR / "compare.html").read_text()
@@ -671,14 +490,8 @@ class TestBaseNavRealUrls:
     def test_pages_link_uses_url_tag(self) -> None:
         assert "{% url 'analytics_pages' %}" in self.content
 
-    def test_sources_link_uses_url_tag(self) -> None:
-        assert "{% url 'analytics_sources' %}" in self.content
-
     def test_events_link_uses_url_tag(self) -> None:
         assert "{% url 'analytics_events' %}" in self.content
-
-    def test_sessions_link_uses_url_tag(self) -> None:
-        assert "{% url 'analytics_sessions' %}" in self.content
 
     def test_devices_link_uses_url_tag(self) -> None:
         assert "{% url 'analytics_devices' %}" in self.content
@@ -690,8 +503,8 @@ class TestBaseNavRealUrls:
         assert "{% url 'analytics_compare' %}" in self.content
 
     def test_no_hash_hrefs_for_connected_pages(self) -> None:
-        """Pages, Sources, Events, Sessions, Devices, Geo, Compare must not use href="#"."""
-        for page_name in ["Pages", "Sources", "Events", "Sessions", "Devices", "Geo"]:
+        """Pages, Events, Devices, Geo, Compare must not use href="#"."""
+        for page_name in ["Pages", "Events", "Devices", "Geo", "Compare"]:
             lines = self.content.split("\n")
             for line in lines:
                 if page_name in line and "nav-link" in line:
@@ -772,31 +585,6 @@ class TestPagesViewRendered:
         assert "42" in content
         assert "Home" in content
 
-    @patch("apps.analytics.views.get_sources_data")
-    @patch("apps.analytics.views.resolve_websites_for_user")
-    def test_sources_renders_channels(
-        self, mock_websites: MagicMock, mock_data: MagicMock, client: Client,
-    ) -> None:
-        self._setup_client(client)
-        mock_websites.return_value = [
-            {"id": WEBSITE_ID, "name": "Test Site", "domain": "test.com"},
-        ]
-        mock_data.return_value = {
-            "referrers": [],
-            "channels": [
-                {
-                    "channel": "Direct", "visitors": 100,
-                    "pageviews": 200, "bounceRate": 30.0,
-                },
-            ],
-            "utm_source": [], "utm_medium": [], "utm_campaign": [],
-            "click_ids": [], "hostnames": [],
-        }
-        response = client.get("/sources/")
-        content = response.content.decode()
-        assert "Direct" in content
-        assert "100" in content
-
     @patch("apps.analytics.views.get_events_data")
     @patch("apps.analytics.views.resolve_websites_for_user")
     def test_events_renders_event_names(
@@ -808,35 +596,18 @@ class TestPagesViewRendered:
         ]
         mock_data.return_value = {
             "events": [
-                {"eventName": "signup", "count": 15, "visitors": 12, "lastTriggered": "2025-01-15"},
+                {"eventName": "signup", "count": 15, "pct": 100.0,
+                 "visitors": 12, "lastTriggered": "2025-01-15"},
             ],
+            "total_events": 15,
+            "event_types": 1,
+            "top_event": "signup",
+            "event_timeseries": [],
         }
         response = client.get("/events/")
         content = response.content.decode()
         assert "signup" in content
         assert "15" in content
-
-    @patch("apps.analytics.views.get_sessions_data")
-    @patch("apps.analytics.views.resolve_websites_for_user")
-    def test_sessions_renders_session_data(
-        self, mock_websites: MagicMock, mock_data: MagicMock, client: Client,
-    ) -> None:
-        self._setup_client(client)
-        mock_websites.return_value = [
-            {"id": WEBSITE_ID, "name": "Test Site", "domain": "test.com"},
-        ]
-        mock_data.return_value = {
-            "sessions": [
-                {"sessionId": "s1", "country": "US", "city": "NYC",
-                 "browser": "Chrome", "os": "Windows", "device": "Desktop",
-                 "pagesViewed": 5, "duration": 120.0, "startedAt": "2025-01-15T10:30:00"},
-            ],
-            "page": 1,
-        }
-        response = client.get("/sessions/")
-        content = response.content.decode()
-        assert "Chrome" in content
-        assert "5" in content
 
     @patch("apps.analytics.views.get_compare_data")
     @patch("apps.analytics.views.resolve_websites_for_user")

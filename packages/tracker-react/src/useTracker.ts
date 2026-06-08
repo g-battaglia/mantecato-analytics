@@ -9,7 +9,7 @@ import { TrackerContext } from "./TrackerContext";
  * ```tsx
  * function Button() {
  *   const { event } = useTracker();
- *   return <button onClick={() => event('click', { target: 'cta' })}>CTA</button>;
+ *   return <button onClick={() => event('cta_click')}>CTA</button>;
  * }
  * ```
  */

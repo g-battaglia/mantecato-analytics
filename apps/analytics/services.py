@@ -1,8 +1,9 @@
 """Analytics services — orchestrates read-only query calls for aggregate pageview analytics.
 
-The product supports only aggregate pageview metrics.
-No visitor, session, bounce, time-on-site, referrer, UTM, event, revenue,
-retention, funnel, journey, or engagement metrics.
+The product supports aggregate pageview metrics plus anonymous estimated
+unique-visitor counts from aggregate sketches. No exact visitor identities,
+sessions, bounce, time-on-site, referrer, UTM, revenue, retention, funnel,
+journey, or engagement metrics are stored.
 """
 
 from __future__ import annotations
@@ -24,7 +25,13 @@ from apps.analytics.formatting import (
 from apps.analytics.formatting import (
     percentage_change as _percentage_change,
 )
+from core.mantecato_core.queries.visitors import (
+    estimate_unique_visitors,
+    estimate_unique_visitors_by_scope,
+)
+from core.mantecato_core.visitor_estimation import has_only_bot_filter
 from core.mantecato_core.queries.devices import get_device_metrics_multi
+from core.mantecato_core.queries.events import get_event_metrics, get_event_time_series
 from core.mantecato_core.queries.geo import get_geo_metrics
 from core.mantecato_core.queries.heatmap import get_traffic_heatmap
 from core.mantecato_core.queries.pageviews import get_page_metrics
@@ -44,14 +51,38 @@ from core.mantecato_core.queries.stats import (
 
 
 def _stats_with_change(
-    stats: dict[str, int],
-    prev_stats: dict[str, int],
+    stats: dict[str, int | None],
+    prev_stats: dict[str, int | None],
 ) -> dict[str, Any]:
-    """Build a KPI card dict for pageviews with period-over-period change."""
+    """Build KPI cards compatible with privacy-first aggregate data."""
+    visitors = stats.get("visitors")
+    prev_visitors = prev_stats.get("visitors")
     return {
         "pageviews": {
             "value": _format_compact(stats["pageviews"]),
             "change": _percentage_change(stats["pageviews"], prev_stats["pageviews"]),
+        },
+        "visitors": {
+            "value": f"~{_format_compact(visitors)}" if visitors is not None else "N/A",
+            "change": _percentage_change(visitors, prev_visitors)
+            if visitors is not None and prev_visitors is not None
+            else None,
+            "estimated": visitors is not None,
+            "note": "Estimated" if visitors is not None else "Unavailable with current filters",
+        },
+        "human_pageviews": {
+            "value": _format_compact(stats.get("human_pageviews") or 0),
+            "change": _percentage_change(
+                stats.get("human_pageviews") or 0,
+                prev_stats.get("human_pageviews") or 0,
+            ),
+        },
+        "bot_pageviews": {
+            "value": _format_compact(stats.get("bot_pageviews") or 0),
+            "change": _percentage_change(
+                stats.get("bot_pageviews") or 0,
+                prev_stats.get("bot_pageviews") or 0,
+            ),
         },
     }
 
@@ -65,6 +96,34 @@ def _add_percentage(
     total = sum(r[value_key] for r in rows) if rows else 0
     for r in rows:
         r[target_key] = round(r[value_key] / total * 100, 1) if total else 0
+
+
+def _attach_estimated_visitors(
+    website_id: str,
+    start: Any,
+    end: Any,
+    rows: list[dict],
+    *,
+    scope: str,
+    value_key: str,
+    target_key: str = "visitors",
+    enabled: bool = True,
+) -> None:
+    """Add anonymous estimated visitor counts to page/section rows."""
+    if not enabled:
+        for row in rows:
+            row[target_key] = None
+        return
+    values = [str(r.get(value_key) or "") for r in rows]
+    estimates = estimate_unique_visitors_by_scope(
+        website_id,
+        start,
+        end,
+        scope=scope,
+        scope_values=values,
+    )
+    for row in rows:
+        row[target_key] = estimates.get(str(row.get(value_key) or ""), 0)
 
 
 def resolve_websites_for_user(user_id: str, is_admin: bool) -> list[dict[str, Any]]:
@@ -99,6 +158,14 @@ def get_overview_data(
     stats_cmp = get_website_stats_comparison(
         website_id, start, end, prev_range.start_date, prev_range.end_date, filters
     )
+    if has_only_bot_filter(filters):
+        stats_cmp["current"]["visitors"] = estimate_unique_visitors(website_id, start, end)
+        stats_cmp["previous"]["visitors"] = estimate_unique_visitors(
+            website_id, prev_range.start_date, prev_range.end_date
+        )
+    else:
+        stats_cmp["current"]["visitors"] = None
+        stats_cmp["previous"]["visitors"] = None
     stats = _stats_with_change(stats_cmp["current"], stats_cmp["previous"])
 
     ts_cmp = get_pageview_time_series_comparison(
@@ -108,6 +175,16 @@ def get_overview_data(
     prev_timeseries = ts_cmp["previous"]
 
     sections = get_top_sections(website_id, start, end, limit=10, filters=filters)
+    estimates_enabled = has_only_bot_filter(filters)
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        sections,
+        scope="section",
+        value_key="section",
+        enabled=estimates_enabled,
+    )
     _add_percentage(sections, "views")
 
     device_breakdown = get_device_metrics_multi(website_id, start, end, limit=10, filters=filters)
@@ -115,12 +192,35 @@ def get_overview_data(
     country_data = get_country_breakdown(website_id, start, end, limit=10, filters=filters)
     _add_percentage(country_data, "pageviews")
 
+    top_pages = get_top_pages(website_id, start, end, limit=10, filters=filters)
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        top_pages,
+        scope="page",
+        value_key="urlPath",
+        enabled=estimates_enabled,
+    )
+    event_metrics = get_event_metrics(website_id, start, end, limit=10, filters=filters)
+    _add_percentage(event_metrics, "count")
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        event_metrics,
+        scope="event",
+        value_key="eventName",
+        enabled=estimates_enabled,
+    )
+
     return {
         "stats": stats,
         "timeseries": timeseries,
         "prev_timeseries": prev_timeseries,
         "sections": sections,
-        "top_pages": get_top_pages(website_id, start, end, limit=10, filters=filters),
+        "top_pages": top_pages,
+        "event_metrics": event_metrics,
         "browser": device_breakdown["browser"],
         "os_data": device_breakdown["os"],
         "device_data": device_breakdown["device"],
@@ -148,6 +248,15 @@ def get_pages_data(
     offset = (page - 1) * 50
 
     pages = get_page_metrics(website_id, start, end, limit=50, offset=offset, filters=filters)
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        pages,
+        scope="page",
+        value_key="urlPath",
+        enabled=has_only_bot_filter(filters),
+    )
 
     return {
         "pages": pages,
@@ -166,6 +275,15 @@ def get_sections_data(
     end = date_range.end_date
 
     sections = get_top_sections(website_id, start, end, limit=100, filters=filters)
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        sections,
+        scope="section",
+        value_key="section",
+        enabled=has_only_bot_filter(filters),
+    )
     _add_percentage(sections, "views")
 
     return {"sections": sections}
@@ -265,12 +383,32 @@ def get_compare_data(
     previous = next((r for r in comparison if r["period"] == "previous"), None)
 
     if current and previous:
+        if has_only_bot_filter(filters):
+            current["visitors"] = estimate_unique_visitors(website_id, start, end)
+            previous["visitors"] = estimate_unique_visitors(
+                website_id,
+                comp_range.start_date,
+                comp_range.end_date,
+            )
+        else:
+            current["visitors"] = None
+            previous["visitors"] = None
         stats = _stats_with_change(
-            {"pageviews": current["pageviews"]},
-            {"pageviews": previous["pageviews"]},
+            {
+                "pageviews": current["pageviews"],
+                "visitors": current["visitors"],
+                "human_pageviews": current.get("human_pageviews", 0),
+                "bot_pageviews": current.get("bot_pageviews", 0),
+            },
+            {
+                "pageviews": previous["pageviews"],
+                "visitors": previous["visitors"],
+                "human_pageviews": previous.get("human_pageviews", 0),
+                "bot_pageviews": previous.get("bot_pageviews", 0),
+            },
         )
     else:
-        stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0})
+        stats = _stats_with_change({"pageviews": 0, "visitors": None}, {"pageviews": 0, "visitors": None})
 
     granularity = resolve_granularity(granularity, date_range)
     current_ts = get_pageview_time_series(website_id, start, end, granularity, filters=filters)
@@ -291,80 +429,80 @@ def get_compare_data(
     }
 
 
-# ---------------------------------------------------------------------------
-# Backward-compatible aliases for removed service functions
-# These return empty data to avoid import errors in tests or other modules.
-# ---------------------------------------------------------------------------
-
-def get_sessions_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"sessions": [], "page": 1}
-
 def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"events": [], "total_events": 0, "event_types": 0, "top_event": "—", "event_timeseries": []}
+    """Fetch aggregate custom-event metrics."""
+    website_id, date_range = args[0], args[1]
+    filters = args[2] if len(args) > 2 else kwargs.get("filters")
+    granularity = kwargs.get("granularity", "auto")
+    filters = filters or []
+    start = date_range.start_date
+    end = date_range.end_date
+    granularity = resolve_granularity(granularity, date_range)
 
-def get_sources_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"referrers": [], "channels": [], "utm_source": [], "utm_medium": [], "utm_campaign": [], "click_ids": [], "hostnames": []}
-
-def get_retention_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"cohorts": [], "granularity": "week"}
-
-def get_funnels_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"funnel_steps": [], "steps_config": []}
-
-def get_journeys_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"journeys": [], "sankey": {"nodes": [], "links": [], "steps": 0}, "mode": "sections", "conversions": []}
-
-def get_revenue_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"summary": {}, "time_series": [], "by_event": [], "by_country": []}
-
-def get_engagement_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"distribution": [], "percentiles": {}, "duration_by_page": [], "bounce_by_page": [], "bounce_by_source": []}
-
-def get_entry_exit_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"entry_pages": [], "exit_pages": []}
-
-def get_next_pages_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"pages": [], "url_path": ""}
-
-def get_session_activity_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"events": []}
-
-def get_event_properties_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"properties": [], "event_name": "", "ts_data": {}}
-
-def get_engagement_bucket_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"data": [], "bucket": ""}
-
-def get_time_on_page_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"data": []}
+    events = get_event_metrics(website_id, start, end, limit=50, filters=filters)
+    _add_percentage(events, "count")
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        events,
+        scope="event",
+        value_key="eventName",
+        enabled=has_only_bot_filter(filters),
+    )
+    total = sum(e["count"] for e in events)
+    top_names = [e["eventName"] for e in events[:5]]
+    return {
+        "events": events,
+        "total_events": total,
+        "event_types": len(events),
+        "top_event": events[0]["eventName"] if events else "—",
+        "event_timeseries": get_event_time_series(
+            website_id,
+            start,
+            end,
+            top_names,
+            granularity,
+            filters=filters,
+        ),
+    }
 
 def get_overview_tab_pages(website_id: str, date_range: DateRange, filters: list[Filter] | None = None) -> dict[str, Any]:
     """Fetch top-pages for the overview tab."""
     filters = filters or []
     start, end = date_range.start_date, date_range.end_date
-    return {"top_pages": get_top_pages(website_id, start, end, limit=10, filters=filters)}
+    pages = get_top_pages(website_id, start, end, limit=10, filters=filters)
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        pages,
+        scope="page",
+        value_key="urlPath",
+        enabled=has_only_bot_filter(filters),
+    )
+    return {"top_pages": pages}
 
-def get_overview_tab_referrers(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"top_referrers": []}
-
-def get_overview_tab_events(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"top_events": []}
+def get_overview_tab_events(
+    website_id: str,
+    date_range: DateRange,
+    filters: list[Filter] | None = None,
+) -> dict[str, Any]:
+    """Fetch aggregate custom-event rows for the overview tab."""
+    filters = filters or []
+    start, end = date_range.start_date, date_range.end_date
+    events = get_event_metrics(website_id, start, end, limit=10, filters=filters)
+    _add_percentage(events, "count")
+    _attach_estimated_visitors(
+        website_id,
+        start,
+        end,
+        events,
+        scope="event",
+        value_key="eventName",
+        enabled=has_only_bot_filter(filters),
+    )
+    return {"event_metrics": events}
 
 def get_overview_tab_devices(website_id: str, date_range: DateRange, filters: list[Filter] | None = None) -> dict[str, Any]:
     """Fetch device breakdowns for the overview tab."""
@@ -387,11 +525,6 @@ def get_overview_tab_geo(website_id: str, date_range: DateRange, filters: list[F
         "country": country,
         "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
     }
-
-def get_overview_tab_sources(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Not supported by the product."""
-    return {"channels": [], "referrer_metrics": []}
-
 
 def get_realtime_data(website_id: str) -> dict[str, Any]:
     """Fetch realtime aggregate pageview data."""

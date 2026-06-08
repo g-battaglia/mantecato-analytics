@@ -1,19 +1,19 @@
 {% load i18n %}
 
-<div class="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+<div class="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
   {% for key, card in stats.items %}
-  <div class="flex flex-col gap-2 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+  <div class="flex flex-col gap-2 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm {% if card.unsupported %}opacity-80{% endif %}">
     <div class="flex items-center justify-between">
       <p class="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         {% if key == "pageviews" %}{% trans "Pageviews" %}
-        {% elif key == "visitors" %}{% trans "Visitors" %}
-        {% elif key == "visits" %}{% trans "Visits" %}
-        {% elif key == "bounce_rate" %}{% trans "Bounce Rate" %}
-        {% elif key == "avg_duration" %}{% trans "Avg Duration" %}
-        {% elif key == "pages_per_visit" %}{% trans "Pages / Visit" %}
+        {% elif key == "visitors" %}{% trans "Estimated Visitors" %}
+        {% elif key == "human_pageviews" %}{% trans "Human Pageviews" %}
+        {% elif key == "bot_pageviews" %}{% trans "Bot Pageviews" %}
         {% endif %}
       </p>
-      {% if card.change %}
+      {% if card.estimated %}
+      <span class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{% trans "est." %}</span>
+      {% elif card.change %}
       <span class="flex items-center gap-0.5 font-mono text-[11px] font-medium
                    {% if key == 'bounce_rate' %}{% if card.change.trend == 'up' %}text-red-500{% elif card.change.trend == 'down' %}text-green-500{% else %}text-muted-foreground{% endif %}{% else %}{% if card.change.trend == 'up' %}text-green-500{% elif card.change.trend == 'down' %}text-red-500{% else %}text-muted-foreground{% endif %}{% endif %}">
         {% if card.change.trend == 'up' %}<i data-lucide="trending-up" class="size-3"></i>
@@ -24,8 +24,11 @@
       {% endif %}
     </div>
     <div class="text-[28px] font-medium leading-none tracking-tight tabular-nums">
-      {% if key == "bounce_rate" %}{{ card.value }}%{% else %}{{ card.value }}{% endif %}
+      {% if key == "bounce_rate" and not card.unsupported %}{{ card.value }}%{% else %}{{ card.value }}{% endif %}
     </div>
+    {% if card.note %}
+    <p class="text-[11px] text-muted-foreground">{{ card.note }}</p>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

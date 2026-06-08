@@ -36,7 +36,6 @@ Wraps your app and creates a single tracker instance. Accepts all [`TrackerConfi
   baseUrl="https://your-mantecato.com"
   autoTrack={true}          // default
   respectDNT={true}         // default
-  sessionReplay={false}     // default
   tag="production"
 >
   {children}
@@ -51,18 +50,17 @@ Returns the `Tracker` instance from the nearest `TrackerProvider`. Throws if use
 
 ```tsx
 function SignupButton() {
-  const { event, revenue } = useTracker();
+  const { event } = useTracker();
 
   const handleClick = () => {
-    event('signup', { plan: 'pro' });
-    revenue(29.99, 'USD', { plan: 'pro' });
+    event('signup');
   };
 
   return <button onClick={handleClick}>Sign up</button>;
 }
 ```
 
-All tracker methods are available: `pageview`, `event`, `revenue`, `identify`, `send`, `enable`, `disable`, `isEnabled`, `destroy`.
+Available tracker methods are: `pageview`, `event`, `track`, `enable`, `disable`, `isEnabled`, `destroy`.
 
 ### `usePageview(url?, title?)`
 

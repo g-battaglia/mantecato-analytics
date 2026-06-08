@@ -55,6 +55,8 @@ export interface UmamiPayload {
   hostname: string;
   title: string;
   url: string;
+  /** Custom event name. Omitted for pageviews. */
+  name?: string;
   tag?: string;
 }
 
@@ -69,9 +71,12 @@ export type TrackCallback = (props: UmamiPayload) => UmamiPayload;
 export interface Tracker {
   /** Track a pageview for the current URL (or override with options) */
   pageview: (options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
-  /** Umami-compatible track() — overloaded: no args = pageview, string = named pageview, object = raw payload, function = callback */
+  /** Track a custom event name without event properties */
+  event: (name: string, options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+  /** Umami-compatible track() — no args = pageview, string = event name, object/function = sanitized payload */
   track: {
     (): Promise<void>;
+    (name: string): Promise<void>;
     (payload: Partial<UmamiPayload>): Promise<void>;
     (callback: TrackCallback): Promise<void>;
   };
@@ -112,17 +117,6 @@ function isDNT(): boolean {
 function isBot(): boolean {
   if (typeof navigator === "undefined") return false;
   return /bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent);
-}
-
-function isDisabledByUser(): boolean {
-  try {
-    return (
-      localStorage.getItem("mantecato.disabled") === "1" ||
-      localStorage.getItem("umami.disabled") === "1"
-    );
-  } catch {
-    return false;
-  }
 }
 
 // --- Core ---
@@ -167,7 +161,6 @@ export function createTracker(config: TrackerConfig): Tracker {
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
     if (respectDNT && isDNT()) return false;
-    if (isDisabledByUser()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();
       if (!domains.includes(host)) return false;
@@ -188,6 +181,20 @@ export function createTracker(config: TrackerConfig): Tracker {
     };
   }
 
+  function sanitizePayload(payload: Partial<UmamiPayload>): UmamiPayload {
+    const base = buildPayload({
+      url: payload.url,
+      title: payload.title,
+    });
+    const name = typeof payload.name === "string" ? payload.name.trim().slice(0, 100) : "";
+    return {
+      ...base,
+      hostname: payload.hostname || base.hostname,
+      ...(name ? { name } : {}),
+      ...(tag ? { tag } : {}),
+    };
+  }
+
   async function send(payload: UmamiPayload): Promise<void> {
     if (!shouldTrack()) return;
 
@@ -198,7 +205,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     }
 
     const apiUrl = `${baseUrl}${endpoint}`;
-    const body: SendBody = { type: "event", payload: finalPayload };
+    const body: SendBody = { type: "event", payload: sanitizePayload(finalPayload) };
 
     try {
       await fetch(apiUrl, {
@@ -285,11 +292,19 @@ export function createTracker(config: TrackerConfig): Tracker {
       return send(buildPayload({ url, title: options?.title }));
     },
 
-    track(payloadOrFn?: Partial<UmamiPayload> | TrackCallback) {
+    event(name, options) {
+      const url = normalize(options?.url || getUrl());
+      currentUrl = url;
+      return send({ ...buildPayload({ url, title: options?.title }), name });
+    },
+
+    track(payloadOrFn?: string | Partial<UmamiPayload> | TrackCallback) {
       if (typeof payloadOrFn === "function") {
         return send(payloadOrFn(buildPayload()));
+      } else if (typeof payloadOrFn === "string") {
+        return send({ ...buildPayload(), name: payloadOrFn });
       } else if (typeof payloadOrFn === "object") {
-        return send({ ...payloadOrFn } as UmamiPayload);
+        return send(sanitizePayload(payloadOrFn));
       } else {
         return send(buildPayload());
       }

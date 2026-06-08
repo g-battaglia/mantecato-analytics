@@ -50,20 +50,13 @@ and filters.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/analytics/overview/` | Aggregate metrics (visitors, pageviews, bounce rate, ...) |
-| `GET` | `/api/analytics/pages/` | Per-page metrics (paginated, `page` param) |
-| `GET` | `/api/analytics/sources/` | Traffic sources: referrers, UTM, channels, click IDs |
-| `GET` | `/api/analytics/events/` | Custom event analysis |
-| `GET` | `/api/analytics/sessions/` | Session list (paginated, `page` param) |
-| `GET` | `/api/analytics/devices/` | Breakdown by browser, OS, device, screen |
-| `GET` | `/api/analytics/geo/` | Geographic distribution (optional `country`, `region` params for drill-down) |
+| `GET` | `/api/analytics/overview/` | Aggregate metrics, charts, events, devices, geo, heatmap |
+| `GET` | `/api/analytics/pages/` | Per-page pageview metrics (paginated, `page` param) |
+| `GET` | `/api/analytics/events/` | Custom event-name counts and timelines |
+| `GET` | `/api/analytics/devices/` | Breakdown by browser, OS, device |
+| `GET` | `/api/analytics/geo/` | Country-level pageview distribution |
 | `GET` | `/api/analytics/compare/` | Current vs previous period comparison (`mode` param) |
-| `GET` | `/api/analytics/retention/` | Cohort retention analysis (`granularity` param) |
-| `GET` | `/api/analytics/funnels/` | Conversion funnels (`step_type.N`, `step_value.N`, `window` params) |
-| `GET` | `/api/analytics/journeys/` | User journeys (`path_length`, `limit` params) |
-| `GET` | `/api/analytics/revenue/` | Revenue analysis |
-| `GET` | `/api/analytics/engagement/` | Engagement metrics |
-| `GET` | `/api/analytics/realtime/` | Active visitors in real time (`website` param only) |
+| `GET` | `/api/analytics/realtime/` | Live pageview counters (`website` param only) |
 
 ### Dashboards (CRUD)
 

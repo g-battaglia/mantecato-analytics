@@ -21,6 +21,7 @@ _VALID_COLUMNS = {
     "os": "we.os",
     "device": "we.device",
     "country": "we.country",
+    "event_name": "we.event_name",
 }
 
 
@@ -46,13 +47,14 @@ def get_filter_values(
     if search:
         where_extra = f"AND {col_expr} ILIKE {{{{search}}}}"
         params["search"] = f"%{search}%"
+    params["eventType"] = 2 if column == "event_name" else 1
 
     rows = raw_query(
         f"""SELECT DISTINCT {col_expr} AS value
     FROM website_event we
     WHERE we.website_id = {{websiteId::uuid}}
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
-      AND we.event_type = 1
+      AND we.event_type = {{eventType}}
       AND {col_expr} IS NOT NULL
       AND {col_expr} != ''
       {where_extra}

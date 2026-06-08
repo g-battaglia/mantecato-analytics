@@ -24,8 +24,8 @@ from django.views.decorators.http import require_GET
 
 from apps.tracker.geo import resolve_geo
 from apps.tracker.ip import get_client_ip
-from apps.tracker.services import ingest_pageview
-from apps.tracker.ua import parse_user_agent
+from apps.tracker.services import ingest_custom_event, ingest_pageview
+from apps.tracker.ua import classify_bot_user_agent, parse_user_agent
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -59,7 +59,8 @@ class IngestView(View):
         {"type": "event", "payload": {"website": "<uuid>", "url": "/path", "title": "Page"}}
 
     Only pageviews are recorded. No session tokens are issued or accepted.
-    No referrer, UTM, click ID, custom event, or identify data is processed.
+    Custom events may include a name only. No referrer, UTM, click ID,
+    event payload/properties, or identify data is processed.
 
     Validation is intentionally minimal — the tracker is a hot path.
     """
@@ -113,14 +114,31 @@ class IngestView(View):
         ip = get_client_ip(request)
         ua_string = request.META.get("HTTP_USER_AGENT", "")
         device_info = parse_user_agent(ua_string)
+        is_bot, bot_reason = classify_bot_user_agent(ua_string)
         country = resolve_geo(request, ip)
 
-        ingest_pageview(
-            website_id=website_id,
-            payload=payload,
-            device_info=device_info,
-            country=country,
-        )
+        event_name = payload.get("name")
+        if isinstance(event_name, str) and event_name.strip():
+            ingest_custom_event(
+                website_id=website_id,
+                event_name=event_name,
+                payload=payload,
+                device_info=device_info,
+                country=country,
+                is_bot=is_bot,
+                bot_reason=bot_reason,
+                ip=ip,
+            )
+        else:
+            ingest_pageview(
+                website_id=website_id,
+                payload=payload,
+                device_info=device_info,
+                country=country,
+                is_bot=is_bot,
+                bot_reason=bot_reason,
+                ip=ip,
+            )
 
         return _add_cors(JsonResponse({"ok": True}))
 

@@ -18,8 +18,9 @@
  * All data-* attributes are optional except data-website-id.
  * data-host-url defaults to the script's origin.
  *
- * Supports Umami-compatible data-umami-event click tracking:
- *   <button data-umami-event="signup" data-umami-event-plan="pro">Sign up</button>
+ * Supports Umami-compatible data-umami-event click tracking. Event
+ * properties are intentionally ignored:
+ *   <button data-umami-event="signup">Sign up</button>
  */
 
 import { createTracker, type Tracker } from "./tracker";
@@ -93,6 +94,15 @@ import { createTracker, type Tracker } from "./tracker";
 
   const w = window as unknown as Record<string, unknown>;
   w.mantecato = tracker;
+  w.umami = tracker;
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-umami-event]")
+      : null;
+    const name = target?.getAttribute("data-umami-event")?.trim();
+    if (name) void tracker.event(name);
+  }, true);
 })();
 
 // Re-export for IIFE global

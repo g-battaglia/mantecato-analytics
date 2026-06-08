@@ -239,14 +239,14 @@ class TestGeoCommand:
     @patch("apps.analytics.services.get_geo_data")
     @patch("core.mantecato_core.date_utils.resolve_date_range")
     @patch("cli.mantecato_cli.main.setup_django")
-    def test_geo_with_country(
+    def test_geo_country_level(
         self,
         mock_setup: MagicMock,
         mock_resolve: MagicMock,
         mock_geo: MagicMock,
     ) -> None:
         mock_resolve.return_value = MagicMock()
-        mock_geo.return_value = {"geo": [], "level": "region", "country": "IT", "region": None}
+        mock_geo.return_value = {"geo": [], "level": "country"}
 
         result = runner.invoke(
             app,
@@ -254,8 +254,6 @@ class TestGeoCommand:
                 "geo",
                 "--website",
                 _WEBSITE_ID,
-                "--country",
-                "IT",
                 "--format",
                 "json",
             ],

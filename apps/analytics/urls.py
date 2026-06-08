@@ -1,9 +1,4 @@
-"""URL routes for the analytics web pages and HTMX partials.
-
-Only aggregate pageview analytics are supported.
-Removed: sessions, events, sources, retention, funnels, journeys, revenue,
-engagement, entry/exit routes.
-"""
+"""URL routes for analytics web pages and HTMX partials."""
 
 from __future__ import annotations
 
@@ -20,6 +15,7 @@ from apps.analytics.partials import (
 from apps.analytics.views import (
     CompareView,
     DevicesView,
+    EventsView,
     GeoView,
     HeatmapView,
     OverviewView,
@@ -34,6 +30,7 @@ urlpatterns = [
     path("filter-values/", FilterValuesView.as_view(), name="analytics_filter_values"),
     path("pages/", PagesView.as_view(), name="analytics_pages"),
     path("sections/", SectionsView.as_view(), name="analytics_sections"),
+    path("events/", EventsView.as_view(), name="analytics_events"),
     path("devices/", DevicesView.as_view(), name="analytics_devices"),
     path("geo/", GeoView.as_view(), name="analytics_geo"),
     path("compare/", CompareView.as_view(), name="analytics_compare"),

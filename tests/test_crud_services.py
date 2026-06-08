@@ -162,11 +162,11 @@ class TestBotConfigCrud:
         assert config["config"]["knownBots"] is True
 
     def test_save_then_get(self) -> None:
-        save_bot_config(USER_A, SITE, {"enabled": True, "minDuration": 7})
+        save_bot_config(USER_A, SITE, {"enabled": True, "excludedCountries": ["SG"]})
         config = get_bot_config(SITE)
         assert config["id"] is not None
         assert config["config"]["enabled"] is True
-        assert config["config"]["minDuration"] == 7
+        assert config["config"]["excludedCountries"] == ["SG"]
 
     def test_save_is_upsert(self) -> None:
         first = save_bot_config(USER_A, SITE, {"enabled": True})

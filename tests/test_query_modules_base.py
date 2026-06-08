@@ -27,11 +27,6 @@ from core.mantecato_core.queries import (
     get_top_pages,
     get_top_sections,
     get_traffic_heatmap,
-    get_active_visitors,
-    get_current_pages,
-    get_recent_events,
-    get_top_pages,
-    get_top_sections,
     get_website_stats,
 )
 
@@ -198,17 +193,15 @@ class TestStatsLive:
             result = get_website_stats(self.website_id, start, end)
         assert isinstance(result, dict)
         assert "pageviews" in result
-        assert "visitors" in result
-        assert "visits" in result
-        assert "bounces" in result
-        assert "totaltime" in result
+        assert "human_pageviews" in result
+        assert "bot_pageviews" in result
         assert all(isinstance(result[k], int) for k in result)
 
     def test_get_website_stats_nonzero(self, django_db_blocker: object) -> None:
         start, end = self._date_range
         with django_db_blocker.unblock():
             result = get_website_stats(self.website_id, start, end)
-        assert result["pageviews"] > 0 or result["visitors"] >= 0
+        assert result["pageviews"] >= 0
 
     def test_get_first_event_date(self, django_db_blocker: object) -> None:
         with django_db_blocker.unblock():
@@ -223,7 +216,6 @@ class TestStatsLive:
         if result:
             assert "time" in result[0]
             assert "pageviews" in result[0]
-            assert "visitors" in result[0]
 
     def test_get_top_pages(self, django_db_blocker: object) -> None:
         start, end = self._date_range
@@ -233,7 +225,6 @@ class TestStatsLive:
         if result:
             assert "urlPath" in result[0]
             assert "views" in result[0]
-            assert "visitors" in result[0]
 
     def test_get_country_breakdown(self, django_db_blocker: object) -> None:
         start, end = self._date_range
@@ -290,11 +281,8 @@ class TestPageviewsLive:
         if result:
             row = result[0]
             assert "urlPath" in row
+            assert "pageTitle" in row
             assert "views" in row
-            assert "visitors" in row
-            assert "entries" in row
-            assert "exits" in row
-            assert "bounceRate" in row
 
     def test_get_page_time_series(self, django_db_blocker: object) -> None:
         start, end = self._date_range
@@ -371,7 +359,6 @@ class TestDevicesLive:
         if result:
             row = result[0]
             assert "value" in row
-            assert "visitors" in row
             assert "pageviews" in row
             assert "percentage" in row
             assert row["percentage"] > 0
@@ -415,42 +402,10 @@ class TestGeoLive:
     def test_country_level(self, django_db_blocker: object) -> None:
         start, end = self._date_range
         with django_db_blocker.unblock():
-            result = get_geo_metrics(self.website_id, start, end, level="country")
+            result = get_geo_metrics(self.website_id, start, end)
         assert isinstance(result, list)
         if result:
             row = result[0]
             assert "country" in row
-            assert "visitors" in row
             assert "pageviews" in row
-            assert "visits" in row
-            assert "bounceRate" in row
-            assert "avgDuration" in row
-
-    def test_region_level(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_geo_metrics(
-                self.website_id,
-                start,
-                end,
-                level="region",
-                country_filter="IT",
-            )
-        assert isinstance(result, list)
-        if result:
-            assert "region" in result[0]
-
-    def test_city_level(self, django_db_blocker: object) -> None:
-        start, end = self._date_range
-        with django_db_blocker.unblock():
-            result = get_geo_metrics(
-                self.website_id,
-                start,
-                end,
-                level="city",
-                country_filter="IT",
-                region_filter="Lombardia",
-            )
-        assert isinstance(result, list)
-        if result:
-            assert "city" in result[0]
+            assert "percentage" in row

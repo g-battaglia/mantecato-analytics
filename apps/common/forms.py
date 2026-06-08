@@ -247,8 +247,8 @@ _BOT_INT_FIELDS: tuple[str, ...] = tuple(
 class BotConfigForm(forms.Form):
     """Validate the bot-detection config form.
 
-    Twelve typed fields mirroring :data:`apps.core.models.BOT_CONFIG_DEFAULTS`,
-    plus :attr:`excludedCountries` (comma-separated country codes). The
+    Typed fields mirroring :data:`apps.core.models.BOT_CONFIG_DEFAULTS`,
+    plus :attr:`excludedCountries` (country codes). The
     :meth:`to_config` helper produces a dict ready for
     :func:`apps.settings_app.services.save_bot_config`.
     """
@@ -256,14 +256,6 @@ class BotConfigForm(forms.Form):
     enabled = forms.BooleanField(required=False)
     knownBots = forms.BooleanField(required=False)
     emptyUa = forms.BooleanField(required=False)
-    clusterDetection = forms.BooleanField(required=False)
-    zeroEngagement = forms.BooleanField(required=False)
-    missingScreen = forms.BooleanField(required=False)
-    missingLanguage = forms.BooleanField(required=False)
-    clusterBounceThreshold = forms.IntegerField(required=False)
-    clusterMinSize = forms.IntegerField(required=False)
-    minDuration = forms.IntegerField(required=False)
-    highVelocityThreshold = forms.IntegerField(required=False)
     excludedCountries = forms.MultipleChoiceField(
         required=False,
         choices=COUNTRY_CHOICES_SORTED,

@@ -5,14 +5,28 @@ Privacy-first: only pageview counts and URL paths. No session or visitor trackin
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
+from django.db.models import Count
+from django.utils import timezone
+
 from core.mantecato_core.database import raw_query
+from core.mantecato_core.queries.orm_fallbacks import should_use_orm_fallback
 
 
 def get_active_pageviews(website_id: str) -> dict[str, Any]:
     """Aggregate pageview count in the last 5 minutes."""
+    if should_use_orm_fallback():
+        from apps.core.models import WebsiteEvent
+
+        count = WebsiteEvent.objects.filter(
+            website_id=website_id,
+            created_at__gte=timezone.now() - timedelta(minutes=5),
+            event_type=1,
+        ).count()
+        return {"count": count}
+
     rows = raw_query(
         """SELECT COUNT(*)::bigint AS count
     FROM website_event
@@ -27,6 +41,24 @@ def get_active_pageviews(website_id: str) -> dict[str, Any]:
 
 def get_recent_pageviews(website_id: str) -> list[dict[str, Any]]:
     """Recent pageviews in the last 30 seconds for the live stream."""
+    if should_use_orm_fallback():
+        from apps.core.models import WebsiteEvent
+
+        rows = WebsiteEvent.objects.filter(
+            website_id=website_id,
+            created_at__gte=timezone.now() - timedelta(seconds=30),
+            event_type=1,
+        ).order_by("-created_at")[:50]
+        return [
+            {
+                "createdAt": row.created_at.isoformat(),
+                "urlPath": row.url_path,
+                "country": row.country,
+                "browser": row.browser,
+            }
+            for row in rows
+        ]
+
     rows = raw_query(
         """SELECT
       created_at,
@@ -57,6 +89,27 @@ def get_recent_pageviews(website_id: str) -> list[dict[str, Any]]:
 
 def get_current_pages(website_id: str) -> list[dict[str, Any]]:
     """Pages currently being viewed (5-minute window)."""
+    if should_use_orm_fallback():
+        from apps.core.models import WebsiteEvent
+
+        rows = (
+            WebsiteEvent.objects.filter(
+                website_id=website_id,
+                created_at__gte=timezone.now() - timedelta(minutes=5),
+                event_type=1,
+            )
+            .values("url_path")
+            .annotate(pageviews=Count("event_id"))
+            .order_by("-pageviews", "url_path")[:20]
+        )
+        return [
+            {
+                "urlPath": row["url_path"],
+                "pageviews": int(row["pageviews"] or 0),
+            }
+            for row in rows
+        ]
+
     rows = raw_query(
         """SELECT
       url_path,
@@ -78,8 +131,3 @@ def get_current_pages(website_id: str) -> list[dict[str, Any]]:
         }
         for r in rows
     ]
-
-
-# Backward-compatible aliases
-get_active_visitors = get_active_pageviews
-get_recent_events = get_recent_pageviews

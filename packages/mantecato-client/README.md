@@ -31,12 +31,12 @@ with MantecatoClient("https://analytics.example.com", api_key="mtk_xxx") as clie
 
     # Overview of the last 30 days
     overview = client.analytics.overview(website_id, date_range="30d")
-    print(overview["stats"]["visitors"]["value"])
+    print(overview["stats"]["visitors"]["value"])  # anonymous estimate
 
     # Top pages over the last 7 days
     pages = client.analytics.pages(website_id, date_range="7d")
     for p in pages["pages"]:
-        print(p["url_path"], p["visitors"])
+        print(p["urlPath"], p["views"], p["visitors"])
 ```
 
 ## Authentication
@@ -79,24 +79,17 @@ The client exposes seven namespaces, each accessible as an attribute:
 
 ### Analytics Endpoints
 
-The `analytics` module provides 14 read methods:
+The `analytics` module provides these read methods:
 
 | Method | Description |
 |---|---|
-| `overview()` | Aggregate site metrics (visitors, pageviews, bounce rate, ...) |
+| `overview()` | Aggregate site metrics, charts, events, devices, geo, heatmap |
 | `pages()` | Per-URL metrics with pagination |
-| `sources()` | Traffic sources: referrers, UTM, channels, click IDs |
-| `events()` | Custom event analysis |
-| `sessions()` | Session list with pagination |
-| `devices()` | Breakdown by browser, OS, device, screen, language |
-| `geo()` | Geographic distribution with drill-down (country -> region -> city) |
+| `events()` | Custom event-name counts and timelines |
+| `devices()` | Breakdown by browser, OS, device |
+| `geo()` | Country-level pageview distribution |
 | `compare()` | Current vs previous period comparison |
-| `retention()` | Cohort retention analysis |
-| `funnels()` | Multi-step conversion funnel analysis |
-| `journeys()` | User journeys with data for Sankey diagrams |
-| `revenue()` | Revenue analysis: totals, time series, by event/country |
-| `engagement()` | Engagement metrics: duration distribution, percentiles, bounce |
-| `realtime()` | Active visitors in real time |
+| `realtime()` | Live pageview counters |
 
 All methods (except `realtime`) accept common parameters:
 
@@ -111,35 +104,16 @@ data = client.analytics.pages(website_id, start="2024-01-01", end="2024-01-31")
 data = client.analytics.pages(
     website_id,
     date_range="7d",
-    filters=["country:US", "browser:Chrome"],
+    filters=["country:eq:US", "browser:eq:Chrome"],
     bot_filter=True,
 )
 ```
 
-### Example: conversion funnel
+### Example: events and geo
 
 ```python
-result = client.analytics.funnels(
-    website_id,
-    date_range="30d",
-    steps=[("url", "/"), ("url", "/pricing"), ("url", "/signup")],
-    window=60,  # conversion window in minutes
-)
-for step in result["funnel_steps"]:
-    print(step["label"], step["visitors"], step["drop_off_rate"])
-```
-
-### Example: geo drill-down
-
-```python
-# Country level
 geo = client.analytics.geo(website_id, date_range="30d")
-
-# Drill down into Italian regions
-regions = client.analytics.geo(website_id, date_range="30d", country="IT")
-
-# Drill down into cities in Lombardy
-cities = client.analytics.geo(website_id, date_range="30d", country="IT", region="25")
+events = client.analytics.events(website_id, date_range="30d")
 ```
 
 ## Error Handling

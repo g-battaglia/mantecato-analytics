@@ -1,7 +1,6 @@
-"""Tests for the analytics query modules (T5b batch).
+"""Tests for the analytics query modules — privacy-first aggregate set.
 
-Modules covered: sources, sessions, events, compare, realtime, heatmap,
-retention, funnels, journeys, revenue, engagement.
+Modules covered: events, compare, realtime, heatmap.
 
 Covers:
 - Purity: no async def, await, asyncpg, $1/$2 placeholders.
@@ -30,17 +29,10 @@ _QUERY_MODULES_DIR = (
 )
 
 ANALYTICS_MODULES = [
-    "sources.py",
-    "sessions.py",
     "events.py",
     "compare.py",
     "realtime.py",
     "heatmap.py",
-    "retention.py",
-    "funnels.py",
-    "journeys.py",
-    "revenue.py",
-    "engagement.py",
 ]
 
 
@@ -95,7 +87,7 @@ def _get_first_website_id() -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Purity tests — all 11 new modules
+# Purity tests
 # ---------------------------------------------------------------------------
 
 
@@ -167,23 +159,16 @@ class TestAnalyticsModulesPurity:
 
 
 # ---------------------------------------------------------------------------
-# Import tests — every module
+# Import tests — every surviving module
 # ---------------------------------------------------------------------------
 
 
 class TestAnalyticsModulesImportable:
     @pytest.mark.parametrize("module_name", [
-        "core.mantecato_core.queries.sources",
-        "core.mantecato_core.queries.sessions",
         "core.mantecato_core.queries.events",
         "core.mantecato_core.queries.compare",
         "core.mantecato_core.queries.realtime",
         "core.mantecato_core.queries.heatmap",
-        "core.mantecato_core.queries.retention",
-        "core.mantecato_core.queries.funnels",
-        "core.mantecato_core.queries.journeys",
-        "core.mantecato_core.queries.revenue",
-        "core.mantecato_core.queries.engagement",
     ])
     def test_module_imports(self, module_name: str) -> None:
         mod = importlib.import_module(module_name)
@@ -250,82 +235,6 @@ _DATE_RANGE: tuple[datetime, datetime] = (
     not _is_live_database_available(),
     reason="live development database database not available",
 )
-class TestSourcesLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_referrer_metrics(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.sources import get_referrer_metrics
-            result = get_referrer_metrics(self.website_id, start, end)
-        assert isinstance(result, list)
-        if result:
-            r = result[0]
-            assert "referrerDomain" in r
-            assert "visitors" in r
-            assert "pageviews" in r
-            assert "bounceRate" in r
-            assert "avgDuration" in r
-
-    def test_get_channel_metrics(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.sources import get_channel_metrics
-            result = get_channel_metrics(self.website_id, start, end)
-        assert isinstance(result, list)
-
-    def test_get_utm_metrics(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.sources import get_utm_metrics
-            result = get_utm_metrics(self.website_id, start, end, group_by="utm_source")
-        assert isinstance(result, list)
-
-    def test_get_hostname_metrics(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.sources import get_hostname_metrics
-            result = get_hostname_metrics(self.website_id, start, end)
-        assert isinstance(result, list)
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
-class TestSessionsLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_session_list(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.sessions import get_session_list
-            result = get_session_list(self.website_id, start, end, limit=5)
-        assert isinstance(result, list)
-        if result:
-            r = result[0]
-            assert "sessionId" in r
-            assert "country" in r
-            assert "browser" in r
-            assert "pagesViewed" in r
-            assert "duration" in r
-            assert "startedAt" in r
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
 class TestEventsLive:
     @pytest.fixture(autouse=True)
     def _setup(self, django_db_blocker: object) -> None:
@@ -344,29 +253,25 @@ class TestEventsLive:
             r = result[0]
             assert "eventName" in r
             assert "count" in r
-            assert "visitors" in r
             assert "lastTriggered" in r
 
-    def test_event_time_series_multi_matches_loop(self, django_db_blocker: object) -> None:
-        """The combined multi-event query must equal the per-event loop, byte for byte."""
-        import json
-
+    def test_get_event_time_series(self, django_db_blocker: object) -> None:
         start, end = _DATE_RANGE
         with django_db_blocker.unblock():
             from core.mantecato_core.queries.events import (
                 get_event_metrics,
                 get_event_time_series,
-                get_event_time_series_multi,
             )
 
             top = get_event_metrics(self.website_id, start, end, limit=5)
             names = [e["eventName"] for e in top]
-            multi = get_event_time_series_multi(self.website_id, names, start, end, "day")
-            loop = {
-                n: get_event_time_series(self.website_id, n, start, end, "day") for n in names
-            }
-        for n in names:
-            assert json.dumps(multi.get(n, []), default=str) == json.dumps(loop[n], default=str)
+            series = get_event_time_series(self.website_id, start, end, names, "day")
+        assert isinstance(series, list)
+        assert len(series) == len(names)
+        for entry in series:
+            assert "name" in entry
+            assert "data" in entry
+            assert isinstance(entry["data"], list)
 
 
 @pytest.mark.skipif(
@@ -446,10 +351,10 @@ class TestCompareLive:
             from core.mantecato_core.queries.compare import get_comparison_stats
             result = get_comparison_stats(
                 self.website_id,
-                current_start=current_start,
-                current_end=now,
-                previous_start=previous_start,
-                previous_end=current_start,
+                current_start,
+                now,
+                previous_start,
+                current_start,
             )
         assert isinstance(result, list)
         assert len(result) == 2
@@ -458,10 +363,8 @@ class TestCompareLive:
         assert "previous" in periods
         for r in result:
             assert "pageviews" in r
-            assert "visitors" in r
-            assert "visits" in r
-            assert "bounces" in r
-            assert "totaltime" in r
+            assert "human_pageviews" in r
+            assert "bot_pageviews" in r
 
 
 @pytest.mark.skipif(
@@ -476,14 +379,13 @@ class TestRealtimeLive:
         if not self.website_id:
             pytest.skip("No seeded website found")
 
-    def test_get_active_visitors(self, django_db_blocker: object) -> None:
+    def test_get_active_pageviews(self, django_db_blocker: object) -> None:
         with django_db_blocker.unblock():
-            from core.mantecato_core.queries.realtime import get_active_visitors
-            result = get_active_visitors(self.website_id)
+            from core.mantecato_core.queries.realtime import get_active_pageviews
+            result = get_active_pageviews(self.website_id)
         assert isinstance(result, dict)
         assert "count" in result
-        assert "visitors" in result
-        assert isinstance(result["visitors"], list)
+        assert isinstance(result["count"], int)
 
     def test_get_current_pages(self, django_db_blocker: object) -> None:
         with django_db_blocker.unblock():
@@ -515,212 +417,5 @@ class TestHeatmapLive:
             assert "dayOfWeek" in r
             assert "hour" in r
             assert "pageviews" in r
-            assert "visitors" in r
             assert 0 <= r["dayOfWeek"] <= 6
             assert 0 <= r["hour"] <= 23
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
-class TestRetentionLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_retention(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.retention import get_retention
-            result = get_retention(self.website_id, start, end, granularity="week")
-        assert isinstance(result, list)
-        if result:
-            r = result[0]
-            assert "cohort" in r
-            assert "cohortSize" in r
-            assert "periods" in r
-            assert isinstance(r["periods"], list)
-            assert len(r["periods"]) == 13
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
-class TestFunnelsLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_funnel_with_two_steps(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        steps = [
-            {"type": "url", "value": "/"},
-            {"type": "url", "value": "/docs"},
-        ]
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.funnels import get_funnel
-            result = get_funnel(self.website_id, start, end, steps)
-        assert isinstance(result, list)
-        assert len(result) == 2
-        for r in result:
-            assert "step" in r
-            assert "label" in r
-            assert "visitors" in r
-            assert "dropoff" in r
-            assert "conversionRate" in r
-
-    def test_get_funnel_too_few_steps(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.funnels import get_funnel
-            result = get_funnel(self.website_id, start, end, [{"type": "url", "value": "/"}])
-        assert result == []
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
-class TestJourneysLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_journeys(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.journeys import get_journeys
-            result = get_journeys(self.website_id, start, end)
-        assert isinstance(result, list)
-        if result:
-            r = result[0]
-            assert "path" in r
-            assert "count" in r
-            assert "percentage" in r
-            assert isinstance(r["path"], list)
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
-class TestRevenueLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_revenue_summary(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.revenue import get_revenue_summary
-            result = get_revenue_summary(self.website_id, start, end)
-        assert isinstance(result, dict)
-        assert "totalRevenue" in result
-        assert "transactions" in result
-        assert "uniqueCustomers" in result
-        assert "arpu" in result
-
-    def test_get_revenue_time_series(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.revenue import get_revenue_time_series
-            result = get_revenue_time_series(self.website_id, start, end, "day")
-        assert isinstance(result, list)
-
-    def test_get_revenue_by_event(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.revenue import get_revenue_by_event
-            result = get_revenue_by_event(self.website_id, start, end)
-        assert isinstance(result, list)
-
-    def test_get_revenue_by_country(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.revenue import get_revenue_by_country
-            result = get_revenue_by_country(self.website_id, start, end)
-        assert isinstance(result, list)
-
-
-@pytest.mark.skipif(
-    not _is_live_database_available(),
-    reason="live development database database not available",
-)
-class TestEngagementLive:
-    @pytest.fixture(autouse=True)
-    def _setup(self, django_db_blocker: object) -> None:
-        with django_db_blocker.unblock():
-            self.website_id = _get_first_website_id()
-        if not self.website_id:
-            pytest.skip("No seeded website found")
-
-    def test_get_duration_distribution(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.engagement import get_duration_distribution
-            result = get_duration_distribution(self.website_id, start, end)
-        assert isinstance(result, list)
-        if result:
-            r = result[0]
-            assert "bucket" in r
-            assert "bucketOrder" in r
-            assert "visits" in r
-            assert "percentage" in r
-
-    def test_get_duration_percentiles(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.engagement import get_duration_percentiles
-            result = get_duration_percentiles(self.website_id, start, end)
-        assert isinstance(result, dict)
-        expected_keys = (
-            "p50", "p75", "p90", "p95", "p99",
-            "avg", "median", "min", "max", "totalVisits",
-        )
-        for key in expected_keys:
-            assert key in result
-
-    def test_get_duration_by_page(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.engagement import get_duration_by_page
-            result = get_duration_by_page(self.website_id, start, end)
-        assert isinstance(result, list)
-
-    def test_get_bounce_rate_by_page(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.engagement import get_bounce_rate_by_page
-            result = get_bounce_rate_by_page(self.website_id, start, end)
-        assert isinstance(result, list)
-
-    def test_get_bounce_rate_by_source(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.engagement import get_bounce_rate_by_source
-            result = get_bounce_rate_by_source(self.website_id, start, end)
-        assert isinstance(result, list)
-
-    def test_get_sessions_for_bucket_invalid(self, django_db_blocker: object) -> None:
-        start, end = _DATE_RANGE
-        with django_db_blocker.unblock():
-            from core.mantecato_core.queries.engagement import get_sessions_for_bucket
-            result = get_sessions_for_bucket(
-                self.website_id, start, end, bucket="nonexistent"
-            )
-        assert result["sessions"] == []
-        assert result["total"] == 0

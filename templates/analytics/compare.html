@@ -24,16 +24,15 @@
 
 {# ── Stat cards ─────────────────────────────────────────────── #}
 {% if stats %}
-<div class="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+<div class="mb-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
   {% for key, card in stats.items %}
-  {% if key != "pages_per_visit" %}
   <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
     <div class="px-4">
       <p class="text-sm font-medium text-muted-foreground">
-        {% if key == "pageviews" %}{% trans "Pageviews" %}{% elif key == "visitors" %}{% trans "Visitors" %}{% elif key == "visits" %}{% trans "Visits" %}{% elif key == "bounce_rate" %}{% trans "Bounce Rate" %}{% elif key == "avg_duration" %}{% trans "Avg. Duration" %}{% endif %}
+        {% if key == "pageviews" %}{% trans "Pageviews" %}{% elif key == "visitors" %}{% trans "Estimated Visitors" %}{% elif key == "human_pageviews" %}{% trans "Human Pageviews" %}{% elif key == "bot_pageviews" %}{% trans "Bot Pageviews" %}{% endif %}
       </p>
       <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-2xl font-semibold tracking-tight tabular-nums">{% if key == "bounce_rate" %}{{ card.value }}%{% else %}{{ card.value }}{% endif %}</span>
+        <span class="text-2xl font-semibold tracking-tight tabular-nums">{{ card.value }}</span>
         {% if card.change %}
         <span class="flex items-center gap-0.5 text-xs font-medium
                      {% if key == 'bounce_rate' %}{% if card.change.trend == 'up' %}text-red-500{% elif card.change.trend == 'down' %}text-green-500{% else %}text-muted-foreground{% endif %}{% else %}{% if card.change.trend == 'up' %}text-green-500{% elif card.change.trend == 'down' %}text-red-500{% else %}text-muted-foreground{% endif %}{% endif %}">
@@ -44,7 +43,6 @@
       </div>
     </div>
   </div>
-  {% endif %}
   {% endfor %}
 </div>
 {% endif %}
@@ -66,10 +64,9 @@
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Period" %}</th>
         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Pageviews" %}</th>
-        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visitors" %}</th>
-        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Visits" %}</th>
-        <th class="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Bounces" %}</th>
-        <th class="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">{% trans "Total Time" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Est. visitors" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Human pageviews" %}</th>
+        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">{% trans "Bot pageviews" %}</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-border">
@@ -79,10 +76,9 @@
           {% if row.period == 'current' %}{% trans "Current" %}{% else %}{% trans "Previous" %}{% endif %}
         </td>
         <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ row.pageviews|intcomma }}</td>
-        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ row.visitors|intcomma }}</td>
-        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ row.visits|intcomma }}</td>
-        <td class="hidden px-4 py-3 text-right text-sm text-foreground tabular-nums sm:table-cell">{{ row.bounces|intcomma }}</td>
-        <td class="hidden px-4 py-3 text-right text-sm text-foreground tabular-nums sm:table-cell">{{ row.totaltime|intcomma }}s</td>
+        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{% if row.visitors is not None %}~{{ row.visitors|intcomma }}{% else %}—{% endif %}</td>
+        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ row.human_pageviews|intcomma }}</td>
+        <td class="px-4 py-3 text-right text-sm text-foreground tabular-nums">{{ row.bot_pageviews|intcomma }}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -5,13 +5,13 @@
   {% for item in browser %}
   <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=browser:eq:{{ item.value }}"
      class="relative flex items-center rounded px-2.5 py-[6px] text-[12.5px] transition-colors hover:bg-muted/30">
-    {% if browser.0.visitors %}
-    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors browser.0.visitors 100 %}%"></div>
+    {% if browser.0.pageviews %}
+    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.pageviews browser.0.pageviews 100 %}%"></div>
     {% endif %}
     <span class="relative flex-1 truncate text-foreground">{{ item.value }}</span>
     <div class="relative flex gap-3 font-mono text-[12px]">
       <span class="text-muted-foreground">{% if item.percentage %}{{ item.percentage|floatformat:1 }}%{% else %}—{% endif %}</span>
-      <span class="min-w-[50px] text-right text-foreground">{{ item.visitors|intcomma }}</span>
+      <span class="min-w-[50px] text-right text-foreground">{{ item.pageviews|intcomma }}</span>
     </div>
   </a>
   {% empty %}
@@ -23,13 +23,13 @@
   {% for item in os_data %}
   <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=os:eq:{{ item.value }}"
      class="relative flex items-center rounded px-2.5 py-[6px] text-[12.5px] transition-colors hover:bg-muted/30">
-    {% if os_data.0.visitors %}
-    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors os_data.0.visitors 100 %}%"></div>
+    {% if os_data.0.pageviews %}
+    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.pageviews os_data.0.pageviews 100 %}%"></div>
     {% endif %}
     <span class="relative flex-1 truncate text-foreground">{{ item.value }}</span>
     <div class="relative flex gap-3 font-mono text-[12px]">
       <span class="text-muted-foreground">{% if item.percentage %}{{ item.percentage|floatformat:1 }}%{% else %}—{% endif %}</span>
-      <span class="min-w-[50px] text-right text-foreground">{{ item.visitors|intcomma }}</span>
+      <span class="min-w-[50px] text-right text-foreground">{{ item.pageviews|intcomma }}</span>
     </div>
   </a>
   {% empty %}
@@ -41,13 +41,13 @@
   {% for item in device_data %}
   <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=device:eq:{{ item.value }}"
      class="relative flex items-center rounded px-2.5 py-[6px] text-[12.5px] transition-colors hover:bg-muted/30">
-    {% if device_data.0.visitors %}
-    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors device_data.0.visitors 100 %}%"></div>
+    {% if device_data.0.pageviews %}
+    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.pageviews device_data.0.pageviews 100 %}%"></div>
     {% endif %}
     <span class="relative flex-1 truncate text-foreground">{{ item.value }}</span>
     <div class="relative flex gap-3 font-mono text-[12px]">
       <span class="text-muted-foreground">{% if item.percentage %}{{ item.percentage|floatformat:1 }}%{% else %}—{% endif %}</span>
-      <span class="min-w-[50px] text-right text-foreground">{{ item.visitors|intcomma }}</span>
+      <span class="min-w-[50px] text-right text-foreground">{{ item.pageviews|intcomma }}</span>
     </div>
   </a>
   {% empty %}
@@ -61,11 +61,11 @@
     {% for item in browser %}
     <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=browser:eq:{{ item.value }}"
        class="relative flex items-center rounded px-2.5 py-[5px] text-[12.5px] transition-colors hover:bg-muted/30">
-      {% if browser.0.visitors %}
-      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors browser.0.visitors 100 %}%"></div>
+      {% if browser.0.pageviews %}
+      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.pageviews browser.0.pageviews 100 %}%"></div>
       {% endif %}
       <span class="relative flex-1 truncate">{{ item.value }}</span>
-      <span class="relative font-mono text-[12px] text-foreground">{{ item.visitors|intcomma }}</span>
+      <span class="relative font-mono text-[12px] text-foreground">{{ item.pageviews|intcomma }}</span>
     </a>
     {% empty %}
     <p class="py-2 text-xs text-muted-foreground">{% trans "No data." %}</p>
@@ -76,11 +76,11 @@
     {% for item in os_data %}
     <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=os:eq:{{ item.value }}"
        class="relative flex items-center rounded px-2.5 py-[5px] text-[12.5px] transition-colors hover:bg-muted/30">
-      {% if os_data.0.visitors %}
-      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors os_data.0.visitors 100 %}%"></div>
+      {% if os_data.0.pageviews %}
+      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.pageviews os_data.0.pageviews 100 %}%"></div>
       {% endif %}
       <span class="relative flex-1 truncate">{{ item.value }}</span>
-      <span class="relative font-mono text-[12px] text-foreground">{{ item.visitors|intcomma }}</span>
+      <span class="relative font-mono text-[12px] text-foreground">{{ item.pageviews|intcomma }}</span>
     </a>
     {% empty %}
     <p class="py-2 text-xs text-muted-foreground">{% trans "No data." %}</p>
@@ -91,26 +91,11 @@
     {% for item in device_data %}
     <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=device:eq:{{ item.value }}"
        class="relative flex items-center rounded px-2.5 py-[5px] text-[12.5px] transition-colors hover:bg-muted/30">
-      {% if device_data.0.visitors %}
-      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors device_data.0.visitors 100 %}%"></div>
+      {% if device_data.0.pageviews %}
+      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.pageviews device_data.0.pageviews 100 %}%"></div>
       {% endif %}
       <span class="relative flex-1 truncate">{{ item.value }}</span>
-      <span class="relative font-mono text-[12px] text-foreground">{{ item.visitors|intcomma }}</span>
-    </a>
-    {% empty %}
-    <p class="py-2 text-xs text-muted-foreground">{% trans "No data." %}</p>
-    {% endfor %}
-  </div>
-  <div>
-    <div class="mb-2 text-sm font-medium">{% trans "Language" %}</div>
-    {% for item in language %}
-    <a href="?{% for key, val in request.GET.items %}{{ key }}={{ val }}&{% endfor %}filter=language:eq:{{ item.value }}"
-       class="relative flex items-center rounded px-2.5 py-[5px] text-[12.5px] transition-colors hover:bg-muted/30">
-      {% if language.0.visitors %}
-      <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio item.visitors language.0.visitors 100 %}%"></div>
-      {% endif %}
-      <span class="relative flex-1 truncate">{{ item.value }}</span>
-      <span class="relative font-mono text-[12px] text-foreground">{{ item.visitors|intcomma }}</span>
+      <span class="relative font-mono text-[12px] text-foreground">{{ item.pageviews|intcomma }}</span>
     </a>
     {% empty %}
     <p class="py-2 text-xs text-muted-foreground">{% trans "No data." %}</p>

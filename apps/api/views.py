@@ -41,21 +41,13 @@ from apps.analytics.services import (
     # references them.
     get_compare_data,  # noqa: F401
     get_devices_data,  # noqa: F401
-    get_engagement_data,  # noqa: F401
     get_events_data,  # noqa: F401
-    get_funnels_data,  # noqa: F401
     get_geo_data,  # noqa: F401
-    get_journeys_data,  # noqa: F401
     get_overview_data,  # noqa: F401
     get_pages_data,  # noqa: F401
     get_realtime_data,
-    get_retention_data,  # noqa: F401
-    get_revenue_data,  # noqa: F401
-    get_sessions_data,  # noqa: F401
-    get_sources_data,  # noqa: F401
     resolve_websites_for_user,
 )
-from apps.common.funnel_params import parse_funnel_steps
 from apps.common.http import safe_int
 from apps.common.json_views import JSONView, json_response
 from apps.common.mixins import (
@@ -204,9 +196,7 @@ class _AnalyticsJSONView(ApiAuthMixin, WebsiteContextMixin, DateRangeMixin, Gran
             keeps the function late-bound, so test patches on
             ``apps.api.views.<service_name>`` apply transparently.
         pass_filters (bool, optional, default ``True``): when ``False`` the
-            view drops ``self.filters`` from the call signature. Set to
-            ``False`` for endpoints whose service function does not accept
-            ``filters`` (retention / funnels / journeys / revenue).
+            view drops ``self.filters`` from the call signature.
 
     Override :meth:`extra_kwargs` to inject endpoint-specific query
     parameters (``page``, ``country``, ``granularity``, ...).
@@ -303,8 +293,8 @@ class AnalyticsOverviewView(_AnalyticsJSONView):
         params parsed by :class:`FiltersMixin`.
 
     Response:
-        200 JSON with overview metrics (pageviews, visitors, visits, bounce
-        rate, avg visit duration, etc.) for the given date range.
+        200 JSON with pageviews, estimated visitors, custom-event aggregates,
+        device breakdowns, geo data, heatmap data, and realtime counters.
     """
 
     service_name = "get_overview_data"
@@ -321,8 +311,8 @@ class AnalyticsPagesView(_AnalyticsJSONView):
         pagination index, default 1), plus filter params.
 
     Response:
-        200 JSON with per-page metrics (url_path, pageviews, visitors,
-        entry/exit counts, avg time on page, etc.).
+        200 JSON with per-page view counts and anonymous estimated visitors
+        when the active filters allow sketch-based estimates.
     """
 
     service_name = "get_pages_data"
@@ -330,23 +320,6 @@ class AnalyticsPagesView(_AnalyticsJSONView):
     def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
         """Extract the ``page`` query param for pagination."""
         return {"page": safe_int(request.GET.get("page"))}
-
-
-class AnalyticsSourcesView(_AnalyticsJSONView):
-    """``GET /api/analytics/sources/`` -- traffic source breakdown.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``, plus filter params.
-
-    Response:
-        200 JSON with referrer domains, UTM parameters, and click IDs
-        aggregated by visitor/pageview count.
-    """
-
-    service_name = "get_sources_data"
 
 
 class AnalyticsEventsView(_AnalyticsJSONView):
@@ -359,32 +332,14 @@ class AnalyticsEventsView(_AnalyticsJSONView):
         ``website`` (required), ``start_at``, ``end_at``, plus filter params.
 
     Response:
-        200 JSON with event names, counts, and associated property breakdowns.
+        200 JSON with event names, aggregate counts, and event time series.
     """
 
     service_name = "get_events_data"
 
-
-class AnalyticsSessionsView(_AnalyticsJSONView):
-    """``GET /api/analytics/sessions/`` -- session-level analytics with pagination.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``, ``page`` (1-based
-        pagination index, default 1), plus filter params.
-
-    Response:
-        200 JSON with per-session details (browser, OS, device, country,
-        pageview count, duration, etc.).
-    """
-
-    service_name = "get_sessions_data"
-
     def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
-        """Extract the ``page`` query param for pagination."""
-        return {"page": safe_int(request.GET.get("page"))}
+        """Forward the resolved granularity for event timelines."""
+        return {"granularity": self.granularity}
 
 
 class AnalyticsDevicesView(_AnalyticsJSONView):
@@ -397,8 +352,7 @@ class AnalyticsDevicesView(_AnalyticsJSONView):
         ``website`` (required), ``start_at``, ``end_at``, plus filter params.
 
     Response:
-        200 JSON with breakdowns by browser name, OS name, device type
-        (desktop/mobile/tablet), and screen resolution.
+        200 JSON with breakdowns by browser name, OS name, and device type.
     """
 
     service_name = "get_devices_data"
@@ -445,132 +399,6 @@ class AnalyticsCompareView(_AnalyticsJSONView):
         if mode not in ("previous_period", "previous_year"):
             mode = "previous_period"
         return {"comparison_mode": mode}
-
-
-class AnalyticsRetentionView(_AnalyticsJSONView):
-    """``GET /api/analytics/retention/`` -- cohort retention analysis.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``, ``granularity``
-        (``"week"`` or ``"month"``, defaults to ``"week"``).
-
-    Response:
-        200 JSON with a cohort retention matrix showing the percentage of
-        visitors who return in subsequent periods.
-
-    Note:
-        This endpoint does not accept filter params (``pass_filters = False``).
-    """
-
-    service_name = "get_retention_data"
-    pass_filters = False
-
-    def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
-        """Extract and validate the ``granularity`` param for cohort bucketing."""
-        granularity = request.GET.get("granularity", "week")
-        return {"granularity": granularity if granularity in ("week", "month") else "week"}
-
-
-class AnalyticsFunnelsView(_AnalyticsJSONView):
-    """``GET /api/analytics/funnels/`` -- multi-step conversion funnel analysis.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``, ``step_0`` ..
-        ``step_N`` (URL path or event name for each funnel step),
-        ``window`` (conversion window in minutes, default 60).
-
-    Response:
-        200 JSON with per-step visitor counts, drop-off rates, and overall
-        conversion rate.
-
-    Note:
-        This endpoint does not accept filter params (``pass_filters = False``).
-    """
-
-    service_name = "get_funnels_data"
-    pass_filters = False
-
-    def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
-        """Extract funnel step definitions and conversion window from query params."""
-        return {
-            "steps": parse_funnel_steps(request.GET) or None,
-            "window_minutes": safe_int(request.GET.get("window", "60"), default=60),
-        }
-
-
-class AnalyticsJourneysView(_AnalyticsJSONView):
-    """``GET /api/analytics/journeys/`` -- visitor journey (path) analysis.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``, ``path_length``
-        (max steps per journey, 1-6, default 3), ``limit`` (max number of
-        unique paths to return, default 20).
-
-    Response:
-        200 JSON with Sankey-compatible journey data showing the most common
-        multi-step navigation paths through the site.
-
-    Note:
-        This endpoint does not accept filter params (``pass_filters = False``).
-    """
-
-    service_name = "get_journeys_data"
-    pass_filters = False
-
-    def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
-        """Extract journey depth and result limit, clamping path_length to a max of 6."""
-        return {
-            # Cap path_length at 6 to prevent excessively wide CTE queries
-            "path_length": min(safe_int(request.GET.get("path_length", "3"), default=3), 6),
-            "limit": safe_int(request.GET.get("limit", "20"), default=20),
-        }
-
-
-class AnalyticsRevenueView(_AnalyticsJSONView):
-    """``GET /api/analytics/revenue/`` -- revenue analytics.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``.
-
-    Response:
-        200 JSON with revenue totals, averages, and time-series data
-        aggregated from the ``revenue`` table.
-
-    Note:
-        This endpoint does not accept filter params (``pass_filters = False``).
-    """
-
-    service_name = "get_revenue_data"
-    pass_filters = False
-
-
-class AnalyticsEngagementView(_AnalyticsJSONView):
-    """``GET /api/analytics/engagement/`` -- user engagement metrics.
-
-    Authentication:
-        Requires API key with access to the specified website.
-
-    Query params:
-        ``website`` (required), ``start_at``, ``end_at``, plus filter params.
-
-    Response:
-        200 JSON with engagement metrics including scroll depth, time on page,
-        pages per session, and interaction heatmap data.
-    """
-
-    service_name = "get_engagement_data"
 
 
 class AnalyticsRealtimeView(ApiAuthMixin, WebsiteContextMixin, JSONView):
@@ -937,5 +765,3 @@ class BotConfigSaveView(ApiWriteMixin, JSONView):
             config=body.get("config", {}),
         )
         return json_response(result)
-
-

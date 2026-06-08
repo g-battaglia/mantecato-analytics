@@ -24,31 +24,24 @@
         <span class="flex-1">{% trans "Page" %}</span>
         <div class="flex gap-4 text-right">
           <span class="w-16">{% trans "Views" %}</span>
-          <span class="w-16">{% trans "Visitors" %}</span>
-          <span class="hidden w-14 sm:inline">{% trans "Bounce" %}</span>
-          <span class="hidden w-14 sm:inline">{% trans "Avg" %}</span>
+          <span class="w-20">{% trans "Est. visitors" %}</span>
         </div>
       </div>
       {% for p in pages %}
-      <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors cursor-pointer"
-           hx-get="{% url 'analytics_next_pages' %}?url_path={{ p.urlPath|urlencode }}&website={{ selected_website }}&range={{ range_preset }}"
-           hx-target="#next-pages-detail" hx-swap="innerHTML">
+      <div class="flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
         <div class="flex-1 min-w-0 pr-4">
           <span class="block truncate font-medium" title="{{ p.pageTitle|default:p.urlPath }}">{{ p.pageTitle|default:p.urlPath }}</span>
           <span class="block truncate text-xs text-muted-foreground font-mono">{{ p.urlPath }}</span>
         </div>
         <div class="flex gap-4 text-right tabular-nums">
           <span class="w-16 font-medium">{{ p.views|intcomma }}</span>
-          <span class="w-16 text-muted-foreground">{{ p.visitors|intcomma }}</span>
-          <span class="hidden w-14 text-muted-foreground sm:inline">{{ p.bounceRate|floatformat:1 }}%</span>
-          <span class="hidden w-14 text-muted-foreground sm:inline">{% if p.avgTimeOnPage %}{{ p.avgTimeOnPage|floatformat:0 }}s{% else %}—{% endif %}</span>
+          <span class="w-20 text-muted-foreground">{% if p.visitors is not None %}~{{ p.visitors|intcomma }}{% else %}—{% endif %}</span>
         </div>
       </div>
       {% endfor %}
     </div>
   </div>
 </div>
-<div id="next-pages-detail"></div>
 {% else %}
 <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
   <div class="px-4 py-4 text-center">

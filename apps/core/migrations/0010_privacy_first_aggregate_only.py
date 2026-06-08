@@ -19,6 +19,12 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Remove WebsiteEvent indexes that reference columns dropped below.
+        migrations.RemoveIndex(model_name="websiteevent", name="idx_we_session_id"),
+        migrations.RemoveIndex(model_name="websiteevent", name="idx_we_visit_id"),
+        migrations.RemoveIndex(model_name="websiteevent", name="idx_we_pageview_hot"),
+        migrations.RemoveIndex(model_name="websiteevent", name="idx_we_event_hot"),
+        migrations.RemoveIndex(model_name="websiteevent", name="idx_we_visit_created_pv"),
         # Drop tables that are no longer needed
         migrations.DeleteModel(name="Segment"),
         migrations.DeleteModel(name="Revenue"),

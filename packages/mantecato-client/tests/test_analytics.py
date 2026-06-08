@@ -47,16 +47,12 @@ class TestPages:
 
 
 class TestGeo:
-    def test_with_country(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.geo("site-1", country="IT")
-        assert transport.last["params"]["country"] == "IT"
-
-    def test_with_region(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.geo("site-1", country="US", region="CA")
-        assert transport.last["params"]["country"] == "US"
-        assert transport.last["params"]["region"] == "CA"
+    def test_country_level(self, client: MantecatoClient, transport: MockTransport):
+        # Privacy-first geo is country-level only — no region/city drilldown.
+        transport.response_json = {"geo": [], "level": "country"}
+        client.analytics.geo("site-1", date_range="30d")
+        assert transport.last["path"] == "/api/analytics/geo/"
+        assert transport.last["params"]["website"] == "site-1"
 
 
 class TestCompare:
@@ -66,84 +62,39 @@ class TestCompare:
         assert transport.last["params"]["mode"] == "previous_year"
 
 
-class TestRetention:
-    def test_with_granularity(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.retention("site-1", granularity="month")
-        assert transport.last["params"]["granularity"] == "month"
-
-    def test_no_filters_param(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.retention("site-1")
-        assert "filter" not in transport.last["params"]
-
-
-class TestFunnels:
-    def test_step_encoding(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.funnels(
-            "site-1",
-            steps=[("url", "/"), ("event", "signup")],
-            window=60,
-        )
-        params = transport.last["params"]
-        assert params["step_type.0"] == "url"
-        assert params["step_value.0"] == "/"
-        assert params["step_type.1"] == "event"
-        assert params["step_value.1"] == "signup"
-        assert params["window"] == "60"
-
-    def test_no_steps(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.funnels("site-1")
-        assert "step_type.0" not in transport.last["params"]
-
-
-class TestJourneys:
-    def test_with_params(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.journeys("site-1", path_length=4, limit=50)
-        assert transport.last["params"]["path_length"] == "4"
-        assert transport.last["params"]["limit"] == "50"
-
-
 class TestRealtime:
     def test_only_website(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {"active": 42}
+        transport.response_json = {"realtime": {"count": 42}}
         result = client.analytics.realtime("site-1")
-        assert result["active"] == 42
+        assert result["realtime"]["count"] == 42
         assert transport.last["params"]["website"] == "site-1"
         assert "range" not in transport.last["params"]
 
 
 class TestAllEndpoints:
-    def test_sources(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.sources("s")
-        assert transport.last["path"] == "/api/analytics/sources/"
+    """The privacy-first SDK surface: overview, pages, events, devices, geo, compare, realtime."""
 
     def test_events(self, client: MantecatoClient, transport: MockTransport):
         transport.response_json = {}
         client.analytics.events("s")
         assert transport.last["path"] == "/api/analytics/events/"
 
-    def test_sessions(self, client: MantecatoClient, transport: MockTransport):
-        transport.response_json = {}
-        client.analytics.sessions("s", page=3)
-        assert transport.last["path"] == "/api/analytics/sessions/"
-        assert transport.last["params"]["page"] == "3"
-
     def test_devices(self, client: MantecatoClient, transport: MockTransport):
         transport.response_json = {}
         client.analytics.devices("s")
         assert transport.last["path"] == "/api/analytics/devices/"
 
-    def test_revenue(self, client: MantecatoClient, transport: MockTransport):
+    def test_geo(self, client: MantecatoClient, transport: MockTransport):
         transport.response_json = {}
-        client.analytics.revenue("s")
-        assert transport.last["path"] == "/api/analytics/revenue/"
+        client.analytics.geo("s")
+        assert transport.last["path"] == "/api/analytics/geo/"
 
-    def test_engagement(self, client: MantecatoClient, transport: MockTransport):
+    def test_compare(self, client: MantecatoClient, transport: MockTransport):
         transport.response_json = {}
-        client.analytics.engagement("s")
-        assert transport.last["path"] == "/api/analytics/engagement/"
+        client.analytics.compare("s")
+        assert transport.last["path"] == "/api/analytics/compare/"
+
+    def test_realtime(self, client: MantecatoClient, transport: MockTransport):
+        transport.response_json = {}
+        client.analytics.realtime("s")
+        assert transport.last["path"] == "/api/analytics/realtime/"

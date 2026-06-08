@@ -11,7 +11,7 @@ Supported pages:
 - Realtime: live pageview feed
 
 Removed pages (require persistent identifiers):
-- Sessions, Events, Sources, Retention, Funnels, Journeys, Revenue, Engagement, Entry/Exit
+- Sessions, Sources, Retention, Funnels, Journeys, Revenue, Engagement, Entry/Exit
 """
 
 from __future__ import annotations
@@ -19,9 +19,19 @@ from __future__ import annotations
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
 
+from apps.analytics.chart_data import (
+    build_dimension_chart_data,
+    build_events_bar_chart_data,
+    build_events_pie_chart_data,
+    build_events_timeline_data,
+    build_pages_bar_chart_data,
+    build_sections_bar_chart_data,
+    build_timeseries_chart_data,
+)
 from apps.analytics.services import (
     get_compare_data,
     get_devices_data,
+    get_events_data,
     get_geo_data,
     get_heatmap_data,
     get_overview_data,
@@ -29,7 +39,7 @@ from apps.analytics.services import (
     get_sections_data,
     resolve_websites_for_user,  # noqa: F401 — test patch target
 )
-from apps.analytics.view_utils import AnalyticsBase
+from apps.analytics.view_utils import AnalyticsBase, ChartMapping
 from apps.common.http import safe_int
 from apps.common.mixins import (
     BaseContextMixin,
@@ -48,13 +58,17 @@ class OverviewView(AnalyticsBase):
         data = get_overview_data(self.website_id, self.date_range, self.filters, granularity=self.granularity)
         return {
             "stats": data["stats"],
-            "timeseries_data": data.get("timeseries", []),
+            "timeseries_data": build_timeseries_chart_data(
+                data.get("timeseries", []),
+                data.get("prev_timeseries", []),
+            ),
             "prev_timeseries": data.get("prev_timeseries", []),
             "sections": data["sections"],
             "top_pages": data["top_pages"],
-            "browser": data["browser"],
-            "os_data": data["os_data"],
-            "device_data": data["device_data"],
+            "event_metrics": data.get("event_metrics", []),
+            "browser": data.get("browser", []),
+            "os_data": data.get("os_data", data.get("os", [])),
+            "device_data": data.get("device_data", data.get("device", [])),
             "country": data["country"],
             "geo": data["geo"],
             "realtime": data["realtime"],
@@ -69,6 +83,7 @@ class PagesView(AnalyticsBase):
     """Per-URL pageview analytics."""
 
     template_name = "analytics/pages.html"
+    _charts = [ChartMapping("pages_chart_data", build_pages_bar_chart_data, "pages")]
 
     def _call_service(self) -> dict:
         page = safe_int(self.request.GET.get("page"))
@@ -79,6 +94,7 @@ class SectionsView(AnalyticsBase):
     """Site sections breakdown by URL prefix."""
 
     template_name = "analytics/sections.html"
+    _charts = [ChartMapping("sections_chart_data", build_sections_bar_chart_data, "sections")]
 
     def _call_service(self) -> dict:
         return get_sections_data(self.website_id, self.date_range, self.filters)
@@ -89,8 +105,14 @@ class DevicesView(AnalyticsBase):
 
     template_name = "analytics/devices.html"
 
-    def _call_service(self) -> dict:
-        return get_devices_data(self.website_id, self.date_range, self.filters)
+    def get_service_data(self) -> dict:
+        data = get_devices_data(self.website_id, self.date_range, self.filters)
+        return {
+            **data,
+            "browser_chart_data": build_dimension_chart_data(data["browser"]),
+            "os_chart_data": build_dimension_chart_data(data["os"]),
+            "device_chart_data": build_dimension_chart_data(data["device"]),
+        }
 
 
 class GeoView(AnalyticsBase):
@@ -109,13 +131,20 @@ class CompareView(AnalyticsBase):
 
     def get_service_data(self) -> dict:
         mode = self.request.GET.get("mode", "previous_period")
-        return get_compare_data(
+        data = get_compare_data(
             self.website_id,
             self.date_range,
             self.filters,
             comparison_mode=mode,
             granularity=self.granularity,
         )
+        return {
+            **data,
+            "compare_chart_data": build_timeseries_chart_data(
+                data["current_ts"],
+                data["previous_ts"],
+            ),
+        }
 
 
 class HeatmapView(AnalyticsBase):
@@ -150,5 +179,25 @@ class RealtimeView(
         from django.utils import timezone
         now = timezone.now()
         dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
-        data = get_overview_data(self.website_id, dr, granularity="hour")
+        data = get_overview_data(self.website_id, dr, self.filters, granularity="hour")
         return {**ctx, **data}
+
+
+class EventsView(AnalyticsBase):
+    """Aggregate custom-event analytics by event name."""
+
+    template_name = "analytics/events.html"
+
+    def get_service_data(self) -> dict:
+        data = get_events_data(
+            self.website_id,
+            self.date_range,
+            self.filters,
+            granularity=self.granularity,
+        )
+        return {
+            **data,
+            "events_chart_data": build_events_bar_chart_data(data["events"]),
+            "events_pie_data": build_events_pie_chart_data(data["events"]),
+            "events_timeline_data": build_events_timeline_data(data["event_timeseries"]),
+        }

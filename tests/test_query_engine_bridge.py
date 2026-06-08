@@ -361,15 +361,16 @@ class TestBuildFilterSql:
     def test_eq_filter(self) -> None:
         filters = [Filter(column="browser", operator="eq", value="Chrome")]
         result = build_filter_sql(filters)
-        assert "we.browser" not in result["where"]
-        assert "s.browser = {{f0}}" in result["where"]
+        # Privacy-first: every filterable column lives on website_event (``we``),
+        # so there is no session alias and no join.
+        assert "we.browser = {{f0}}" in result["where"]
         assert result["params"]["f0"] == "Chrome"
-        assert result["needs_session_join"] is True
+        assert result["needs_session_join"] is False
 
     def test_neq_filter(self) -> None:
         filters = [Filter(column="country", operator="neq", value="US")]
         result = build_filter_sql(filters)
-        assert "s.country != {{f0}}" in result["where"]
+        assert "we.country != {{f0}}" in result["where"]
 
     def test_contains_filter(self) -> None:
         filters = [Filter(column="url_path", operator="contains", value="/docs")]
@@ -418,8 +419,10 @@ class TestBuildFilterSql:
             )
         ]
         result = build_filter_sql(filters)
-        assert "SIMILAR TO" in result["where"]
-        assert result["needs_session_join"] is True
+        # Bot exclusion is now an event-level ``bot_reason`` clause, never a
+        # User-Agent SIMILAR TO match or a session subquery.
+        assert "we.bot_reason" in result["where"]
+        assert result["needs_session_join"] is False
 
     def test_bot_filter_disabled_returns_empty(self) -> None:
         """``enabled=False`` must skip every bot clause, even when other keys are set."""
@@ -461,135 +464,76 @@ class TestApplyFilters:
         result = apply_filters(None)
         assert result == {"where": "", "params": {}, "join": ""}
 
-    def test_session_join_added(self) -> None:
+    def test_never_adds_session_join(self) -> None:
+        # Sessions are not tracked, so filters never produce a JOIN clause.
         filters = [Filter(column="browser", operator="eq", value="Chrome")]
         result = apply_filters(filters)
-        assert result["join"] == "JOIN session s ON s.session_id = we.session_id"
+        assert result["join"] == ""
 
-    def test_session_join_already_present(self) -> None:
+    def test_session_join_flag_is_noop(self) -> None:
         filters = [Filter(column="browser", operator="eq", value="Chrome")]
         result = apply_filters(filters, already_joins_session=True)
         assert result["join"] == ""
 
 
 class TestBuildBotFilterSql:
-    def test_disabled_returns_empty_clauses(self) -> None:
-        """A config without ``enabled=True`` must be a no-op kill-switch."""
+    """Privacy-first bot exclusion: event-level ``bot_reason`` + country list only.
+
+    There is no User-Agent SIMILAR TO match, no behavioural NOT EXISTS subquery,
+    no cluster detection, and no precomputed session-id anti-join — those all
+    required identifiers the product no longer collects.
+    """
+
+    def test_empty_config_applies_known_bot_defaults(self) -> None:
+        """An empty config falls back to knownBots + emptyUa via the bot_reason clause."""
         result = build_bot_filter_sql({})
+        assert "we.bot_reason" in result["where"]
+        assert result["needs_session_join"] is False
+        assert result["params"]["botReasons"] == ["known_bot_user_agent", "empty_user_agent"]
+
+    def test_known_bots_only(self) -> None:
+        result = build_bot_filter_sql({"knownBots": True, "emptyUa": False})
+        assert result["params"]["botReasons"] == ["known_bot_user_agent"]
+
+    def test_no_reasons_and_no_countries_is_empty(self) -> None:
+        """With every reason disabled and no country list, the clause is empty."""
+        result = build_bot_filter_sql({"knownBots": False, "emptyUa": False})
         assert result["where"] == ""
         assert result["needs_session_join"] is False
         assert result["params"] == {}
 
-    def test_explicit_disable_returns_empty(self) -> None:
-        """``enabled=False`` wins even when other keys would trigger clauses."""
-        result = build_bot_filter_sql({"enabled": False, "knownBots": True})
-        assert result["where"] == ""
-        assert result["needs_session_join"] is False
-
-    def test_enabled_defaults_apply_known_bots(self) -> None:
-        """When ``enabled=True`` and no other overrides, the cheap bot-UA filter runs."""
-        result = build_bot_filter_sql({"enabled": True})
-        assert "SIMILAR TO" in result["where"]
-        assert result["needs_session_join"] is True
-
     def test_excluded_countries(self) -> None:
         result = build_bot_filter_sql({
-            "enabled": True,
-            "excludedCountries": ["CN", "RU"],
-        })
-        assert "'CN'" in result["where"]
-        assert "'RU'" in result["where"]
-
-    def test_zero_engagement(self) -> None:
-        result = build_bot_filter_sql({
-            "enabled": True,
             "knownBots": False,
             "emptyUa": False,
-            "clusterDetection": False,
-            "zeroEngagement": True,
+            "excludedCountries": ["CN", "RU"],
         })
-        assert "NOT EXISTS" in result["where"]
-
-    def test_cluster_detection_disabled(self) -> None:
-        result = build_bot_filter_sql({
-            "enabled": True,
-            "clusterDetection": False,
-            "highVelocityThreshold": 0,
-        })
-        assert "cluster_total" not in result["where"]
-        # With no behavioural heuristics enabled either, no subquery should
-        # be emitted -- only the cheap UA/heuristic clauses remain.
+        assert "we.country" in result["where"]
+        assert result["params"]["botExcludedCountries"] == ["CN", "RU"]
+        assert "SIMILAR TO" not in result["where"]
         assert "NOT EXISTS" not in result["where"]
 
-    def test_cluster_and_behavioral_unified(self) -> None:
-        result = build_bot_filter_sql({
-            "enabled": True,
-            "clusterDetection": True,
-            "zeroEngagement": True,
-            "highVelocityThreshold": 30,
-        })
-        assert "NOT EXISTS" in result["where"]
-        assert "cluster_total" in result["where"]
-        assert result["where"].count("NOT EXISTS") == 1
-
-    def test_precomputed_ids_replace_subquery(self) -> None:
-        """When session_ids are supplied, the heavy subquery is swapped for unnest anti-join."""
-        result = build_bot_filter_sql(
-            {
-                "enabled": True,
-                "clusterDetection": True,
-                "highVelocityThreshold": 30,
-            },
-            bot_session_ids=["11111111-1111-1111-1111-111111111111"],
-        )
-        # Heavy aggregation subquery is gone; only the cheap unnest
-        # anti-join remains for excluding bot session_ids.
-        assert "ranked" not in result["where"]
-        assert "PARTITION BY" not in result["where"]
-        assert "unnest({{__bot_session_ids__::uuid[]}})" in result["where"]
-        assert "bots.session_id = we.session_id" in result["where"]
-        assert result["params"]["__bot_session_ids__"] == [
-            "11111111-1111-1111-1111-111111111111"
-        ]
-
-    def test_precomputed_empty_skips_clause(self) -> None:
-        """An empty precomputed list means no bots -- no array clause is added."""
-        result = build_bot_filter_sql(
-            {
-                "enabled": True,
-                "clusterDetection": True,
-            },
-            bot_session_ids=[],
-        )
-        assert "__bot_session_ids__" not in result["where"]
-        assert "PARTITION BY" not in result["where"]
+    def test_config_wrapper_is_unwrapped(self) -> None:
+        """The mixin passes ``{"config": {...}}``; the builder reads the inner dict."""
+        result = build_bot_filter_sql({"config": {"knownBots": True, "emptyUa": False}})
+        assert result["params"]["botReasons"] == ["known_bot_user_agent"]
 
 
 class TestBotFilterPayloadShapes:
-    def test_payload_with_precomputed_ids(self) -> None:
-        """``build_filter_sql`` understands the new ``{config, botSessionIds}`` shape."""
-        payload = json.dumps(
-            {
-                "config": {"enabled": True, "clusterDetection": True},
-                "botSessionIds": ["22222222-2222-2222-2222-222222222222"],
-            }
-        )
+    def test_payload_with_config_wrapper(self) -> None:
+        """``build_filter_sql`` understands the ``{"config": {...}}`` payload shape."""
+        payload = json.dumps({"config": {"knownBots": True, "emptyUa": False}})
         filters = [Filter(column="__bot_filter__", operator="eq", value=payload)]
         result = build_filter_sql(filters)
-        # Pre-compute path swaps the aggregation subquery for the cheap
-        # ``unnest`` anti-join.
-        assert "PARTITION BY" not in result["where"]
-        assert "unnest({{__bot_session_ids__::uuid[]}})" in result["where"]
-        assert result["params"]["__bot_session_ids__"] == [
-            "22222222-2222-2222-2222-222222222222"
-        ]
+        assert "we.bot_reason" in result["where"]
+        assert result["params"]["botReasons"] == ["known_bot_user_agent"]
 
-    def test_legacy_bare_config_still_works(self) -> None:
-        """A bare config dict (no precompute) falls back to the inline subquery."""
-        payload = json.dumps({"enabled": True, "clusterDetection": True})
+    def test_bare_config_payload(self) -> None:
+        """A bare config dict (no wrapper) is also accepted."""
+        payload = json.dumps({"knownBots": True, "emptyUa": True})
         filters = [Filter(column="__bot_filter__", operator="eq", value=payload)]
         result = build_filter_sql(filters)
-        assert "NOT EXISTS" in result["where"]
+        assert "we.bot_reason" in result["where"]
 
 
 # ---------------------------------------------------------------------------

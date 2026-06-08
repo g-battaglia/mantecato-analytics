@@ -52,56 +52,6 @@
                    class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
             <span class="text-sm text-foreground">{% trans "Filter empty User-Agent" %}</span>
           </label>
-          <label class="flex items-center gap-3">
-            <input type="checkbox" name="clusterDetection" {% if config.clusterDetection %}checked{% endif %}
-                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
-            <span class="text-sm text-foreground">{% trans "Cluster detection" %}</span>
-          </label>
-          <label class="flex items-center gap-3">
-            <input type="checkbox" name="zeroEngagement" {% if config.zeroEngagement %}checked{% endif %}
-                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
-            <span class="text-sm text-foreground">{% trans "Zero engagement filter" %}</span>
-          </label>
-          <label class="flex items-center gap-3">
-            <input type="checkbox" name="missingScreen" {% if config.missingScreen %}checked{% endif %}
-                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
-            <span class="text-sm text-foreground">{% trans "Missing screen info" %}</span>
-          </label>
-          <label class="flex items-center gap-3">
-            <input type="checkbox" name="missingLanguage" {% if config.missingLanguage %}checked{% endif %}
-                   class="h-4 w-4 rounded border-input text-primary focus:ring-ring">
-            <span class="text-sm text-foreground">{% trans "Missing language" %}</span>
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend class="text-sm font-semibold text-foreground mb-3">{% trans "Thresholds" %}</legend>
-        <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-4">
-          <div>
-            <label for="id_clusterBounceThreshold" class="block text-sm text-foreground">{% trans "Cluster bounce threshold" %}</label>
-            <input type="number" id="id_clusterBounceThreshold" name="clusterBounceThreshold"
-                   value="{{ config.clusterBounceThreshold|default:90 }}"
-                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
-          </div>
-          <div>
-            <label for="id_clusterMinSize" class="block text-sm text-foreground">{% trans "Cluster min size" %}</label>
-            <input type="number" id="id_clusterMinSize" name="clusterMinSize"
-                   value="{{ config.clusterMinSize|default:100 }}"
-                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
-          </div>
-          <div>
-            <label for="id_minDuration" class="block text-sm text-foreground">{% trans "Min duration (seconds)" %}</label>
-            <input type="number" id="id_minDuration" name="minDuration"
-                   value="{{ config.minDuration|default:0 }}"
-                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
-          </div>
-          <div>
-            <label for="id_highVelocityThreshold" class="block text-sm text-foreground">{% trans "High velocity threshold" %}</label>
-            <input type="number" id="id_highVelocityThreshold" name="highVelocityThreshold"
-                   value="{{ config.highVelocityThreshold|default:60 }}"
-                   class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-ring focus:ring-1 focus:ring-ring">
-          </div>
         </div>
       </fieldset>
 

@@ -1,18 +1,17 @@
 # `core.mantecato_core` — Raw-SQL analytics query engine
 
-The Mantecato v3 query engine is a thin synchronous bridge over
-PostgreSQL. All analytics SQL lives here, in plain `.py` modules under
-`queries/`, and is executed via the Django default database connection
-through the helpers in `database.py`.
+The Mantecato query engine is a thin synchronous bridge over PostgreSQL for
+production, with ORM fallbacks for SQLite development and tests. Analytics SQL
+lives in `.py` modules under `queries/` and is executed via the Django default
+database connection through the helpers in `database.py`.
 
 This document explains the architecture, the placeholder DSL used in
 every SQL string, and the public surface consumed by
 `apps/analytics/services.py`.
 
-> **Constraint**: the SQL stays **raw**. Project policy (see
-> `CLAUDE.md`) forbids rewriting these queries in Django ORM because the
-> CTEs / window functions / PERCENTILE_CONT calls cannot be expressed
-> faithfully without losing performance.
+> **Constraint**: production analytics SQL stays **raw**. SQLite fallbacks are
+> intentionally limited to aggregate pageview/event reads so local pages render
+> without requiring PostgreSQL.
 
 ## Layout
 
@@ -25,21 +24,16 @@ core/mantecato_core/
 ├── types.py          # TypedDict declarations for every query return shape
 └── queries/
     ├── pageviews.py      # page-level analytics
-    ├── sources.py        # referrers, channels, UTM, click-ids
     ├── devices.py        # browser/os/device breakdown
-    ├── geo.py            # country/region/city breakdown
+    ├── geo.py            # country breakdown
     ├── stats.py          # high-level aggregates + top-N tables
-    ├── engagement.py     # bounce rate, duration percentiles
-    ├── retention.py      # cohort retention
-    ├── funnels.py        # funnel conversion
-    ├── journeys.py       # ordered URL paths
-    ├── revenue.py        # revenue summary / by event / by country
-    ├── sessions.py       # session list with derived metrics
     ├── compare.py        # period-over-period comparison
-    ├── realtime.py       # active visitors + recent events
-    ├── events.py         # custom event analytics
+    ├── realtime.py       # live pageview counters
+    ├── events.py         # custom event-name analytics
     ├── filter_values.py  # discover distinct filter values
     ├── heatmap.py        # hour-of-day / day-of-week heatmap
+    ├── visitors.py       # anonymous aggregate visitor-sketch estimates
+    ├── orm_fallbacks.py  # SQLite fallback helpers
     └── __init__.py       # public re-exports
 ```
 
@@ -83,7 +77,7 @@ casts used in this codebase are:
 | Placeholder                | Resolved SQL              | Used for                  |
 | -------------------------- | ------------------------- | ------------------------- |
 | `{{name}}`                 | `%s`                      | text / numeric values     |
-| `{{websiteId::uuid}}`      | `%s::uuid`                | website / user / session  |
+| `{{websiteId::uuid}}`      | `%s::uuid`                | website / user IDs        |
 | `{{startDate::timestamptz}}` | `%s::timestamptz`       | datetime bounds           |
 | `{{values::text[]}}`       | `%s::text[]`              | array params in `ANY()`   |
 
@@ -95,15 +89,13 @@ plus three functions used by every query that needs WHERE conditions:
 1. `parse_filters_from_params(raw_strings)` — turns CLI/HTTP filter
    parameters into typed `Filter` objects.
 2. `prepare_filters(filters)` — returns
-   `(filter_where_clause, filter_params_dict, session_join_sql)`
+   `(filter_where_clause, filter_params_dict, "")`
    ready to splice into a query string.
 3. `build_filter_sql(filter)` — single-filter SQL fragment (called by
    `prepare_filters`).
 
-The session-join clause is emitted only when the active filters need
-columns that live in the `session` table (browser/os/device/screen/
-language/country/region/city) — saving a JOIN when filters only touch
-the events table.
+Filters operate only on columns stored directly on `website_event`. There is
+no session join in privacy-first aggregate mode.
 
 ### Bot filter
 

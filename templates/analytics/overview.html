@@ -16,9 +16,9 @@
 <span class="mb-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-500">
   <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
   {% blocktrans count counter=realtime.count %}
-    {{ counter }} visitor online
+    {{ counter }} active pageview
   {% plural %}
-    {{ counter }} visitors online
+    {{ counter }} active pageviews
   {% endblocktrans %}
 </span>
 {% endif %}
@@ -43,7 +43,7 @@
   {# ── World map ─────────────────────────────────────────────────────── #}
   <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
     <div>
-      <div class="mb-3 text-sm font-medium">{% trans "Visitors by Country" %}</div>
+      <div class="mb-3 text-sm font-medium">{% trans "Pageviews by Country" %}</div>
       <div id="world-map" class="h-48 sm:h-64 lg:h-80 rounded-md"></div>
     </div>
     {{ geo|json_script:"geo-data" }}
@@ -91,11 +91,11 @@
           GB: [55.4, -3.4], IN: [20.6, 78.9], IT: [41.9, 12.6],
           JP: [36.2, 138.3], NL: [52.1, 5.3], US: [37.1, -95.7],
         };
-        var maxVisitors = Math.max.apply(null, geoData.map(function (g) { return g.visitors || 0; }));
+        var maxVisitors = Math.max.apply(null, geoData.map(function (g) { return g.pageviews || 0; }));
         geoData.forEach(function (g) {
           var center = countryCenters[g.country];
           if (center) {
-            var radius = maxVisitors > 0 ? Math.max(4, (g.visitors / maxVisitors) * 20) : 4;
+            var radius = maxVisitors > 0 ? Math.max(4, (g.pageviews / maxVisitors) * 20) : 4;
             var circle = L.circleMarker(center, {
               radius: radius,
               fillColor: '#6366f1',
@@ -103,7 +103,7 @@
               weight: 1,
               fillOpacity: 0.7,
             }).addTo(map);
-            circle.bindPopup('<strong>' + g.country + '</strong><br>' + g.visitors + ' {% trans "visitors" %}');
+            circle.bindPopup('<strong>' + g.country + '</strong><br>' + g.pageviews + ' {% trans "pageviews" %}');
           }
         });
       }

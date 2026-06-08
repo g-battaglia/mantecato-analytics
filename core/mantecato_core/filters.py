@@ -1,7 +1,7 @@
 """SQL filter builder — privacy-first aggregate mode.
 
-Simplified from the original: no session joins, no bot session detection,
-no referrer/UTM columns. Filters operate directly on website_event columns.
+Filters operate directly on anonymous ``website_event`` rows. There are no
+session joins, visitor identifiers, referrers, UTM fields, or fingerprints.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ VALID_FILTER_COLUMNS: set[str] = {
     "os",
     "device",
     "country",
+    "event_name",
 }
 
 VALID_OPERATORS = {
@@ -33,8 +34,8 @@ VALID_OPERATORS = {
 
 GRANULARITIES = ("minute", "hour", "day", "week", "month")
 
-# Bot detection config is retained for future use but in privacy-first
-# mode there are no sessions to filter. The functions below return no-ops.
+# Bot detection is event-level only. The tracker stores a coarse bot flag and
+# reason, never the raw User-Agent or a stable client identifier.
 BOT_BROWSER_PATTERN = (
     "%(bot|crawler|spider|scraper|headless|phantom|selenium|puppeteer"
     "|wget|curl|python|go-http|java|libwww|fetcher|slurp"
@@ -50,22 +51,52 @@ def safe_identifier(value: str, allowed: tuple[str, ...], default: str) -> str:
     return value if value in allowed else default
 
 
-def compute_bot_session_ids(
-    website_id: str,
-    start_date: Any,
-    end_date: Any,
-    config: dict[str, Any],
-) -> list[str]:
-    """No-op: sessions are not tracked by the product."""
-    return []
-
-
 def build_bot_filter_sql(
-    config: dict[str, Any],
-    bot_session_ids: list[str] | None = None,
+    config: dict[str, Any] | str,
 ) -> dict[str, Any]:
-    """No-op: sessions are not tracked by the product."""
-    return {"where": "", "needs_session_join": False, "params": {}}
+    """Build aggregate bot-exclusion SQL from a BotConfig payload.
+
+    Only event-level bot reasons and country exclusions are supported because
+    privacy-first mode does not collect engagement or fingerprinting signals.
+    """
+    payload: dict[str, Any]
+    if isinstance(config, str):
+        try:
+            payload = json.loads(config)
+        except json.JSONDecodeError:
+            payload = {}
+    else:
+        payload = dict(config)
+    cfg = payload.get("config", payload)
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    reasons: list[str] = []
+    if cfg.get("knownBots", True):
+        reasons.append("known_bot_user_agent")
+    if cfg.get("emptyUa", True):
+        reasons.append("empty_user_agent")
+    if reasons:
+        clauses.append("(we.bot_reason IS NULL OR we.bot_reason <> ALL({{botReasons::text[]}}))")
+        params["botReasons"] = reasons
+
+    excluded_countries = [
+        str(code).upper()
+        for code in cfg.get("excludedCountries", [])
+        if isinstance(code, str) and len(code) == 2
+    ]
+    if excluded_countries:
+        clauses.append("(we.country IS NULL OR we.country <> ALL({{botExcludedCountries::text[]}}))")
+        params["botExcludedCountries"] = excluded_countries
+
+    return {
+        "where": f"AND {' AND '.join(clauses)}" if clauses else "",
+        "needs_session_join": False,
+        "params": params,
+    }
 
 
 @dataclass
@@ -84,10 +115,10 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
     params: dict[str, Any] = {}
 
     regular_filters: list[Filter] = []
+    bot_sql = {"where": "", "params": {}}
     for f in filters:
         if f.column == "__bot_filter__":
-            # Bot filtering is handled separately in aggregate mode
-            continue
+            bot_sql = build_bot_filter_sql(f.value)
         elif f.column in VALID_FILTER_COLUMNS:
             regular_filters.append(f)
 
@@ -129,6 +160,9 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
             and_clauses.append(f"({' OR '.join(or_clauses)})")
 
     where = f"AND {' AND '.join(and_clauses)}" if and_clauses else ""
+    if bot_sql.get("where"):
+        where = f"{where} {bot_sql['where']}".strip()
+        params.update(bot_sql.get("params", {}))
     return {
         "where": where,
         "params": params,

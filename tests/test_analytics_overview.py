@@ -128,30 +128,23 @@ class TestServiceOrchestration:
     """
 
     # Each fan-out helper get_overview_data calls -> a safe stub return.
+    # Privacy-first: pageview/event/device/geo aggregates only. The anonymous
+    # visitor estimate path is exercised separately (it only runs for a
+    # bot-only filter), so a content filter in ``_run`` keeps this test DB-free.
     _STUBS = {
         "get_website_stats_comparison": {
-            "current": {
-                "pageviews": 100, "visitors": 50, "visits": 60,
-                "bounces": 20, "totaltime": 1800,
-            },
-            "previous": {
-                "pageviews": 80, "visitors": 40, "visits": 50,
-                "bounces": 18, "totaltime": 1500,
-            },
+            "current": {"pageviews": 100, "human_pageviews": 80, "bot_pageviews": 20},
+            "previous": {"pageviews": 80, "human_pageviews": 64, "bot_pageviews": 16},
         },
         "get_pageview_time_series_comparison": {"current": [], "previous": []},
-        "get_device_metrics_multi": {"browser": [], "os": [], "device": [], "language": []},
-        "get_active_visitors": {"count": 0, "visitors": []},
+        "get_device_metrics_multi": {"browser": [], "os": [], "device": []},
         "get_top_sections": [],
-        "get_top_referrers": [],
         "get_event_metrics": [],
         "get_top_pages": [],
-        "get_top_events": [],
         "get_country_breakdown": [],
         "get_geo_metrics": [],
-        "get_channel_metrics": [],
-        "get_referrer_metrics": [],
-        "get_recent_events": [],
+        "get_active_pageviews": {"count": 0},
+        "get_recent_pageviews": [],
         "get_current_pages": [],
         "get_traffic_heatmap": [],
     }
@@ -170,12 +163,17 @@ class TestServiceOrchestration:
     def _run(self):
         from apps.analytics.services import get_overview_data
         from core.mantecato_core.date_utils import DateRange
+        from core.mantecato_core.filters import Filter
 
         date_range = DateRange(
             start_date=datetime(2025, 1, 1, tzinfo=UTC),
             end_date=datetime(2025, 1, 31, tzinfo=UTC),
         )
-        return get_overview_data(WEBSITE_ID, date_range)
+        # A content filter disables the anonymous-visitor estimate path (which
+        # only runs for a bot-only filter), keeping the test DB-free.
+        return get_overview_data(
+            WEBSITE_ID, date_range, [Filter(column="country", operator="eq", value="US")]
+        )
 
     def test_uses_comparison_helpers_once(self) -> None:
         with self._patched() as mocks:
@@ -185,7 +183,8 @@ class TestServiceOrchestration:
         assert mocks["get_pageview_time_series_comparison"].call_count == 1
         # KPI cards are derived from the "current" period of the comparison.
         assert result["stats"]["pageviews"]["value"] == "100"
-        assert result["stats"]["visitors"]["value"] == "50"
+        # With a content filter the anonymous-visitor estimate is unavailable.
+        assert result["stats"]["visitors"]["value"] == "N/A"
 
     def test_device_metrics_multi_once(self) -> None:
         with self._patched() as mocks:
@@ -289,9 +288,6 @@ class TestTabPartialsExist:
     def test_tab_pages_exists(self) -> None:
         assert (TEMPLATES_DIR / "analytics" / "_tab_pages.html").is_file()
 
-    def test_tab_referrers_exists(self) -> None:
-        assert (TEMPLATES_DIR / "analytics" / "_tab_referrers.html").is_file()
-
     def test_tab_events_exists(self) -> None:
         assert (TEMPLATES_DIR / "analytics" / "_tab_events.html").is_file()
 
@@ -300,9 +296,6 @@ class TestTabPartialsExist:
 
     def test_tab_geo_exists(self) -> None:
         assert (TEMPLATES_DIR / "analytics" / "_tab_geo.html").is_file()
-
-    def test_tab_sources_exists(self) -> None:
-        assert (TEMPLATES_DIR / "analytics" / "_tab_sources.html").is_file()
 
     def test_overview_metrics_partial_exists(self) -> None:
         assert (TEMPLATES_DIR / "analytics" / "_overview_metrics.html").is_file()
@@ -438,7 +431,11 @@ class TestOverviewViewRendered:
             {"urlPath": "/", "views": 42, "visitors": 30},
         ]
 
-        response = client.get("/overview/tab/?tab=pages&website=" + WEBSITE_ID)
+        # A content filter keeps the request off the anonymous-visitor estimate
+        # path (which would otherwise query the DB for VisitorSketch rows).
+        response = client.get(
+            "/overview/tab/?tab=pages&f=country:eq:US&website=" + WEBSITE_ID
+        )
         content = response.content.decode()
 
         assert "42" in content
@@ -468,15 +465,3 @@ class TestServiceHelpers:
     def test_percentage_change_both_zero(self) -> None:
         from apps.analytics.services import _percentage_change
         assert _percentage_change(0, 0) is None
-
-    def test_format_duration_seconds(self) -> None:
-        from apps.analytics.services import _format_duration
-        assert _format_duration(45) == "45s"
-
-    def test_format_duration_minutes(self) -> None:
-        from apps.analytics.services import _format_duration
-        assert _format_duration(150) == "2m 30s"
-
-    def test_format_duration_hours(self) -> None:
-        from apps.analytics.services import _format_duration
-        assert _format_duration(3665) == "1h 1m"

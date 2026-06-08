@@ -16,6 +16,7 @@ from django.views import View
 
 from apps.analytics.services import (
     get_overview_tab_devices,
+    get_overview_tab_events,
     get_overview_tab_geo,
     get_overview_tab_pages,
     resolve_websites_for_user,  # noqa: F401  — imported so tests can patch it here
@@ -47,6 +48,7 @@ class _TabConfig(NamedTuple):
 
 _OVERVIEW_TABS: dict[str, _TabConfig] = {
     "pages": _TabConfig("analytics/_tab_pages.html", get_overview_tab_pages),
+    "events": _TabConfig("analytics/_tab_events.html", get_overview_tab_events),
     "devices": _TabConfig("analytics/_tab_devices.html", get_overview_tab_devices),
     "geo": _TabConfig("analytics/_tab_geo.html", get_overview_tab_geo),
 }
@@ -128,7 +130,7 @@ class RealtimePartialView(
         from django.utils import timezone
         now = timezone.now()
         dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
-        data = get_overview_data(self.website_id, dr, granularity="hour")
+        data = get_overview_data(self.website_id, dr, self.filters, granularity="hour")
         return render(
             request,
             "analytics/_realtime_data.html",
@@ -153,5 +155,4 @@ class FilterValuesView(_HtmxPartialBase):
             limit=20,
         )
         return {"values": values}
-
 

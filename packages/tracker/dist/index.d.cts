@@ -50,6 +50,8 @@ interface UmamiPayload {
     hostname: string;
     title: string;
     url: string;
+    /** Custom event name. Omitted for pageviews. */
+    name?: string;
     tag?: string;
 }
 /** Function that receives default payload and returns a modified payload */
@@ -57,9 +59,12 @@ type TrackCallback = (props: UmamiPayload) => UmamiPayload;
 interface Tracker {
     /** Track a pageview for the current URL (or override with options) */
     pageview: (options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
-    /** Umami-compatible track() — overloaded: no args = pageview, string = named pageview, object = raw payload, function = callback */
+    /** Track a custom event name without event properties */
+    event: (name: string, options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+    /** Umami-compatible track() — no args = pageview, string = event name, object/function = sanitized payload */
     track: {
         (): Promise<void>;
+        (name: string): Promise<void>;
         (payload: Partial<UmamiPayload>): Promise<void>;
         (callback: TrackCallback): Promise<void>;
     };

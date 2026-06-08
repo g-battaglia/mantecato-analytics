@@ -10,8 +10,8 @@ with very different risk profiles:
   because the tracker posts a hardcoded ``website_id``. It is guarded behind an
   explicit ``--include-config`` flag plus an interactive confirmation.
 - :mod:`apps.core.management.commands.importumamidata` — the **data-only**
-  import. It copies analytics rows only (sessions, events, event data, session
-  data, revenue), never touching configuration, and can target a single website
+  import. It copies compatible anonymous ``website_event`` rows only, never
+  touching configuration, and can target a single website
   by remapping the source ``website_id`` onto an existing Mantecato website.
 
 Both share the same column mapping, defensive value adaptation (timestamp →
@@ -38,26 +38,21 @@ if TYPE_CHECKING:
 
 BATCH_SIZE = 10_000
 
-# (label, source_table, dest_table, is_user). Order satisfies the virtual
-# dependencies (users/teams/websites before sessions/events, etc.).
+# (label, source_table, dest_table, is_user). Only tables still present in the
+# privacy-first schema are listed.
 _TABLES_ORDER = [
     ("users", '"user"', "mantecato_user", True),
     ("teams", "team", "team", False),
     ("team_users", "team_user", "team_user", False),
     ("websites", "website", "website", False),
-    ("sessions", "session", "session", False),
     ("events", "website_event", "website_event", False),
-    ("event_data", "event_data", "event_data", False),
-    ("session_data", "session_data", "session_data", False),
-    ("revenue", "revenue", "revenue", False),
-    ("segments", "segment", "segment", False),
     ("reports", "report", "report", False),
 ]
 
 # Analytics tables. Everything else in ``_TABLES_ORDER`` is *configuration*.
 # These are the only tables the data-only import touches, and the only ones
 # carrying a ``website_id`` column usable for single-site filtering/remapping.
-_DATA_TABLES = {"sessions", "events", "event_data", "session_data", "revenue"}
+_DATA_TABLES = {"events"}
 
 # Per-table source→destination column renames (see the module docstring of the
 # original importer for the rationale behind ``deleted_at``→``is_deleted`` and
@@ -65,20 +60,14 @@ _DATA_TABLES = {"sessions", "events", "event_data", "session_data", "revenue"}
 _SRC_TO_DST_COL = {
     "website": {"website_id": "id", "deleted_at": "is_deleted"},
     "team": {"team_id": "id"},
-    "segment": {"segment_id": "id", "parameters": "name_filters"},
     "report": {"report_id": "id"},
 }
 
 _DST_PK = {
     "website": "id",
-    "session": "session_id",
     "website_event": "event_id",
-    "event_data": "event_data_id",
-    "session_data": "session_data_id",
     "team": "id",
     "team_user": "team_user_id",
-    "revenue": "revenue_id",
-    "segment": "id",
     "report": "id",
 }
 
@@ -228,8 +217,7 @@ class UmamiImporter:
         if not self.target_website:
             raise ValueError("replace_target_data requires target_website.")
         with connection.cursor() as cur:
-            for table in ("revenue", "session_data", "event_data", "website_event", "session"):
-                cur.execute(f"DELETE FROM {table} WHERE website_id = %s", [self.target_website])
+            cur.execute("DELETE FROM website_event WHERE website_id = %s", [self.target_website])
 
     def _copy_table(self, src, src_table, dst_table, is_user, label, progress) -> None:
         """Copy one source table into its destination, atomically.
@@ -366,7 +354,6 @@ class UmamiImporter:
 
             - ``website_id`` → remapped to *target_website* in single-site mode.
             - ``is_deleted`` → ``deleted_at`` timestamp converted to boolean.
-            - ``revenue`` → ``0`` when NULL (NOT NULL in Mantecato).
             - dict/list → :class:`~psycopg.types.json.Jsonb`.
             - NULL ``created_at``/``updated_at`` → ``timezone.now()``.
             - over-long strings → truncated to the destination column width.
@@ -380,8 +367,6 @@ class UmamiImporter:
                 result.append(self.target_website)
             elif col == "is_deleted":
                 result.append(value is not None)
-            elif col == "revenue" and value is None:
-                result.append(0)
             elif isinstance(value, (dict, list)):
                 result.append(Jsonb(value))
             elif value is None and col in ("created_at", "updated_at"):

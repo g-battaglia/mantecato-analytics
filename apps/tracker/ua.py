@@ -1,10 +1,51 @@
-"""User-Agent parsing — browser, OS, and device detection."""
+"""User-Agent parsing — browser, OS, device, and bot classification."""
 
 from __future__ import annotations
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+_BOT_PATTERNS = (
+    "bot",
+    "crawler",
+    "spider",
+    "scraper",
+    "headless",
+    "phantom",
+    "selenium",
+    "puppeteer",
+    "wget",
+    "curl",
+    "python-requests",
+    "go-http-client",
+    "java/",
+    "libwww",
+    "fetcher",
+    "slurp",
+    "googlebot",
+    "bingbot",
+    "yandex",
+    "baiduspider",
+    "facebookexternalhit",
+    "twitterbot",
+    "linkedinbot",
+    "whatsapp",
+    "telegrambot",
+    "discordbot",
+    "applebot",
+    "semrush",
+    "ahrefs",
+    "mj12bot",
+    "dotbot",
+    "petalbot",
+    "bytespider",
+    "gptbot",
+    "claudebot",
+    "chatgpt",
+)
+_BOT_RE = re.compile("|".join(re.escape(p) for p in _BOT_PATTERNS), re.I)
 
 # Lazy-loaded parser module. The ``_parser_loaded`` flag distinguishes
 # "not yet attempted" from "attempted but failed (ImportError)".
@@ -101,6 +142,19 @@ def parse_user_agent(ua_string: str) -> dict[str, str | None]:
         device = device[:20]
 
     return {"browser": browser, "os": os_name, "device": device}
+
+
+def classify_bot_user_agent(ua_string: str) -> tuple[bool, str | None]:
+    """Classify a request as bot/non-bot without storing the raw User-Agent.
+
+    The classifier emits only coarse reasons suitable for aggregate filtering.
+    It deliberately avoids creating a client key or any persistent identifier.
+    """
+    if not ua_string:
+        return True, "empty_user_agent"
+    if _BOT_RE.search(ua_string):
+        return True, "known_bot_user_agent"
+    return False, None
 
 
 def _is_mobile_device(family: str) -> bool:

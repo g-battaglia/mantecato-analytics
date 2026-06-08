@@ -26,7 +26,7 @@ from core.mantecato_core.queries import (
     get_page_time_series,
     get_pageview_time_series,
     get_pageview_time_series_comparison,
-    get_recent_events,
+    get_recent_pageviews,
     get_top_pages,
     get_top_sections,
     get_traffic_heatmap,
@@ -58,8 +58,6 @@ def _seed() -> dict:
                 os=os_name,
                 device=device,
                 country=country,
-                region="Region",
-                city="City",
                 created_at=now - timedelta(hours=i),
             )
 
@@ -193,7 +191,7 @@ class TestGeoMetrics:
         wid = str(data["website"].id)
         start = data["now"] - timedelta(days=7)
         end = data["now"] + timedelta(hours=1)
-        result = get_geo_metrics(wid, start, end, level="country", limit=10)
+        result = get_geo_metrics(wid, start, end, limit=10)
         assert isinstance(result, list)
 
     def test_get_country_breakdown(self):
@@ -209,9 +207,9 @@ class TestGeoMetrics:
 
 
 class TestRealtime:
-    def test_get_recent_events(self):
+    def test_get_recent_pageviews(self):
         data = _seed()
-        result = get_recent_events(str(data["website"].id))
+        result = get_recent_pageviews(str(data["website"].id))
         assert isinstance(result, list)
 
     def test_get_current_pages(self):

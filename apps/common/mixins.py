@@ -420,22 +420,7 @@ class FiltersMixin:
         result = list(self._raw_filters)
         if self.bot_filter:
             website_id = getattr(self, "website_id", None)
-            date_range = getattr(self, "date_range", None)
-            # Pre-compute heavy-heuristic bot sessions for BOTH the current
-            # window and its comparison window. The period-over-period overlay
-            # (the dashed "previous period" series and the comparison stat
-            # cards) scans the comparison window, whose bots fall outside the
-            # current range and would otherwise leak through the precomputed
-            # ``NOT EXISTS`` exclusion -- see load_bot_filter_payload.
-            ranges: list[tuple[datetime, datetime]] = []
-            if date_range is not None:
-                ranges.append((date_range.start_date, date_range.end_date))
-                mode = self.request.GET.get("mode") or "previous_period"
-                if mode not in ("previous_period", "previous_year"):
-                    mode = "previous_period"
-                comp = get_comparison_range(date_range, mode)
-                ranges.append((comp.start_date, comp.end_date))
-            payload = load_bot_filter_payload(website_id, ranges) if website_id else None
+            payload = load_bot_filter_payload(website_id) if website_id else None
             if payload is not None:
                 # The query engine treats this synthetic column as a
                 # directive to apply the configured bot exclusion clause
@@ -452,7 +437,6 @@ class FiltersMixin:
 
 def load_bot_filter_payload(
     website_id: str,
-    ranges: list[tuple[datetime, datetime]] | None = None,
 ) -> str | None:
     """Return the JSON-encoded BotConfig payload for *website_id*, or ``None``.
 
@@ -470,28 +454,8 @@ def load_bot_filter_payload(
       ``__bot_filter__`` is skipped entirely.
     - **Row with** ``enabled=True``: return that config verbatim.
 
-    When *ranges* is provided **and** the resolved config asks for any heavy
-    heuristic (cluster / zero-engagement / high-velocity), the matching
-    ``bot_session_ids`` are pre-computed via
-    :func:`~core.mantecato_core.filters.compute_bot_session_ids` for **each**
-    range and **unioned** into the payload as
-    ``{"config": ..., "botSessionIds": [...]}``.  This lets the query engine
-    replace the NOT EXISTS subquery embedded in every analytics call with a
-    single ``session_id <> ALL(:array)`` lookup, paid only once per request.
-
-    Callers pass more than one range when a view overlays a comparison
-    period (the dashed "previous period" series, the period-over-period stat
-    cards): each window is scored **independently** and the bot sets are
-    unioned, so a session is excluded from whichever window it belongs to --
-    byte-identical to navigating to that window directly.  Heavy heuristics
-    are time-scoped, so a single current-period scan would miss the
-    comparison window's bots entirely.
-
     Args:
         website_id: UUID of the tracked website.
-        ranges: Inclusive ``(start, end)`` windows to scope the heavy-heuristic
-            precompute.  Empty/``None`` skips the precompute (the cheap
-            attribute-based clauses still apply via the config).
     """
     try:
         from apps.core.models import BOT_CONFIG_DEFAULTS, BotConfig
@@ -510,43 +474,15 @@ def load_bot_filter_payload(
     else:
         # The dashboard toggle IS the enable signal -- this mirrors Mantecato
         # v2, whose toggle auto-enables the saved config on click. Apply the
-        # saved rules (knownBots, emptyUa, clusterDetection, excludedCountries,
-        # the thresholds) but force ``enabled`` on, so a saved ``enabled=False``
+        # saved rules (knownBots, emptyUa, excludedCountries) but force
+        # ``enabled`` on, so a saved ``enabled=False``
         # no longer silently neutralises an explicit ?bot_filter=1. The
         # per-view on/off decision already happened upstream in
         # ``FiltersMixin.bot_filter``; this payload is only built when it is on.
         params = config_row.parameters if isinstance(config_row.parameters, dict) else {}
         config = {**params, "enabled": True}
 
-    # Pre-compute the heavy-heuristic session_ids once when we have the
-    # range(s) to scope them, so downstream analytics queries can use a
-    # cheap array lookup instead of repeating a NOT EXISTS subquery.
-    bot_session_ids: list[str] = []
-    if ranges:
-        from core.mantecato_core.filters import compute_bot_session_ids
-
-        # Score each window independently and union the results (preserving
-        # order, de-duplicating across windows). One window failing must not
-        # drop the others, so each scan is guarded individually.
-        seen: set[str] = set()
-        for start_date, end_date in ranges:
-            if start_date is None or end_date is None:
-                continue
-            try:
-                detected = compute_bot_session_ids(website_id, start_date, end_date, config)
-            except Exception:
-                logger.warning(
-                    "compute_bot_session_ids failed for website %s",
-                    website_id,
-                    exc_info=True,
-                )
-                continue
-            for sid in detected:
-                if sid not in seen:
-                    seen.add(sid)
-                    bot_session_ids.append(sid)
-
-    return json.dumps({"config": config, "botSessionIds": bot_session_ids})
+    return json.dumps({"config": config})
 
 
 def _bot_filter_default_enabled(website_id: str) -> bool:

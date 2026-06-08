@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n fmt %}
 
 <div class="grid gap-2.5 lg:grid-cols-2">
 
@@ -19,7 +19,7 @@
       <div class="flex gap-0 border-b border-border">
         <button class="panel-tab border-b-[1.5px] border-primary pb-2 text-[12.5px] font-medium text-foreground px-3" data-panel="events-overview-tab">{% trans "Events" %}</button>
       </div>
-      <a href="#" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
+      <a href="{% url 'analytics_events' %}?{% view_query %}" class="font-mono text-[11px] text-muted-foreground hover:text-foreground">{% trans "View all" %} →</a>
     </div>
     <div class="panel-content flex-1 p-2" id="events-overview-tab">
       {% if event_metrics %}
@@ -28,7 +28,7 @@
           <tr class="text-[11px] uppercase tracking-wider text-muted-foreground">
             <th class="pb-2 pl-2 text-left font-medium">{% trans "Event" %}</th>
             <th class="pb-2 pr-2 text-right font-medium">{% trans "Count" %}</th>
-            <th class="pb-2 pr-2 text-right font-medium">{% trans "Visitors" %}</th>
+            <th class="pb-2 pr-2 text-right font-medium">{% trans "Est. visitors" %}</th>
             <th class="pb-2 pr-2 text-right font-medium">%</th>
           </tr>
         </thead>
@@ -37,7 +37,7 @@
           <tr class="hover:bg-muted/50">
             <td class="py-1.5 pl-2 font-mono text-[13px]">{{ e.eventName }}</td>
             <td class="py-1.5 pr-2 text-right tabular-nums">{{ e.count }}</td>
-            <td class="py-1.5 pr-2 text-right tabular-nums">{{ e.visitors }}</td>
+            <td class="py-1.5 pr-2 text-right tabular-nums">{% if e.visitors is not None %}~{{ e.visitors }}{% else %}—{% endif %}</td>
             <td class="py-1.5 pr-2 text-right tabular-nums text-muted-foreground">{{ e.pct|floatformat:1 }}%</td>
           </tr>
           {% endfor %}

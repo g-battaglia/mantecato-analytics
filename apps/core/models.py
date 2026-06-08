@@ -8,8 +8,8 @@ Model layout:
 - :class:`MantecatoUser`: custom user (``AbstractBaseUser``) with UUID primary key.
 - :class:`Team`, :class:`TeamUser`: team membership.
 - :class:`Website`: tracked sites.
-- :class:`WebsiteEvent`: anonymous pageview events (no session_id, no visit_id,
-  no referrer, no UTM, no click IDs).
+- :class:`WebsiteEvent`: anonymous pageview/custom-event rows (no session_id,
+  no visit_id, no referrer, no UTM, no click IDs, no event payload).
 - :class:`Report`: polymorphic configuration table.  Discriminated by the
   :attr:`Report.type` column whose allowed values are enumerated in
   :class:`ReportType`.
@@ -35,6 +35,11 @@ if TYPE_CHECKING:
 def _uuid_pk() -> models.UUIDField:
     """Return a UUID primary-key field with a fresh ``uuid4`` default."""
     return models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+
+def _visitor_sketch_registers() -> bytes:
+    """Return empty HyperLogLog registers for anonymous reach estimation."""
+    return bytes(128)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -178,8 +183,9 @@ class Website(models.Model):
 class WebsiteEvent(models.Model):
     """An anonymous pageview event — the core aggregate analytics data unit.
 
-    Every row is an independent, standalone pageview. No session_id, visit_id,
-    referrer, UTM parameters, click IDs, or custom event data is stored.
+    Every row is an independent, standalone pageview or custom-event count. No
+    session_id, visit_id, referrer, UTM parameters, click IDs, or event payload
+    data is stored.
 
     Device/browser metadata is stored directly on the event for aggregate
     breakdown queries (no session join needed). Geo data comes from IP
@@ -193,6 +199,7 @@ class WebsiteEvent(models.Model):
     url_query = models.CharField(max_length=500, null=True, blank=True)
     page_title = models.CharField(max_length=500, null=True, blank=True)
     event_type = models.IntegerField(default=1)
+    event_name = models.CharField(max_length=100, null=True, blank=True)
     hostname = models.CharField(max_length=100, null=True, blank=True)
     # Device/browser metadata for aggregate breakdowns and bot detection
     browser = models.CharField(max_length=20, null=True, blank=True)
@@ -200,6 +207,9 @@ class WebsiteEvent(models.Model):
     device = models.CharField(max_length=20, null=True, blank=True)
     # Geo: country-only (ISO 3166-1 alpha-2) to prevent re-identification
     country = models.CharField(max_length=2, null=True, blank=True)
+    # Aggregate bot classification. The raw User-Agent is never stored.
+    is_bot = models.BooleanField(default=False)
+    bot_reason = models.CharField(max_length=80, null=True, blank=True)
 
     class Meta:
         db_table = "website_event"
@@ -210,14 +220,60 @@ class WebsiteEvent(models.Model):
             ),
             models.Index(
                 fields=["website_id", "-created_at"],
-                include=["url_path"],
+                include=["url_path", "is_bot"],
                 condition=models.Q(event_type=1),
                 name="idx_we_pageview_hot",
+            ),
+            models.Index(
+                fields=["website_id", "is_bot", "-created_at"],
+                condition=models.Q(event_type=1),
+                name="idx_we_bot_hot",
+            ),
+            models.Index(
+                fields=["website_id", "event_name", "-created_at"],
+                condition=models.Q(event_type=2),
+                name="idx_we_event_name_hot",
             ),
         ]
 
     def __str__(self) -> str:
         return str(self.event_id)
+
+
+class VisitorSketch(models.Model):
+    """Hourly aggregate sketch for estimated unique visitor counts.
+
+    The table stores only HyperLogLog registers by website/time/scope. It does
+    not store IP addresses, User-Agents, visitor IDs, hashes, sessions, or any
+    per-event identifier.
+    """
+
+    id = _uuid_pk()
+    website_id = models.UUIDField()
+    bucket_start = models.DateTimeField()
+    scope = models.CharField(max_length=20, default="site")
+    scope_value = models.CharField(max_length=500, blank=True, default="")
+    registers = models.BinaryField(default=_visitor_sketch_registers)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "visitor_sketch"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["website_id", "bucket_start", "scope", "scope_value"],
+                name="uniq_visitor_sketch_bucket_scope",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["website_id", "scope", "bucket_start"],
+                name="idx_vs_site_scope_bucket",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.website_id}:{self.bucket_start}:{self.scope}:{self.scope_value}"
 
 
 # ---------------------------------------------------------------------------
@@ -284,14 +340,6 @@ BOT_CONFIG_DEFAULTS: dict[str, Any] = {
     "enabled": False,
     "knownBots": True,
     "emptyUa": True,
-    "clusterDetection": True,
-    "clusterBounceThreshold": 90,
-    "clusterMinSize": 100,
-    "zeroEngagement": False,
-    "minDuration": 0,
-    "missingScreen": False,
-    "missingLanguage": False,
-    "highVelocityThreshold": 60,
     "excludedCountries": [],
 }
 

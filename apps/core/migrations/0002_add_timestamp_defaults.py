@@ -22,6 +22,22 @@ _TABLES_WITH_TIMESTAMPS = [
 ]
 
 
+def _apply_defaults(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        for stmt in _build_sql("forward"):
+            cursor.execute(stmt)
+
+
+def _remove_defaults(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        for stmt in _build_sql("reverse"):
+            cursor.execute(stmt)
+
+
 def _build_sql(direction):
     stmts = []
     for table, columns in _TABLES_WITH_TIMESTAMPS:
@@ -43,8 +59,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(
-            sql=_build_sql("forward"),
-            reverse_sql=_build_sql("reverse"),
-        ),
+        migrations.RunPython(_apply_defaults, _remove_defaults),
     ]
