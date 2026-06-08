@@ -82,8 +82,13 @@ Custom events record an **event name only**. By design there is no event
 payload, no revenue tracking, and no visitor identification — Mantecato is
 cookieless and aggregate, so there is nothing to attach a person to.
 
-The tracker automatically handles SPA route changes, **respects Do Not Track /
-Global Privacy Control by default**, and can be toggled on and off by visitors.
+The tracker automatically handles SPA route changes, **respects Global Privacy
+Control (GPC) by default** (the legacy Do Not Track header is opt-in), and can be
+toggled on and off by visitors.
+
+For maximum measurement accuracy on a self-hosted, first-party deployment — count
+privacy opt-outs and dodge ad-blockers via first-party proxying — see
+[docs/accuracy.md](docs/accuracy.md).
 
 ---
 
@@ -281,7 +286,7 @@ Lightweight JavaScript tracker (~2 KB minified). Cookie-free, Umami-compatible.
 - ✅ SPA route change detection
 - ✅ Custom event tracking (event **name only** — no event properties)
 - ✅ Click tracking via `data-mantecato-event` attributes (with `data-umami-event` fallback)
-- ✅ Do Not Track / Global Privacy Control respected **by default**
+- ✅ Global Privacy Control (GPC) respected **by default** (legacy DNT opt-in)
 - ✅ Client-side bot filtering
 - ✅ CORS-enabled for cross-origin tracking
 - ✅ No cookies, no `localStorage`/`sessionStorage`, no fingerprinting

@@ -5,9 +5,11 @@
  *   <script defer src="https://your-instance.com/api/script"
  *     data-website-id="your-uuid"
  *     data-host-url="https://your-instance.com"
+ *     data-endpoint="/api/send"
  *     data-domains="example.com,www.example.com"
  *     data-tag="production"
  *     data-auto-track="true"
+ *     data-respect-gpc="false"
  *     data-do-not-track="true"
  *     data-exclude-search="true"
  *     data-exclude-hash="true"
@@ -56,15 +58,22 @@ import { createTracker, type Tracker } from "./tracker";
   }
   baseUrl = baseUrl.replace(/\/+$/, "");
 
+  // Ingest path. Override to serve the API first-party behind a reverse proxy
+  // (a same-origin path dodges ad-blockers that block known analytics endpoints).
+  const endpoint = script.getAttribute("data-endpoint") || undefined;
+
   const domains = script.getAttribute("data-domains")
     ?.split(",")
     .map((d) => d.trim())
     .filter(Boolean);
 
   const autoTrack = script.getAttribute("data-auto-track") !== "false";
-  // Privacy-first: honour Do Not Track / Global Privacy Control by default
-  // (GPC is legally binding under CCPA/CPRA). Opt OUT with data-do-not-track="false".
-  const respectDNT = script.getAttribute("data-do-not-track") !== "false";
+  // Privacy-first: honour Global Privacy Control by default — GPC is a legally
+  // recognised opt-out signal (CCPA/CPRA and US state laws). Opt OUT with
+  // data-respect-gpc="false". The legacy DNT header is not legally binding, so it
+  // is ignored by default; opt IN with data-do-not-track="true" (matches Umami).
+  const respectGPC = script.getAttribute("data-respect-gpc") !== "false";
+  const respectDNT = script.getAttribute("data-do-not-track") === "true";
   const tag = script.getAttribute("data-tag") || undefined;
   const excludeSearch = script.getAttribute("data-exclude-search") === "true";
   const excludeHash = script.getAttribute("data-exclude-hash") === "true";
@@ -83,7 +92,9 @@ import { createTracker, type Tracker } from "./tracker";
   const tracker = createTracker({
     websiteId,
     baseUrl,
+    endpoint,
     autoTrack,
+    respectGPC,
     respectDNT,
     domains,
     tag,

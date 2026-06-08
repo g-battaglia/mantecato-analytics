@@ -25,8 +25,10 @@ export interface TrackerConfig {
   endpoint?: string;
   /** Auto-track pageviews on route changes (default: true) */
   autoTrack?: boolean;
-  /** Respect Do-Not-Track browser setting (default: true) */
+  /** Respect the legacy Do-Not-Track signal (default: false — DNT is not legally binding) */
   respectDNT?: boolean;
+  /** Respect Global Privacy Control, a legally-recognised opt-out signal (default: true) */
+  respectGPC?: boolean;
   /** Domains to track — if set, only track on these domains (default: track all) */
   domains?: string[];
   /** Custom hostname override */
@@ -118,11 +120,20 @@ function getReferrer(): string {
   return document.referrer || "";
 }
 
+// Legacy Do-Not-Track header signal. Abandoned W3C standard, not legally binding
+// anywhere — honoured only when explicitly opted in (``respectDNT``).
 function isDNT(): boolean {
   const w = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : {};
   const n = typeof navigator !== "undefined" ? (navigator as unknown as Record<string, unknown>) : {};
-  const dnt = w.doNotTrack || n.doNotTrack || n.msDoNotTrack || n.globalPrivacyControl;
+  const dnt = w.doNotTrack || n.doNotTrack || n.msDoNotTrack;
   return dnt === 1 || dnt === "1" || dnt === "yes" || dnt === true;
+}
+
+// Global Privacy Control — a legally-recognised opt-out signal under CCPA/CPRA and
+// several US state privacy laws. Honoured by default (``respectGPC``).
+function isGPC(): boolean {
+  const n = typeof navigator !== "undefined" ? (navigator as unknown as Record<string, unknown>) : {};
+  return n.globalPrivacyControl === true;
 }
 
 function isBot(): boolean {
@@ -141,7 +152,8 @@ export function createTracker(config: TrackerConfig): Tracker {
     baseUrl,
     endpoint = "/api/send",
     autoTrack = true,
-    respectDNT = true,
+    respectDNT = false,
+    respectGPC = true,
     domains,
     hostname: customHostname,
     tag,
@@ -201,6 +213,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     if (!websiteId) return false;
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
+    if (respectGPC && isGPC()) return false;
     if (respectDNT && isDNT()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();

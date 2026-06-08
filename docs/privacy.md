@@ -129,9 +129,13 @@ This ceiling applies to every cookieless analytics tool.
 
 ## Do Not Track / Global Privacy Control
 
-The tracker honours DNT and GPC **by default** (opt out per site with
-`data-do-not-track="false"`). GPC is treated as a binding opt-out signal
-(CCPA/CPRA).
+The tracker honours **Global Privacy Control (GPC) by default** — GPC is a
+legally-recognised opt-out signal under CCPA/CPRA and several US state privacy
+laws. Opt out per site with `data-respect-gpc="false"`.
+
+The legacy **Do Not Track (DNT)** header is **not** legally binding (abandoned
+W3C standard) and is **ignored by default**, matching Umami. Opt in per site with
+`data-do-not-track="true"`.
 
 ## Bot filtering
 
@@ -180,5 +184,5 @@ pageviews.
 > anonymous, aggregate statistics (e.g. total pageviews and visits, bounce rate,
 > average time on page, coarse device type, country, and the domain of the site
 > that referred you — never the full address). Because nothing is stored on your device and
-> no profile is built, no consent banner is required. We honour Do Not Track and
-> Global Privacy Control signals.
+> no profile is built, no consent banner is required. We honour Global Privacy
+> Control (GPC) opt-out signals.

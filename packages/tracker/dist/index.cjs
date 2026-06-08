@@ -44,8 +44,12 @@ function getReferrer() {
 function isDNT() {
   const w = typeof window !== "undefined" ? window : {};
   const n = typeof navigator !== "undefined" ? navigator : {};
-  const dnt = w.doNotTrack || n.doNotTrack || n.msDoNotTrack || n.globalPrivacyControl;
+  const dnt = w.doNotTrack || n.doNotTrack || n.msDoNotTrack;
   return dnt === 1 || dnt === "1" || dnt === "yes" || dnt === true;
+}
+function isGPC() {
+  const n = typeof navigator !== "undefined" ? navigator : {};
+  return n.globalPrivacyControl === true;
 }
 function isBot() {
   if (typeof navigator === "undefined") return false;
@@ -59,7 +63,8 @@ function createTracker(config) {
     baseUrl,
     endpoint = "/api/send",
     autoTrack = true,
-    respectDNT = true,
+    respectDNT = false,
+    respectGPC = true,
     domains,
     hostname: customHostname,
     tag,
@@ -113,6 +118,7 @@ function createTracker(config) {
     if (!websiteId) return false;
     if (typeof window === "undefined") return false;
     if (isBot()) return false;
+    if (respectGPC && isGPC()) return false;
     if (respectDNT && isDNT()) return false;
     if (domains && domains.length > 0) {
       const host = getHostname();

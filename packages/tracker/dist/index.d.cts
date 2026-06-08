@@ -22,8 +22,10 @@ interface TrackerConfig {
     endpoint?: string;
     /** Auto-track pageviews on route changes (default: true) */
     autoTrack?: boolean;
-    /** Respect Do-Not-Track browser setting (default: true) */
+    /** Respect the legacy Do-Not-Track signal (default: false — DNT is not legally binding) */
     respectDNT?: boolean;
+    /** Respect Global Privacy Control, a legally-recognised opt-out signal (default: true) */
+    respectGPC?: boolean;
     /** Domains to track — if set, only track on these domains (default: track all) */
     domains?: string[];
     /** Custom hostname override */

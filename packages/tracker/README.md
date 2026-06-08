@@ -39,7 +39,8 @@ Pageviews are tracked automatically, including SPA route changes.
 | `data-host-url` | No | Script origin | API base URL |
 | `data-domains` | No | Track all | Comma-separated allowlist of domains |
 | `data-auto-track` | No | `true` | Track pageviews on route changes |
-| `data-respect-dnt` | No | `true` | Respect Do Not Track and Global Privacy Control |
+| `data-respect-gpc` | No | `true` | Respect Global Privacy Control (GPC) — legally-recognised opt-out |
+| `data-do-not-track` | No | `false` | Respect the legacy Do Not Track header (not legally binding) |
 | `data-tag` | No | - | Deployment tag |
 
 ### HTML Events
@@ -91,7 +92,8 @@ interface TrackerConfig {
   baseUrl: string;
   endpoint?: string;
   autoTrack?: boolean;
-  respectDNT?: boolean;
+  respectDNT?: boolean;   // default false — legacy DNT is not legally binding
+  respectGPC?: boolean;   // default true — GPC is a recognised opt-out signal
   domains?: string[];
   hostname?: string;
   tag?: string;

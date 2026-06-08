@@ -143,21 +143,20 @@ def ingest_pageview(
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
 
-    # Fold into visit/bounce state first; ``record_visit`` returns the human
-    # digest (None for bots, which open no visit). The digest is also computed for
-    # bots and stored on the event row so the bot filter can be a **dynamic
-    # toggle**: bot traffic is counted separately and shown only when filtering off.
-    key = record_visit(
-        website_id=website_id,
-        occurred_at=now,
-        ip=ip,
-        user_agent=user_agent,
-        is_bot=is_bot,
-        url_path=url_path,
-    )
-    event_key = key or visitor_key_for(
-        website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
-    )
+    # Compute the window digest up front (best-effort). It is stored on the durable
+    # event row below even if the visit-state fold fails; a ``None`` only degrades
+    # unique-visitor counting for this one row — the pageview itself is still kept.
+    # The digest is computed for bots too so the bot filter stays a dynamic toggle.
+    try:
+        event_key: str | None = visitor_key_for(
+            website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
+        )
+    except Exception:
+        event_key = None
+        logger.warning(
+            "visitor_key computation failed; storing pageview without digest",
+            exc_info=True,
+        )
 
     raw_query(
         """
@@ -192,13 +191,27 @@ def ingest_pageview(
             "referrerDomain": _referrer_domain(payload.get("referrer"), payload.get("hostname")),
         },
     )
-    if key:
-        record_scope_presence(
+    # Best-effort visit/bounce fold AFTER the durable write, so a row-lock or
+    # contention error in ``record_visit`` can never lose the pageview. Bots open
+    # no visit (``record_visit`` returns ``None``); humans also get scope presence.
+    try:
+        key = record_visit(
             website_id=website_id,
             occurred_at=now,
-            visitor_key=key,
-            scopes=[("page", url_path), ("section", section_for_path(url_path))],
+            ip=ip,
+            user_agent=user_agent,
+            is_bot=is_bot,
+            url_path=url_path,
         )
+        if key:
+            record_scope_presence(
+                website_id=website_id,
+                occurred_at=now,
+                visitor_key=key,
+                scopes=[("page", url_path), ("section", section_for_path(url_path))],
+            )
+    except Exception:
+        logger.warning("visit-state fold failed; pageview already stored", exc_info=True)
     _maybe_rollup()
 
 
@@ -231,9 +244,17 @@ def ingest_custom_event(
 
     # Digest computed for everyone (incl. bots) so bot custom events are counted
     # separately for the dynamic bot-filter toggle; scope presence stays human-only.
-    event_key = visitor_key_for(
-        website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
-    )
+    # Best-effort: a digest failure must not drop the durable custom-event row below.
+    try:
+        event_key: str | None = visitor_key_for(
+            website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
+        )
+    except Exception:
+        event_key = None
+        logger.warning(
+            "visitor_key computation failed; storing custom event without digest",
+            exc_info=True,
+        )
 
     raw_query(
         """
@@ -268,13 +289,18 @@ def ingest_custom_event(
             "visitorKey": event_key,
         },
     )
-    if not is_bot:
-        record_scope_presence(
-            website_id=website_id,
-            occurred_at=now,
-            visitor_key=event_key,
-            scopes=[("event", clean_name)],
-        )
+    if not is_bot and event_key:
+        try:
+            record_scope_presence(
+                website_id=website_id,
+                occurred_at=now,
+                visitor_key=event_key,
+                scopes=[("event", clean_name)],
+            )
+        except Exception:
+            logger.warning(
+                "event scope-presence failed; custom event already stored", exc_info=True
+            )
 
 
 def ingest_engagement(

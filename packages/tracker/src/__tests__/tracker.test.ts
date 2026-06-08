@@ -61,6 +61,11 @@ beforeEach(() => {
     writable: true,
     configurable: true,
   });
+  Object.defineProperty(navigator, "globalPrivacyControl", {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
   Object.defineProperty(document, "title", {
     value: "Test Page",
     writable: true,
@@ -194,7 +199,18 @@ describe("controls", () => {
     expect(sentPayloads).toHaveLength(1);
   });
 
-  it("respects DNT when enabled", async () => {
+  it("ignores the legacy DNT signal by default", async () => {
+    Object.defineProperty(navigator, "doNotTrack", {
+      value: "1",
+      writable: true,
+      configurable: true,
+    });
+    const tracker = createTracker(makeConfig());
+    await tracker.pageview();
+    expect(sentPayloads).toHaveLength(1);
+  });
+
+  it("respects DNT when explicitly opted in", async () => {
     Object.defineProperty(navigator, "doNotTrack", {
       value: "1",
       writable: true,
@@ -203,6 +219,28 @@ describe("controls", () => {
     const tracker = createTracker(makeConfig({ respectDNT: true }));
     await tracker.pageview();
     expect(sentPayloads).toHaveLength(0);
+  });
+
+  it("respects Global Privacy Control by default", async () => {
+    Object.defineProperty(navigator, "globalPrivacyControl", {
+      value: true,
+      writable: true,
+      configurable: true,
+    });
+    const tracker = createTracker(makeConfig());
+    await tracker.pageview();
+    expect(sentPayloads).toHaveLength(0);
+  });
+
+  it("can opt out of GPC with respectGPC=false", async () => {
+    Object.defineProperty(navigator, "globalPrivacyControl", {
+      value: true,
+      writable: true,
+      configurable: true,
+    });
+    const tracker = createTracker(makeConfig({ respectGPC: false }));
+    await tracker.pageview();
+    expect(sentPayloads).toHaveLength(1);
   });
 
   it("does not track known bots", async () => {

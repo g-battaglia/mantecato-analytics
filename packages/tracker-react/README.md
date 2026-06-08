@@ -35,7 +35,8 @@ Wraps your app and creates a single tracker instance. Accepts all [`TrackerConfi
   websiteId="..."
   baseUrl="https://your-mantecato.com"
   autoTrack={true}          // default
-  respectDNT={true}         // default
+  respectGPC={true}         // default — honour Global Privacy Control
+  respectDNT={false}        // default — legacy DNT ignored unless opted in
   tag="production"
 >
   {children}
