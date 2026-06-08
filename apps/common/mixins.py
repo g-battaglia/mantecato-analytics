@@ -45,13 +45,10 @@ from django.http import JsonResponse
 
 from apps.common.constants import VALID_RANGE_PRESETS
 from core.mantecato_core.date_utils import (
+    VALID_GRANULARITIES,
     DateRange,
-    get_comparison_range,
     resolve_date_range,
     resolve_granularity,
-)
-from core.mantecato_core.date_utils import (
-    VALID_GRANULARITIES,
 )
 from core.mantecato_core.filters import Filter, parse_filters_from_params
 
@@ -63,9 +60,10 @@ if TYPE_CHECKING:
 
 
 # Default ``?range=`` preset when none is specified. The web pages historically
-# default to the "last 24 hours" view, while the JSON API surfaces (CLI, MCP)
+# default to the "last 7 days" view (daily granularity → the Pageviews vs
+# Visitors trend shows both lines), while the JSON API surfaces (CLI, MCP)
 # default to the broader "last 30 days" window used by external tooling.
-DEFAULT_WEB_RANGE_PRESET = "24h"
+DEFAULT_WEB_RANGE_PRESET = "7d"
 DEFAULT_API_RANGE_PRESET = "30d"
 
 # Hard cap on how many whole periods the prev/next controls may step back, so a

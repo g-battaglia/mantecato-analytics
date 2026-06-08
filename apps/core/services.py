@@ -21,6 +21,7 @@ boolean, ``revenue`` NULL → 0, JSON wrapping, width truncation) and batched
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from typing import TYPE_CHECKING
@@ -207,6 +208,18 @@ class UmamiImporter:
                 continue
             self._copy_table(src, src_table, dst_table, is_user, label, progress)
 
+        # Attribute imported pageviews: sessionise the digests just derived from
+        # Umami session_id into the permanent visitor aggregates (then discard).
+        if not self.skip_events:
+            from core.mantecato_core.visitor_counting import aggregate_events_into_daily
+
+            try:
+                aggregate_events_into_daily(self.target_website)
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Visitor aggregation after import failed", exc_info=True
+                )
+
     def replace_target_data(self) -> None:
         """Delete the destination analytics rows for the target website.
 
@@ -309,6 +322,16 @@ class UmamiImporter:
         if not used_cols:
             return
 
+        # website_event: derive the ephemeral visitor digest from Umami's
+        # session_id (a per-visitor-per-day id) so imported pageviews carry
+        # visitor attribution. The digest is hashed (not the raw session) and is
+        # discarded once the rollup aggregates the day.
+        session_idx = None
+        if dst_table == "website_event" and "visitor_key" in dst_meta and "session_id" in columns:
+            session_idx = columns.index("session_id")
+            if "visitor_key" not in used_cols:
+                used_cols.append("visitor_key")
+
         max_lengths = [dst_meta.get(c) for c in used_cols]
         placeholders = ", ".join(["%s"] * len(used_cols))
         col_list = ", ".join(f'"{c}"' for c in used_cols)
@@ -320,8 +343,11 @@ class UmamiImporter:
 
         batch = []
         for row in cur:
-            filtered = tuple(row[i] for i in indices)
-            batch.append(self._adapt_row_with_cols(filtered, used_cols, max_lengths))
+            filtered = [row[i] for i in indices]
+            if session_idx is not None:
+                sid = row[session_idx]
+                filtered.append(hashlib.sha256(str(sid).encode()).hexdigest() if sid else None)
+            batch.append(self._adapt_row_with_cols(tuple(filtered), used_cols, max_lengths))
             if len(batch) >= BATCH_SIZE:
                 self._execute_batch(insert_sql, batch)
                 progress.update(task, advance=len(batch))

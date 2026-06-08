@@ -188,12 +188,18 @@ MIDDLEWARE += [
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 
 # Exactness window for cookieless unique-visitor counting: "day" | "week" |
-# "month". The dedup salt is stable for this window, so unique visitors are
-# exact over it (and any sub-range of the live window). A longer window gives
-# more precision (e.g. exact monthly uniques) at the cost of the anonymous
-# dedup state living up to that long before the rollup discards it. Default
-# "month" for maximum precision; "day" minimises retention. See docs/privacy.md.
-VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "month").strip().lower()
+# "month". The dedup salt is stable for this window, so a visitor is counted
+# once per window. Default "day" → unique visitors over a range = sum of daily
+# uniques (the conventional, Umami-aligned figure). Use "month" for true
+# monthly uniques (lower, no cross-day double counting). See docs/privacy.md.
+VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
+
+# How long the per-event dedup digest (``website_event.visitor_key``) is kept
+# before the rollup pre-aggregates the day into the permanent anonymous
+# aggregates and NULLs the digest. Bounds fine-grained (hourly/realtime) exact
+# reads to the last N days; older ranges read the day aggregates. Higher = more
+# fine-grained history but more pseudonymous data at rest. See docs/privacy.md.
+VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=2)
 
 # ============================================================================
 # 4. URL and template configuration

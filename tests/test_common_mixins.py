@@ -104,18 +104,18 @@ class TestWebsiteContextMixin:
 
 
 class TestDateRangeMixin:
-    def test_default_preset_is_24h_for_web(self, request_factory: RequestFactory) -> None:
+    def test_default_preset_is_7d_for_web(self, request_factory: RequestFactory) -> None:
         view = _patched_setup(_WebStack, _web_request(request_factory))
-        assert view.range_preset == "24h"
+        assert view.range_preset == "7d"
         assert view.date_range is not None
 
     def test_explicit_valid_preset(self, request_factory: RequestFactory) -> None:
-        view = _patched_setup(_WebStack, _web_request(request_factory, range="7d"))
-        assert view.range_preset == "7d"
+        view = _patched_setup(_WebStack, _web_request(request_factory, range="30d"))
+        assert view.range_preset == "30d"
 
     def test_invalid_preset_falls_back_to_default(self, request_factory: RequestFactory) -> None:
         view = _patched_setup(_WebStack, _web_request(request_factory, range="not-a-real-preset"))
-        assert view.range_preset == "24h"
+        assert view.range_preset == "7d"
 
     def test_explicit_start_and_end_yields_custom(self, request_factory: RequestFactory) -> None:
         request = _web_request(
@@ -346,7 +346,7 @@ class TestBaseContextMixin:
         assert ctx["websites"] == _WEBSITES
         assert ctx["selected_website"] == WEBSITE_ID
         assert ctx["selected_website_name"] == "Test site"
-        assert ctx["range_preset"] == "24h"
+        assert ctx["range_preset"] == "7d"
         assert ctx["bot_filter"] is False
         assert ctx["range_offset"] == 0
         assert ctx["current_range"] is view.date_range

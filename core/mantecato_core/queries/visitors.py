@@ -25,9 +25,7 @@ from django.db.models.functions import Trunc
 from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
     aggregate_state,
-    current_period_key,
     current_window,
-    current_window_start,
     has_only_bot_filter,
     periods_in_range,
     utc_day,
@@ -48,34 +46,34 @@ _SUPPRESSED: dict[str, Any] = {
 
 
 def _unique_visitors(website_id: str, start_date: datetime, end_date: datetime) -> int:
-    """Exact unique visitors over a range (distinct on live window + finalised windows)."""
+    """Exact unique visitors over a range.
+
+    Per exactness window: if live ephemeral state exists for the window (not yet
+    rolled up) use its distinct digest count; otherwise use the finalised
+    ``VisitorPeriod`` aggregate. With a day window each day is a window, so the
+    total is the sum of daily uniques (Umami-aligned).
+    """
     from apps.core.models import VisitorDayState, VisitorPeriod
 
     start_day = utc_day(start_date)
     end_day = utc_day(end_date)
-    cur = current_period_key()
     total = 0
     for pk, p_start, p_end in periods_in_range(start_day, end_day, current_window()):
-        if pk == cur:
-            ov_start = max(start_day, p_start)
-            ov_end = min(end_day, p_end)
-            total += (
-                VisitorDayState.objects.filter(
-                    website_id=website_id,
-                    period=cur,
-                    day__gte=ov_start,
-                    day__lte=ov_end,
-                )
-                .values("visitor_key")
-                .distinct()
-                .count()
+        ov_start = max(start_day, p_start)
+        ov_end = min(end_day, p_end)
+        live_count = (
+            VisitorDayState.objects.filter(
+                website_id=website_id, period=pk, day__gte=ov_start, day__lte=ov_end
             )
+            .values("visitor_key")
+            .distinct()
+            .count()
+        )
+        if live_count:
+            total += live_count
         else:
             row = VisitorPeriod.objects.filter(
-                website_id=website_id,
-                period_start=p_start,
-                scope="site",
-                scope_value="",
+                website_id=website_id, period_start=p_start, scope="site", scope_value=""
             ).first()
             total += row.unique_visitors if row else 0
     return total
@@ -86,35 +84,44 @@ def read_visit_stats(
     start_date: datetime,
     end_date: datetime,
 ) -> dict[str, int]:
-    """Return exact site-level counts over a date range."""
+    """Return exact site-level counts over a date range.
+
+    Additive metrics combine live ephemeral state (un-rolled days) with the
+    finalised ``VisitorDaily`` aggregates, **excluding days that still have live
+    state** so each day is counted exactly once (no double counting, visits never
+    exceed pageviews).
+    """
     from apps.core.models import VisitorDaily, VisitorDayState
 
     start_day = utc_day(start_date)
     end_day = utc_day(end_date)
 
-    # Additive metrics: finalised per-day aggregates (days strictly before the
-    # current window) + the live state (current window). Splitting on the window
-    # boundary guarantees each day is counted once (no VisitorDaily/VisitorDayState
-    # overlap → visits never exceed pageviews).
-    window_start = current_window_start()
-    daily = VisitorDaily.objects.filter(
-        website_id=website_id,
-        scope="site",
-        scope_value="",
-        day__gte=start_day,
-        day__lte=end_day,
-        day__lt=window_start,
-    ).aggregate(
-        visits=Sum("visits"),
-        bounces=Sum("bounces"),
-        total_pageviews=Sum("total_pageviews"),
-        total_duration_s=Sum("total_duration_s"),
+    live_days = set(
+        VisitorDayState.objects.filter(
+            website_id=website_id, day__gte=start_day, day__lte=end_day
+        )
+        .values_list("day", flat=True)
+        .distinct()
     )
     live = aggregate_state(
         VisitorDayState.objects.filter(
+            website_id=website_id, day__gte=start_day, day__lte=end_day
+        )
+    )
+    daily = (
+        VisitorDaily.objects.filter(
             website_id=website_id,
-            day__gte=max(start_day, window_start),
+            scope="site",
+            scope_value="",
+            day__gte=start_day,
             day__lte=end_day,
+        )
+        .exclude(day__in=live_days)
+        .aggregate(
+            visits=Sum("visits"),
+            bounces=Sum("bounces"),
+            total_pageviews=Sum("total_pageviews"),
+            total_duration_s=Sum("total_duration_s"),
         )
     )
 
@@ -145,31 +152,27 @@ def read_scope_visitors(
         return {}
     from apps.core.models import VisitorPeriod, VisitorScopeState
 
-    cur = current_period_key()
     out: dict[str, int] = {v: 0 for v in scope_values}
     spans = periods_in_range(utc_day(start_date), utc_day(end_date), current_window())
     for pk, p_start, _p_end in spans:
-        if pk == cur:
-            rows = (
-                VisitorScopeState.objects.filter(
-                    website_id=website_id,
-                    period=cur,
-                    scope=scope,
-                    scope_value__in=scope_values,
-                )
-                .values("scope_value")
-                .annotate(n=Count("visitor_key", distinct=True))
+        live = (
+            VisitorScopeState.objects.filter(
+                website_id=website_id, period=pk, scope=scope, scope_value__in=scope_values
             )
-            for r in rows:
+            .values("scope_value")
+            .annotate(n=Count("visitor_key", distinct=True))
+        )
+        live_rows = list(live)
+        if live_rows:
+            for r in live_rows:
                 out[r["scope_value"]] = out.get(r["scope_value"], 0) + (r["n"] or 0)
         else:
-            rows = VisitorPeriod.objects.filter(
+            for r in VisitorPeriod.objects.filter(
                 website_id=website_id,
                 period_start=p_start,
                 scope=scope,
                 scope_value__in=scope_values,
-            ).values("scope_value", "unique_visitors")
-            for r in rows:
+            ).values("scope_value", "unique_visitors"):
                 out[r["scope_value"]] = out.get(r["scope_value"], 0) + (r["unique_visitors"] or 0)
     return out
 

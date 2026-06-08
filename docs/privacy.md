@@ -37,7 +37,8 @@ compute-and-discard scheme:
 
 1. A **random salt** is generated for each **exactness window** and shared
    across workers. The window is `day`, `week` or `month`
-   (`VISITOR_EXACT_WINDOW`, **default `month`**).
+   (`VISITOR_EXACT_WINDOW`, **default `day`** → unique visitors over a range are
+   the sum of daily uniques, the conventional figure).
 2. On each pageview the server computes
    `HMAC-SHA256(window_salt, website_id + IP + User-Agent)` — an ephemeral
    digest. The IP and User-Agent are used only for this computation and are
@@ -57,17 +58,24 @@ compute-and-discard scheme:
    are fully anonymous.
 
 The salt is independent from `SECRET_KEY`. During the live window the event log
-carries the window digest (pseudonymous within the window); it is discarded at
-rollup — schedule `rollup_visitors` to bound this to the window length.
+carries the window digest (pseudonymous within the window); the rollup discards
+it once the day is finalised. `VISITOR_KEY_RETENTION_DAYS` (default 2) bounds how
+long digests are kept for fine-grained (hourly/realtime) reads before the day is
+aggregated and the digests nulled — schedule `rollup_visitors` to enforce it.
+
+**Imported data:** the Umami importer hashes each event's `session_id` into the
+same `visitor_key`, so imported pageviews carry visitor attribution; the import
+sessionises those into the permanent aggregates and then discards the digests
+(`backfill_visitor_aggregates` does the same for an existing import).
 
 ### What "exact" means
 
 - **Visits** and **bounce rate** are additive → exact for any date range.
-- **Unique visitors** are exact **for the exactness window** (default month) and
+- **Unique visitors** are exact **for the exactness window** (default `day`) and
   for any sub-range of the live window. A range spanning several windows sums
-  per-window uniques (a person returning in different windows counts once per
-  window). Exact cross-window uniques / returning visitors are intentionally
-  **not** offered — they need a persistent identifier (consent).
+  per-window uniques (with the day default, the sum of daily uniques). Exact
+  cross-window uniques / returning visitors are intentionally **not** offered —
+  they need a persistent identifier (consent).
 - Per-page / per-section / per-event unique visitors are exact for the window.
 - Visitor/visit metrics are shown only without a content/device/geo filter; with
   such a filter active they read `N/A` (aggregates cannot be sliced by those
@@ -84,11 +92,12 @@ This ceiling applies to every cookieless analytics tool.
 
 ## Retention
 
-- Ephemeral digests (`visitor_day_state`, `visitor_scope_state`) and the window
-  salt (`visitor_salt`) exist for at most **one exactness window** (default ~1
-  month; set `VISITOR_EXACT_WINDOW=day` for ~24h) and are deleted by the rollup.
-  The rollup runs automatically (throttled, piggybacked on ingestion) and on
-  each deploy. **For a strict guarantee, schedule it**, e.g. a Railway Cron /
+- Ephemeral digests (`visitor_day_state`, `visitor_scope_state`, and the
+  per-event `website_event.visitor_key`) plus the window salt (`visitor_salt`)
+  are kept at most ~`VISITOR_KEY_RETENTION_DAYS` (default 2 days) before the
+  rollup aggregates the day into the permanent anonymous aggregates and discards
+  them. The rollup runs automatically (throttled, piggybacked on ingestion) and
+  on each deploy. **For a strict guarantee, schedule it**, e.g. a Railway Cron /
   Render Cron Job / system cron running:
 
   ```

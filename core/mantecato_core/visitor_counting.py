@@ -456,6 +456,116 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
     return result
 
 
+def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]:
+    """Sessionise imported per-event digests into the permanent aggregates, then discard them.
+
+    Handles data that has ``website_event.visitor_key`` but **no**
+    ``VisitorDayState`` — i.e. **imported** Umami pageviews (whose ``session_id``
+    the importer hashes into ``visitor_key``). The live path is handled by the
+    ``VisitorDayState`` rollup; ``(site, day)`` pairs that already have live state
+    are skipped to avoid double counting.
+
+    For each imported ``(site, day)`` it sessionises events per digest (30-min
+    gap) into exact site-level visitors/visits/bounces/duration, upserts
+    ``VisitorDaily``/``VisitorPeriod`` (scope ``site``), then NULLs the processed
+    digests. Idempotent (nulled rows are skipped on re-run). Pure-Python → works
+    on PostgreSQL and SQLite. Returns ``{"days", "events"}``.
+    """
+    from collections import defaultdict
+    from itertools import groupby
+
+    from apps.core.models import VisitorDaily, VisitorDayState, VisitorPeriod, WebsiteEvent
+
+    window = _window()
+    qs = WebsiteEvent.objects.filter(event_type=1, is_bot=False, visitor_key__isnull=False)
+    if website_id is not None:
+        qs = qs.filter(website_id=website_id)
+
+    live_days = {
+        (str(w), d)
+        for (w, d) in VisitorDayState.objects.values_list("website_id", "day").distinct()
+    }
+
+    site_acc: dict[tuple[str, date], dict[str, int]] = {}
+    keys_by_site: dict[str, list[str]] = defaultdict(list)
+
+    rows = (
+        qs.order_by("website_id", "visitor_key", "created_at")
+        .values("website_id", "visitor_key", "created_at")
+        .iterator()
+    )
+    for (site, key), grp in groupby(rows, key=lambda r: (str(r["website_id"]), r["visitor_key"])):
+        times = [r["created_at"] for r in grp]
+        day = utc_day(times[0])
+        if (site, day) in live_days:
+            continue
+        keys_by_site[site].append(key)
+
+        # Sessionise (30-min inactivity gap). visit_pv = pageviews in current visit.
+        visits = 1
+        visit_pv = 1
+        total_dur = 0
+        cur_dur = 0
+        last = times[0]
+        visit_pvs: list[int] = []
+        for t in times[1:]:
+            gap = max(0, int((t - last).total_seconds()))
+            if gap > SESSION_TIMEOUT_S:
+                visit_pvs.append(visit_pv)
+                total_dur += cur_dur
+                visits += 1
+                visit_pv = 1
+                cur_dur = 0
+            else:
+                visit_pv += 1
+                cur_dur += gap
+            last = t
+        visit_pvs.append(visit_pv)
+        total_dur += cur_dur
+        bounces = sum(1 for pv in visit_pvs if pv <= 1)
+
+        acc = site_acc.setdefault(
+            (site, day),
+            {
+                "unique_visitors": 0,
+                "visits": 0,
+                "bounces": 0,
+                "total_pageviews": 0,
+                "total_duration_s": 0,
+            },
+        )
+        acc["unique_visitors"] += 1
+        acc["visits"] += visits
+        acc["bounces"] += bounces
+        acc["total_pageviews"] += len(times)
+        acc["total_duration_s"] += total_dur
+
+    if not site_acc:
+        return {"days": 0, "events": 0}
+
+    nulled = 0
+    with transaction.atomic():
+        for (site, day), acc in site_acc.items():
+            p_start, _ = _period_bounds(day, window)
+            _upsert_counts(
+                VisitorDaily,
+                {"website_id": site, "day": day, "scope": "site", "scope_value": ""},
+                acc,
+            )
+            _upsert_counts(
+                VisitorPeriod,
+                {"website_id": site, "period_start": p_start, "scope": "site", "scope_value": ""},
+                acc,
+            )
+        for site, keys in keys_by_site.items():
+            for i in range(0, len(keys), 1000):
+                nulled += WebsiteEvent.objects.filter(
+                    website_id=site, visitor_key__in=keys[i : i + 1000]
+                ).update(visitor_key=None)
+
+    return {"days": len(site_acc), "events": nulled}
+
+
 def _first_day_of_period(period: str, window: str) -> date:
     """Parse a period key back to its first calendar day."""
     if window == "week":

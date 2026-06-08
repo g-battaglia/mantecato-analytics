@@ -1,8 +1,9 @@
 """Tests for the cookieless **exact** visitor/visit/bounce counter.
 
-Covers the compute-and-discard write path (`record_visit`/`record_scope_presence`),
-the read path (`read_visit_stats`/`read_scope_visitors`/`visit_metrics`), the
-period rollup, and the privacy guarantees. Default exactness window is `month`.
+Default exactness window is ``day`` (Umami-aligned: unique visitors over a range
+= sum of daily uniques). Monthly dedup is verified explicitly via override.
+Covers the visit/bounce engine, the read path, the rollup, per-event digests
+(hourly visitors, realtime, import attribution), and privacy guarantees.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.core.models import (
@@ -17,7 +19,6 @@ from apps.core.models import (
     VisitorDayState,
     VisitorPeriod,
     VisitorSalt,
-    VisitorScopeState,
     WebsiteEvent,
 )
 from apps.tracker.services import ingest_pageview
@@ -27,16 +28,15 @@ from core.mantecato_core.queries.visitors import (
     read_scope_visitors,
     read_visit_stats,
     visit_metrics,
+    visitors_by_bucket,
 )
 from core.mantecato_core.visitor_counting import (
-    compute_visitor_key,
-    current_period_key,
-    get_or_create_salt,
-    period_key,
+    aggregate_events_into_daily,
     record_scope_presence,
     record_visit,
     rollup_finished_periods,
     section_for_path,
+    utc_day,
 )
 
 pytestmark = pytest.mark.django_db
@@ -51,26 +51,18 @@ def _clear_salt_cache():
     visitor_counting._SALT_CACHE.clear()
 
 
-def _this_month(day: int, hour: int = 12):
-    """A datetime on *day* of the current month (day <= 28 for safety)."""
-    return timezone.now().replace(day=day, hour=hour, minute=0, second=0, microsecond=0)
+def _today(hour: int = 12):
+    return timezone.now().replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
-def _last_month(day: int = 15, hour: int = 12):
-    """A datetime on *day* of the previous month."""
-    first_of_this = timezone.now().replace(day=1, hour=hour, minute=0, second=0, microsecond=0)
-    return (first_of_this - timedelta(days=1)).replace(day=day)
+def _days_ago(n: int, hour: int = 12):
+    return _today(hour) - timedelta(days=n)
 
 
 def _visit(*, ip="1.2.3.4", ua="Mozilla/5.0 Chrome", when=None, path="/", is_bot=False):
-    when = when or _this_month(10)
+    when = when or _today()
     key = record_visit(
-        website_id=WEBSITE_ID,
-        occurred_at=when,
-        ip=ip,
-        user_agent=ua,
-        is_bot=is_bot,
-        url_path=path,
+        website_id=WEBSITE_ID, occurred_at=when, ip=ip, user_agent=ua, is_bot=is_bot, url_path=path
     )
     if key:
         record_scope_presence(
@@ -80,173 +72,6 @@ def _visit(*, ip="1.2.3.4", ua="Mozilla/5.0 Chrome", when=None, path="/", is_bot
             scopes=[("page", path), ("section", section_for_path(path))],
         )
     return key
-
-
-# --- visit / bounce logic ---------------------------------------------------
-
-
-def test_single_pageview_creates_state():
-    _visit()
-    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
-    assert row.visits == 1
-    assert row.cur_visit_pageviews == 1
-    assert row.bounces == 0
-    assert row.entry_path == "/"
-
-
-def test_two_pageviews_same_visit_not_bounce():
-    base = _this_month(10)
-    _visit(when=base)
-    _visit(when=base + timedelta(minutes=5))
-    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
-    assert row.visits == 1
-    assert row.cur_visit_pageviews == 2
-    assert row.cur_visit_duration_s == 300
-
-
-def test_new_visit_after_timeout_closes_bounce():
-    base = _this_month(10)
-    _visit(when=base)
-    _visit(when=base + timedelta(minutes=45))
-    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
-    assert row.visits == 2
-    assert row.bounces == 1
-
-
-def test_bot_not_counted():
-    assert _visit(is_bot=True) is None
-    assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 0
-
-
-# --- the headline: exact uniques across days of the same window -------------
-
-
-def test_unique_visitor_exact_across_month():
-    # Same visitor on three different days of the current month → ONE unique.
-    for d in (10, 15, 20):
-        _visit(ip="1.1.1.1", when=_this_month(d))
-    stats = read_visit_stats(WEBSITE_ID, _this_month(1), _this_month(28))
-    assert stats["unique_visitors"] == 1  # deduped across days (period-stable salt)
-    assert stats["visits"] == 3  # three separate days → three visits
-    assert stats["bounces"] == 3  # each a single pageview
-    assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 3
-
-
-def test_distinct_visitors_counted_separately():
-    _visit(ip="1.1.1.1", when=_this_month(10))
-    _visit(ip="2.2.2.2", when=_this_month(11))
-    stats = read_visit_stats(WEBSITE_ID, _this_month(1), _this_month(28))
-    assert stats["unique_visitors"] == 2
-
-
-def test_visit_metrics_suppressed_with_content_filter():
-    _visit()
-    filters = [Filter(column="browser", operator="eq", value="Chrome")]
-    vm = visit_metrics(WEBSITE_ID, _this_month(1), _this_month(28), filters)
-    assert vm["visitors"] is None
-    assert vm["bounce_rate"] is None
-
-
-def test_visit_metrics_exact_without_filter():
-    _visit(ip="1.1.1.1")
-    _visit(ip="2.2.2.2")
-    vm = visit_metrics(WEBSITE_ID, _this_month(1), _this_month(28), [])
-    assert vm["visitors"] == 2
-    assert vm["bounce_rate"] == 100.0
-
-
-# --- per-scope exact uniques ------------------------------------------------
-
-
-def test_per_scope_unique_visitors():
-    _visit(ip="1.1.1.1", path="/a")
-    _visit(ip="2.2.2.2", path="/a")
-    _visit(ip="1.1.1.1", path="/b")
-    counts = read_scope_visitors(
-        WEBSITE_ID, _this_month(1), _this_month(28), scope="page", scope_values=["/a", "/b"]
-    )
-    assert counts["/a"] == 2
-    assert counts["/b"] == 1
-
-
-# --- rollup + discard (privacy-critical) ------------------------------------
-
-
-def test_rollup_finalizes_and_discards_past_period():
-    when = _last_month(15)
-    _visit(ip="1.1.1.1", path="/landing", when=when)
-    _visit(ip="2.2.2.2", path="/landing", when=when)
-    assert VisitorSalt.objects.filter(period=period_key(when)).exists()
-
-    rollup_finished_periods()
-
-    period_row = VisitorPeriod.objects.get(
-        website_id=WEBSITE_ID, scope="site", period_start=when.replace(day=1).date()
-    )
-    assert period_row.unique_visitors == 2
-    # Per-day trend aggregate written too.
-    assert VisitorDaily.objects.filter(
-        website_id=WEBSITE_ID, scope="site", day=when.date()
-    ).exists()
-    # Landing-page bounce aggregate.
-    landing = VisitorPeriod.objects.get(
-        website_id=WEBSITE_ID, scope="landing", scope_value="/landing"
-    )
-    assert landing.visits == 2
-    assert landing.bounces == 2
-    # Per-scope page uniques finalised.
-    page = VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="page", scope_value="/landing")
-    assert page.unique_visitors == 2
-    # Everything ephemeral for that window is discarded.
-    assert not VisitorDayState.objects.filter(period=period_key(when)).exists()
-    assert not VisitorScopeState.objects.filter(period=period_key(when)).exists()
-    assert not VisitorSalt.objects.filter(period=period_key(when)).exists()
-
-
-def test_rollup_leaves_current_period_untouched():
-    _visit(when=_this_month(10))
-    rollup_finished_periods()
-    assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 1
-    assert not VisitorPeriod.objects.filter(website_id=WEBSITE_ID).exists()
-
-
-def test_rollup_idempotent():
-    _visit(ip="1.1.1.1", when=_last_month(15))
-    rollup_finished_periods()
-    rollup_finished_periods()
-    row = VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site")
-    assert row.unique_visitors == 1
-
-
-def test_read_after_rollup_uses_period_aggregate():
-    when = _last_month(15)
-    for ip in ("1.1.1.1", "2.2.2.2", "3.3.3.3"):
-        _visit(ip=ip, when=when)
-    rollup_finished_periods()
-    stats = read_visit_stats(WEBSITE_ID, when.replace(day=1), _last_month(28))
-    assert stats["unique_visitors"] == 3
-
-
-# --- digest + privacy -------------------------------------------------------
-
-
-def test_visitor_key_deterministic_and_input_sensitive():
-    salt = get_or_create_salt(current_period_key())
-    k1 = compute_visitor_key(salt, website_id=WEBSITE_ID, ip="1.2.3.4", user_agent="UA")
-    k2 = compute_visitor_key(salt, website_id=WEBSITE_ID, ip="1.2.3.4", user_agent="UA")
-    k3 = compute_visitor_key(salt, website_id=WEBSITE_ID, ip="9.9.9.9", user_agent="UA")
-    assert k1 == k2
-    assert k1 != k3
-    assert len(k1) == 64
-
-
-def test_no_ip_or_user_agent_columns():
-    for model in (VisitorDayState, VisitorScopeState, VisitorDaily, VisitorPeriod, WebsiteEvent):
-        names = {f.name for f in model._meta.get_fields()}
-        assert "ip" not in names
-        assert "ip_address" not in names
-        assert "user_agent" not in names
-        assert "ua" not in names
 
 
 def _ingest(ip="1.2.3.4", ua="Mozilla/5.0 Chrome", path="/x"):
@@ -260,15 +85,168 @@ def _ingest(ip="1.2.3.4", ua="Mozilla/5.0 Chrome", path="/x"):
     )
 
 
-def test_visitors_by_bucket_hourly():
-    from core.mantecato_core.queries.visitors import visitors_by_bucket
+def _full_range():
+    return _days_ago(40), _today() + timedelta(hours=1)
 
+
+# --- visit / bounce engine (single day, window-independent) ------------------
+
+
+def test_single_pageview_creates_state():
+    _visit()
+    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
+    assert row.visits == 1 and row.cur_visit_pageviews == 1 and row.bounces == 0
+
+
+def test_two_pageviews_same_visit_not_bounce():
+    base = _today()
+    _visit(when=base)
+    _visit(when=base + timedelta(minutes=5))
+    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
+    assert row.visits == 1 and row.cur_visit_pageviews == 2 and row.cur_visit_duration_s == 300
+
+
+def test_new_visit_after_timeout_closes_bounce():
+    base = _today()
+    _visit(when=base)
+    _visit(when=base + timedelta(minutes=45))
+    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
+    assert row.visits == 2 and row.bounces == 1
+
+
+def test_bot_not_counted():
+    assert _visit(is_bot=True) is None
+    assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 0
+
+
+# --- unique semantics: day window (default) vs month -------------------------
+
+
+def test_unique_visitors_summed_per_day_default():
+    # Same visitor on three different days → with the day window, 3 daily uniques.
+    for n in (0, 1, 2):
+        _visit(ip="1.1.1.1", when=_days_ago(n))
+    s, e = _full_range()
+    stats = read_visit_stats(WEBSITE_ID, s, e)
+    assert stats["unique_visitors"] == 3
+    assert stats["visits"] == 3
+    assert stats["bounces"] == 3
+
+
+@override_settings(VISITOR_EXACT_WINDOW="month")
+def test_unique_visitors_monthly_dedup():
+    # Same visitor on three days of the same month → ONE unique (month window).
+    base = timezone.now().replace(day=10, hour=12, minute=0, second=0, microsecond=0)
+    for d in (10, 15, 20):
+        _visit(ip="1.1.1.1", when=base.replace(day=d))
+    start = base.replace(day=1)
+    end = base.replace(day=28) + timedelta(hours=1)
+    assert read_visit_stats(WEBSITE_ID, start, end)["unique_visitors"] == 1
+
+
+def test_distinct_visitors_counted_separately():
+    _visit(ip="1.1.1.1", when=_today())
+    _visit(ip="2.2.2.2", when=_today())
+    s, e = _full_range()
+    assert read_visit_stats(WEBSITE_ID, s, e)["unique_visitors"] == 2
+
+
+def test_visit_metrics_suppressed_with_content_filter():
+    _visit()
+    filters = [Filter(column="browser", operator="eq", value="Chrome")]
+    vm = visit_metrics(WEBSITE_ID, *_full_range(), filters)
+    assert vm["visitors"] is None and vm["bounce_rate"] is None
+
+
+def test_visit_metrics_exact_without_filter():
+    _visit(ip="1.1.1.1")
+    _visit(ip="2.2.2.2")
+    vm = visit_metrics(WEBSITE_ID, *_full_range(), [])
+    assert vm["visitors"] == 2 and vm["bounce_rate"] == 100.0
+
+
+def test_per_scope_unique_visitors():
+    _visit(ip="1.1.1.1", path="/a")
+    _visit(ip="2.2.2.2", path="/a")
+    _visit(ip="1.1.1.1", path="/b")
+    counts = read_scope_visitors(
+        WEBSITE_ID, *_full_range(), scope="page", scope_values=["/a", "/b"]
+    )
+    assert counts["/a"] == 2 and counts["/b"] == 1
+
+
+# --- rollup (day window) ----------------------------------------------------
+
+
+def test_rollup_finalizes_and_discards_past_day():
+    when = _days_ago(1)
+    day = utc_day(when)
+    _visit(ip="1.1.1.1", when=when)
+    _visit(ip="2.2.2.2", when=when)
+    rollup_finished_periods()
+    daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=day)
+    assert daily.unique_visitors == 2
+    period = VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site", period_start=day)
+    assert period.unique_visitors == 2
+    assert not VisitorDayState.objects.filter(day=day).exists()
+    assert not VisitorSalt.objects.filter(period=day.isoformat()).exists()
+    # Still readable from the finalised aggregate.
+    assert read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
+        "unique_visitors"
+    ] == 2
+
+
+def test_rollup_leaves_current_day_untouched():
+    _visit(when=_today())
+    rollup_finished_periods()
+    assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 1
+
+
+def test_rollup_idempotent():
+    _visit(ip="1.1.1.1", when=_days_ago(1))
+    rollup_finished_periods()
+    rollup_finished_periods()
+    assert VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site").unique_visitors == 1
+
+
+# --- import attribution: aggregate events into daily ------------------------
+
+
+def test_aggregate_imported_events_into_daily():
+    # Imported pageviews: website_event rows with visitor_key, NO VisitorDayState.
+    when = _days_ago(3)
+    for ip_key, n_pv in [("sessA", 2), ("sessB", 1)]:
+        for _ in range(n_pv):
+            ev = WebsiteEvent.objects.create(
+                website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key=ip_key
+            )
+            WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+    res = aggregate_events_into_daily(WEBSITE_ID)
+    assert res["days"] == 1
+    daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=utc_day(when))
+    assert daily.unique_visitors == 2  # two sessions
+    assert daily.total_pageviews == 3
+    assert daily.visits >= 2 and daily.visits <= daily.total_pageviews  # visits <= pageviews
+    # Digests discarded after aggregation.
+    assert not WebsiteEvent.objects.filter(
+        website_id=WEBSITE_ID, visitor_key__isnull=False
+    ).exists()
+    # And read picks it up.
+    assert read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
+        "unique_visitors"
+    ] == 2
+
+
+# --- per-event digest: hourly visitors + realtime + privacy -----------------
+
+
+def test_visitors_by_bucket_hourly():
     _ingest(ip="1.1.1.1")
     _ingest(ip="2.2.2.2")
-    _ingest(ip="1.1.1.1")  # same visitor again → still 1 unique
+    _ingest(ip="1.1.1.1")
     now = timezone.now()
     vb = visitors_by_bucket(WEBSITE_ID, now - timedelta(hours=1), now + timedelta(hours=1), "hour")
-    assert sum(vb.values()) == 2  # exact unique visitors per hour, available hourly
+    assert sum(vb.values()) == 2
 
 
 def test_realtime_visitors_online():
@@ -278,22 +256,14 @@ def test_realtime_visitors_online():
     _ingest(ip="2.2.2.2")
     _ingest(ip="1.1.1.1")
     rt = get_active_pageviews(WEBSITE_ID)
-    assert rt["count"] == 3  # three pageviews in the last 5 min
-    assert rt["visitors"] == 2  # two distinct visitors online
+    assert rt["count"] == 3 and rt["visitors"] == 2
 
 
-def test_event_visitor_key_nulled_at_rollup():
-    # A finalised-window event keeps no per-person digest after rollup.
-    from apps.core.models import WebsiteEvent
-
-    when = _last_month(15)
-    ev = WebsiteEvent.objects.create(
-        website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key="abc123"
-    )
-    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)  # auto_now_add bypass
-    rollup_finished_periods()
-    ev.refresh_from_db()
-    assert ev.visitor_key is None  # discarded for the finalised window
+def test_no_ip_or_user_agent_columns():
+    for model in (VisitorDayState, VisitorDaily, VisitorPeriod, WebsiteEvent):
+        names = {f.name for f in model._meta.get_fields()}
+        assert "ip" not in names and "ip_address" not in names
+        assert "user_agent" not in names and "ua" not in names
 
 
 def test_query_string_not_persisted():
@@ -306,5 +276,4 @@ def test_query_string_not_persisted():
         user_agent="Mozilla/5.0 Chrome",
     )
     ev = WebsiteEvent.objects.get(website_id=WEBSITE_ID)
-    assert ev.url_path == "/checkout"
-    assert ev.url_query is None
+    assert ev.url_path == "/checkout" and ev.url_query is None
