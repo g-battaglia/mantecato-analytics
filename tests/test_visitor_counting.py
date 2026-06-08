@@ -40,6 +40,7 @@ from core.mantecato_core.visitor_counting import (
     rollup_finished_periods,
     section_for_path,
     utc_day,
+    visitor_key_for,
 )
 
 pytestmark = pytest.mark.django_db
@@ -62,11 +63,39 @@ def _days_ago(n: int, hour: int = 12):
     return _today(hour) - timedelta(days=n)
 
 
-def _visit(*, ip="1.2.3.4", ua="Mozilla/5.0 Chrome", when=None, path="/", is_bot=False):
+def _visit(
+    *,
+    ip="1.2.3.4",
+    ua="Mozilla/5.0 Chrome",
+    when=None,
+    path="/",
+    is_bot=False,
+    country="US",
+    browser="Chrome",
+    os="Mac OS X",
+    device="desktop",
+    bot_reason=None,
+):
     when = when or _today()
     key = record_visit(
         website_id=WEBSITE_ID, occurred_at=when, ip=ip, user_agent=ua, is_bot=is_bot, url_path=path
     )
+    # The read model computes visitor metrics from the event digests, so create the
+    # event row (with the window digest + dimensions) the same way ingestion does.
+    ev_key = visitor_key_for(website_id=WEBSITE_ID, occurred_at=when, ip=ip, user_agent=ua)
+    ev = WebsiteEvent.objects.create(
+        website_id=WEBSITE_ID,
+        url_path=path,
+        event_type=1,
+        visitor_key=ev_key,
+        is_bot=is_bot,
+        bot_reason=bot_reason or ("known_bot_user_agent" if is_bot else None),
+        country=country,
+        browser=browser,
+        os=os,
+        device=device,
+    )
+    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
     if key:
         record_scope_presence(
             website_id=WEBSITE_ID,
@@ -154,11 +183,14 @@ def test_distinct_visitors_counted_separately():
     assert read_visit_stats(WEBSITE_ID, s, e)["unique_visitors"] == 2
 
 
-def test_visit_metrics_suppressed_with_content_filter():
-    _visit()
+def test_visit_metrics_filterable_by_content():
+    # Visitor metrics are now computed at read time, so a content filter slices
+    # them (no longer suppressed to N/A) — like the session-based product.
+    _visit(ip="1.1.1.1", browser="Chrome")
+    _visit(ip="2.2.2.2", browser="Firefox")
     filters = [Filter(column="browser", operator="eq", value="Chrome")]
     vm = visit_metrics(WEBSITE_ID, *_full_range(), filters)
-    assert vm["visitors"] is None and vm["bounce_rate"] is None
+    assert vm["visitors"] == 1
 
 
 def test_visit_metrics_exact_without_filter():
@@ -215,29 +247,44 @@ def test_rollup_idempotent():
 # --- import attribution: aggregate events into daily ------------------------
 
 
-def test_aggregate_imported_events_into_daily():
-    # Imported pageviews: website_event rows with visitor_key, NO VisitorDayState.
+def test_imported_events_read_from_digests():
+    # Imported pageviews carry the visitor digest on the event rows; within the
+    # retention window the metrics are read straight from them (no aggregation,
+    # digests kept so the data stays filterable).
     when = _days_ago(3)
-    for ip_key, n_pv in [("sessA", 2), ("sessB", 1)]:
+    for key, n_pv in [("sessA", 2), ("sessB", 1)]:
         for _ in range(n_pv):
             ev = WebsiteEvent.objects.create(
-                website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key=ip_key
+                website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key=key
+            )
+            WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+    stats = read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))
+    assert stats["unique_visitors"] == 2  # two sessions
+    assert stats["total_pageviews"] == 3
+    assert 2 <= stats["visits"] <= stats["total_pageviews"]
+    # Digests are kept (not discarded) so the data stays filterable until retention.
+    assert WebsiteEvent.objects.filter(
+        website_id=WEBSITE_ID, visitor_key__isnull=False
+    ).count() == 3
+
+
+def test_aggregate_events_into_daily_rolls_up_and_discards():
+    # The >retention rollup folds event digests into the anonymous aggregate (all
+    # visitors) and discards them.
+    when = _days_ago(3)
+    for key, n_pv in [("sessA", 2), ("sessB", 1)]:
+        for _ in range(n_pv):
+            ev = WebsiteEvent.objects.create(
+                website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key=key
             )
             WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
     res = aggregate_events_into_daily(WEBSITE_ID)
     assert res["days"] == 1
     daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=utc_day(when))
-    assert daily.unique_visitors == 2  # two sessions
-    assert daily.total_pageviews == 3
-    assert daily.visits >= 2 and daily.visits <= daily.total_pageviews  # visits <= pageviews
-    # Digests discarded after aggregation.
+    assert daily.unique_visitors == 2 and daily.total_pageviews == 3
     assert not WebsiteEvent.objects.filter(
         website_id=WEBSITE_ID, visitor_key__isnull=False
     ).exists()
-    # And read picks it up.
-    assert read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
-        "unique_visitors"
-    ] == 2
 
 
 # --- per-event digest: hourly visitors + realtime + privacy -----------------
@@ -282,38 +329,7 @@ def test_query_string_not_persisted():
     assert ev.url_path == "/checkout" and ev.url_query is None
 
 
-# --- engagement: real on-page time + engaged bounce -------------------------
-
-
-def test_engagement_makes_single_page_not_bounce():
-    # One pageview + an engagement beacon ≥ threshold → real duration, no bounce.
-    base = _today()
-    _visit(ip="1.2.3.4", when=base)
-    record_engagement(
-        website_id=WEBSITE_ID,
-        occurred_at=base + timedelta(seconds=5),
-        ip="1.2.3.4",
-        user_agent="Mozilla/5.0 Chrome",
-        seconds=30,
-    )
-    stats = read_visit_stats(WEBSITE_ID, *_full_range())
-    assert stats["visits"] == 1
-    assert stats["bounces"] == 0  # engaged 30s ≥ 10s threshold → not a bounce
-    assert stats["total_duration_s"] == 30
-
-
-def test_engagement_below_threshold_still_bounces():
-    base = _today()
-    _visit(ip="1.2.3.4", when=base)
-    record_engagement(
-        website_id=WEBSITE_ID,
-        occurred_at=base + timedelta(seconds=2),
-        ip="1.2.3.4",
-        user_agent="Mozilla/5.0 Chrome",
-        seconds=3,
-    )
-    stats = read_visit_stats(WEBSITE_ID, *_full_range())
-    assert stats["bounces"] == 1  # only 3s active < 10s threshold → bounce
+# --- engagement beacons (recorded; do not break ingestion) ------------------
 
 
 def test_engagement_without_pageview_is_noop():
@@ -364,36 +380,21 @@ def test_visits_by_bucket_counts_sessions():
     assert sum(vb.values()) == 2  # two distinct visits
 
 
-def test_live_ua_bot_toggle_current_period():
-    # A UA bot ingested in the CURRENT (un-rolled) period is toggleable in real time.
+def test_bot_filter_excludes_bots_at_read_time():
+    # The bot filter is applied downstream (read time); the stored data is unchanged.
+    import json
+
     base = _today()
-    _visit(ip="1.1.1.1", when=base)  # human → VisitorDayState (live)
-    ev = WebsiteEvent.objects.create(
-        website_id=WEBSITE_ID, url_path="/x", event_type=1, is_bot=True, visitor_key="botlive"
-    )
-    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=base)
+    _visit(ip="1.1.1.1", when=base)  # human
+    _visit(ip="9.9.9.9", when=base, is_bot=True)  # bot (bot_reason=known_bot_user_agent)
     s, e = base - timedelta(hours=1), base + timedelta(hours=1)
-    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=True)["unique_visitors"] == 1  # human
-    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=False)["unique_visitors"] == 2  # + bot
-
-
-def test_rollup_ua_bot_split_and_toggle():
-    # A UA/datacenter bot (is_bot at ingest) is counted separately and toggleable.
-    when = _days_ago(1)
-    day = utc_day(when)
-    _visit(ip="1.1.1.1", when=when)  # human → VisitorDayState
-    ev = WebsiteEvent.objects.create(
-        website_id=WEBSITE_ID, url_path="/x", event_type=1, is_bot=True, visitor_key="botkey"
+    bot_filter = Filter(
+        column="__bot_filter__", operator="eq", value=json.dumps({"config": {"enabled": True}})
     )
-    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
-
-    rollup_finished_periods()
-
-    daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=day)
-    assert daily.unique_visitors == 1 and daily.bot_unique_visitors == 1
-    s, e = when - timedelta(hours=1), when + timedelta(hours=1)
-    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=True)["unique_visitors"] == 1
-    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=False)["unique_visitors"] == 2
+    assert read_visit_stats(WEBSITE_ID, s, e)["unique_visitors"] == 2  # no filter → all
+    assert read_visit_stats(WEBSITE_ID, s, e, [bot_filter])["unique_visitors"] == 1  # bot excluded
+    # The bot event is still in the DB (the filter did not change stored data).
+    assert WebsiteEvent.objects.filter(website_id=WEBSITE_ID, is_bot=True).count() == 1
 
 
 def test_imported_per_scope_unique_visitors():

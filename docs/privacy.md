@@ -67,9 +67,13 @@ compute-and-discard scheme:
 
 The salt is independent from `SECRET_KEY`. During the live window the event log
 carries the window digest (pseudonymous within the window); the rollup discards
-it once the day is finalised. `VISITOR_KEY_RETENTION_DAYS` (default 2) bounds how
-long digests are kept for fine-grained (hourly/realtime) reads before the day is
-aggregated and the digests nulled — schedule `rollup_visitors` to enforce it.
+it once the digest ages past retention. `VISITOR_KEY_RETENTION_DAYS` (default
+**396 ≈ 13 months**, the CNIL ceiling for a consent-free audience-measurement
+identifier) bounds how long the digests are kept so visitor metrics stay exact
+and **filterable** at read time; after that the rollup folds the data into the
+permanent anonymous aggregates and nulls the digests — schedule `rollup_visitors`.
+The **salt is still discarded at window end**, so a retained digest from a past
+window can no longer be re-linked to an IP/User-Agent.
 
 **Imported data:** the Umami importer hashes each event's `session_id` into the
 same `visitor_key`, so imported pageviews carry visitor attribution; the import
@@ -85,9 +89,10 @@ sessionises those into the permanent aggregates and then discards the digests
   cross-window uniques / returning visitors are intentionally **not** offered —
   they need a persistent identifier (consent).
 - Per-page / per-section / per-event unique visitors are exact for the window.
-- Visitor/visit metrics are shown only without a content/device/geo filter; with
-  such a filter active they read `N/A` (aggregates cannot be sliced by those
-  dimensions without re-introducing per-person data).
+- Visitor/visit metrics are computed from the event digests **at read time**, so a
+  content/device/geo/bot filter slices them downstream too (within the retention
+  window) — the stored data never changes. Ranges reaching past retention fold in
+  the dimensionless anonymous aggregates, which are not filterable for those days.
 
 ### The cookieless ceiling (honest limit)
 
@@ -100,20 +105,22 @@ This ceiling applies to every cookieless analytics tool.
 
 ## Retention
 
-- Ephemeral digests (`visitor_day_state`, `visitor_scope_state`, and the
-  per-event `website_event.visitor_key`) plus the window salt (`visitor_salt`)
-  are kept at most ~`VISITOR_KEY_RETENTION_DAYS` (default 2 days) before the
-  rollup aggregates the day into the permanent anonymous aggregates and discards
-  them. The rollup runs automatically (throttled, piggybacked on ingestion) and
-  on each deploy. **For a strict guarantee, schedule it**, e.g. a Railway Cron /
-  Render Cron Job / system cron running:
+- The per-event digest (`website_event.visitor_key`) is kept for
+  ~`VISITOR_KEY_RETENTION_DAYS` (default **396 ≈ 13 months**) so visitor metrics
+  stay exact and filterable at read time, then the rollup folds the data into the
+  permanent anonymous aggregates and **NULLs the digest**. The window **salt** is
+  discarded much sooner (at window end), so a retained digest from a past window
+  is no longer re-linkable to an IP/User-Agent — the extra-retained data is an
+  unlinkable token. The rollup runs automatically (throttled, on each deploy);
+  **for a strict guarantee, schedule it** (Railway/Render/system cron):
 
   ```
   python manage.py rollup_visitors
   ```
 
-  Trade-off: a longer window gives more precise unique counts (e.g. exact
-  monthly visitors) but keeps the anonymous dedup state at rest for that long.
+  Trade-off: a longer retention keeps richer (filterable) history but holds the
+  pseudonymous digests at rest for that long. 13 months is the consent-free
+  audience-measurement ceiling; lower it via the env var if you want less.
 
 - `website_event` rows are anonymous aggregates with no identifier; they are
   kept until you purge them. A per-site purge is available in Settings.
@@ -126,22 +133,19 @@ The tracker honours DNT and GPC **by default** (opt out per site with
 
 ## Bot filtering
 
-Known bots are excluded by User-Agent pattern, and requests from cloud/datacenter
-IP ranges are flagged (`bot_reason = datacenter_ip`) using a **bundled** CIDR list
-— no third-party service is contacted, and the IP is used only transiently (never
-stored, exactly as for visitor counting). Datacenter detection can be disabled
+At ingestion each event is tagged with a coarse bot classification: known bots by
+User-Agent pattern, and cloud/datacenter source IPs (`bot_reason = datacenter_ip`)
+via a **bundled** CIDR list — no third-party service is contacted, and the IP is
+used only transiently (never stored). Datacenter detection can be disabled
 (`DETECT_DATACENTER_IPS=false`) and the CIDR list extended (`DATACENTER_CIDRS`).
-Bot hits never enter the visitor/visit counts and are excluded from pageview
-breakdowns when bot filtering is enabled for a site.
 
-Bot traffic — known-UA, datacentre IP, and (when a per-site config enables them)
-behavioural rules like zero-engagement / high-velocity / datacentre clusters /
-excluded countries — is classified at aggregation time on the window digest (the
-cookieless equivalent of a session) and counted **separately** from human traffic.
-So the bot filter is a non-destructive **toggle** that also moves the exact
-**visitor/visit/bounce** counts, not only pageviews: off shows human + bot, on
-shows humans only — from the same stored anonymous integer counts either way. The
-digests themselves are discarded by the rollup as usual; nothing per-person remains.
+The bot filter is a **non-destructive, downstream (read-time) filter** — exactly
+like the session-based product: the stored data never changes, and toggling it
+re-computes the metrics. With it **off** every hit is counted; **on**, the bot
+rows (and, via the per-site config, excluded countries) are filtered out. Because
+visitor/visit counts are computed from the event digests at read time, the filter
+moves **all** of them — pageviews, visitors, visits and bounce — not just
+pageviews.
 
 ## Why no consent banner is required
 

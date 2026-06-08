@@ -194,12 +194,14 @@ SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 # monthly uniques (lower, no cross-day double counting). See docs/privacy.md.
 VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
 
-# How long the per-event dedup digest (``website_event.visitor_key``) is kept
-# before the rollup pre-aggregates the day into the permanent anonymous
-# aggregates and NULLs the digest. Bounds fine-grained (hourly/realtime) exact
-# reads to the last N days; older ranges read the day aggregates. Higher = more
-# fine-grained history but more pseudonymous data at rest. See docs/privacy.md.
-VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=2)
+# How long the per-event dedup digest (``website_event.visitor_key``) is kept so
+# exact visitor/visit/bounce counts can be computed — and **filtered** (by country,
+# device, bot rules) — at read time, like the session-based product. After this the
+# rollup folds the data into permanent anonymous aggregates and NULLs the digest.
+# Default ≈13 months: the CNIL ceiling for a consent-free audience-measurement
+# identifier. The window salt is still discarded at window end, so digests older
+# than their window are no longer re-linkable to an IP/UA. See docs/privacy.md.
+VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=396)
 
 # A single-pageview visit counts as a bounce only if its real on-page (active)
 # time stays below this many seconds — the "engaged bounce" definition powered by

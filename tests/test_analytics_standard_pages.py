@@ -325,9 +325,11 @@ class TestGeoServiceOrchestration:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.django_db
 class TestCompareServiceOrchestration:
-    # A content filter avoids the anonymous-visitor estimate (DB) path so these
-    # stay pure unit tests of the comparison orchestration.
+    # Visitor metrics are now computed at read time (from the event digests), so the
+    # comparison orchestration touches the DB; the empty test DB yields zero visitors,
+    # which does not affect the mocked-pageview assertions below.
     @staticmethod
     def _content_filter():
         from core.mantecato_core.filters import Filter

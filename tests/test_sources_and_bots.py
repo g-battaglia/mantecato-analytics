@@ -170,70 +170,78 @@ def test_compute_bot_visitor_keys_engaged_single_page_not_bot():
     assert bots == set()
 
 
-def test_import_bot_split_and_dynamic_toggle():
-    import uuid
-
-    from apps.core.models import BotConfig, VisitorDaily
-    from core.mantecato_core.queries.visitors import read_visit_stats
-    from core.mantecato_core.visitor_counting import aggregate_events_into_daily, utc_day
-
-    BotConfig.objects.create(
-        user_id=uuid.uuid4(),
-        website_id=WEBSITE_ID,
-        name="bots",
-        parameters={"enabled": True, "zeroEngagement": True},
-    )
-    base = timezone.now() - timedelta(days=1)
-    _make_events("sessA", 1, base)  # bot (single page, 0s)
-    _make_events("sessB", 2, base, gap_minutes=5)  # human
-
-    aggregate_events_into_daily(WEBSITE_ID)
-
-    # Human and bot counts are stored separately (not destroyed).
-    daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=utc_day(base))
-    assert daily.unique_visitors == 1 and daily.bot_unique_visitors == 1
-    assert daily.total_pageviews == 2 and daily.bot_total_pageviews == 1
-
-    # Dynamic toggle: ON → humans only, OFF → human + bot (same data, just hidden).
-    s, e = base - timedelta(hours=1), base + timedelta(hours=1)
-    on = read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=True)
-    off = read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=False)
-    assert on["unique_visitors"] == 1 and on["total_pageviews"] == 2
-    assert off["unique_visitors"] == 2 and off["total_pageviews"] == 3
-
-    # Digests still discarded (forward secrecy).
-    assert not WebsiteEvent.objects.filter(
-        website_id=WEBSITE_ID, visitor_key__isnull=False
-    ).exists()
+def _make_event(visitor_key, base, **fields):
+    defaults = {
+        "website_id": WEBSITE_ID,
+        "url_path": "/x",
+        "event_type": 1,
+        "visitor_key": visitor_key,
+        "country": "US",
+        "browser": "Chrome",
+        "os": "Mac OS X",
+        "device": "desktop",
+    }
+    defaults.update(fields)
+    ev = WebsiteEvent.objects.create(**defaults)
+    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=base)
 
 
-def test_visit_metrics_toggle_via_bot_filter():
-    # Exercise the exact dashboard path: visit_metrics with the synthetic
-    # __bot_filter__ filter (toggle ON) vs no filter (toggle OFF).
+def test_bot_filter_country_and_ua_at_read_time():
+    # Visitors are read from the event digests, so the bot filter (and a country
+    # exclusion) applies downstream at read time. The stored data never changes.
     import json
-    import uuid
 
-    from apps.core.models import BotConfig
+    from core.mantecato_core.filters import Filter
+    from core.mantecato_core.queries.visitors import read_visit_stats
+
+    base = timezone.now() - timedelta(days=1)
+    _make_events("human", 2, base, gap_minutes=5)  # human (US)
+    _make_event("botua", base, is_bot=True, bot_reason="known_bot_user_agent", browser="bot", os="")
+    _make_event("sg1", base, country="SG")  # Singapore visitor
+
+    s, e = base - timedelta(hours=1), base + timedelta(hours=1)
+    assert read_visit_stats(WEBSITE_ID, s, e)["unique_visitors"] == 3  # no filter → all
+
+    # Known-bot filter excludes the UA bot.
+    bf = Filter(
+        column="__bot_filter__",
+        operator="eq",
+        value=json.dumps({"config": {"enabled": True, "knownBots": True}}),
+    )
+    assert read_visit_stats(WEBSITE_ID, s, e, [bf])["unique_visitors"] == 2
+
+    # Excluding Singapore drops that visitor (the exact case reported).
+    bf_sg = Filter(
+        column="__bot_filter__",
+        operator="eq",
+        value=json.dumps(
+            {
+                "config": {
+                    "enabled": True,
+                    "knownBots": False,
+                    "emptyUa": False,
+                    "datacenterIps": False,
+                    "excludedCountries": ["SG"],
+                }
+            }
+        ),
+    )
+    assert read_visit_stats(WEBSITE_ID, s, e, [bf_sg])["unique_visitors"] == 2
+
+    # The stored data is unchanged by the filter.
+    assert WebsiteEvent.objects.filter(website_id=WEBSITE_ID).count() == 4
+
+
+def test_visit_metrics_country_filter_moves_visitors():
+    # The exact dashboard path: a content filter (country) now moves the visitor KPI.
     from core.mantecato_core.filters import Filter
     from core.mantecato_core.queries.visitors import visit_metrics
-    from core.mantecato_core.visitor_counting import aggregate_events_into_daily
 
-    BotConfig.objects.create(
-        user_id=uuid.uuid4(),
-        website_id=WEBSITE_ID,
-        name="bots",
-        parameters={"enabled": True, "zeroEngagement": True},
-    )
     base = timezone.now() - timedelta(days=1)
-    _make_events("sessA", 1, base)  # bot
-    _make_events("sessB", 2, base, gap_minutes=5)  # human
-    aggregate_events_into_daily(WEBSITE_ID)
-
+    _make_event("us1", base, country="US")
+    _make_event("sg1", base, country="SG")
     s, e = base - timedelta(hours=1), base + timedelta(hours=1)
-    bot_filter = Filter(
-        column="__bot_filter__", operator="eq", value=json.dumps({"config": {"enabled": True}})
-    )
-    on = visit_metrics(WEBSITE_ID, s, e, [bot_filter])
-    off = visit_metrics(WEBSITE_ID, s, e, [])
-    assert on["visitors"] == 1 and off["visitors"] == 2  # toggle moves visitors
-    assert on["visits"] == 1 and off["visits"] == 2  # …and visits
+
+    assert visit_metrics(WEBSITE_ID, s, e, [])["visitors"] == 2
+    only_us = [Filter(column="country", operator="eq", value="US")]
+    assert visit_metrics(WEBSITE_ID, s, e, only_us)["visitors"] == 1

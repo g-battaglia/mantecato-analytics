@@ -462,37 +462,11 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_ROLLUP_LOCK_KEY])
 
-        finished_all = VisitorDayState.objects.exclude(period=cur)
+        finished = VisitorDayState.objects.exclude(period=cur)
 
-        # Behavioural bot digests to exclude from visitor/visit/bounce counts so
-        # the bot filter applies to visitors (not just pageviews) — matching v3.
-        # The engaged on-page time keeps real single-page readers from being flagged.
-        from collections import defaultdict as _defaultdict
-
-        from core.mantecato_core.bot_sessions import compute_bot_visitor_keys, get_bot_config
-
-        bot_keys: set[str] = set()
-        days_by_site: dict[str, list[date]] = _defaultdict(list)
-        for w, d in finished_all.values_list("website_id", "day").distinct():
-            days_by_site[str(w)].append(d)
-        for site, days in days_by_site.items():
-            cfg = get_bot_config(site)
-            if not cfg.get("enabled", False):
-                continue
-            start = datetime.combine(min(days), datetime.min.time(), tzinfo=UTC)
-            end = datetime.combine(max(days), datetime.max.time(), tzinfo=UTC)
-            engaged: dict[str, float] = {}
-            for r in finished_all.filter(website_id=site).values(
-                "visitor_key", "total_duration_s", "cur_page_engaged_s"
-            ):
-                engaged[r["visitor_key"]] = (
-                    engaged.get(r["visitor_key"], 0)
-                    + (r["total_duration_s"] or 0)
-                    + (r["cur_page_engaged_s"] or 0)
-                )
-            bot_keys |= compute_bot_visitor_keys(site, start, end, cfg, engaged_dur_by_key=engaged)
-
-        finished = finished_all.exclude(visitor_key__in=bot_keys) if bot_keys else finished_all
+        # Aggregates store **all** visitors (humans + bots). The bot filter — and
+        # every other filter — is applied **downstream at read time**, never baked
+        # into the stored data, so the DB is identical whatever the filter.
 
         # 1) Per-day site aggregates (daily trend).
         for g in finished.values("website_id", "day").annotate(
@@ -508,7 +482,6 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             _upsert_daily(VisitorDaily, g, website_id=g["website_id"], day=g["day"])
 
         # 2) Per-window site aggregates (exact window uniques).
-        periods_seen: set[str] = set()
         for g in finished.values("website_id", "period").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
             visits=Sum("visits"),
@@ -522,7 +495,6 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
         ):
             p_start, _ = _period_bounds(g["min_day"], window)
             _upsert_period(VisitorPeriod, g, website_id=g["website_id"], period_start=p_start)
-            periods_seen.add(g["period"])
             result["periods"] += 1
 
         # 3) Per-window landing-page bounce (entry page of each visitor's last visit).
@@ -547,8 +519,7 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             )
 
         # 4) Per-window per-scope unique visitors (pages/sections/events).
-        scope_all = VisitorScopeState.objects.exclude(period=cur)
-        scope_qs = scope_all.exclude(visitor_key__in=bot_keys) if bot_keys else scope_all
+        scope_qs = VisitorScopeState.objects.exclude(period=cur)
         for g in scope_qs.values("website_id", "period", "scope", "scope_value").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
         ):
@@ -562,34 +533,18 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
                 unique_visitors=g["unique_visitors"] or 0,
             )
 
-        # 5) Bot aggregates: count bot visitors/visits/bounce separately (is_bot OR
-        #    behavioural) into the bot_* columns so the bot filter is a dynamic
-        #    toggle. Computed from the events BEFORE their digests are discarded.
+        # 5) Discard the window's ephemeral state + salt, and NULL the per-event
+        #    digests only **beyond the retention window** — they are kept until then
+        #    so visitor metrics stay exact and filterable at read time.
         from apps.core.models import WebsiteEvent
 
-        window_start_dt = datetime.combine(
-            _period_bounds(utc_day(timezone.now()), window)[0], datetime.min.time(), tzinfo=UTC
+        retention = int(getattr(settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+        cutoff = timezone.now() - timedelta(days=retention)
+        WebsiteEvent.objects.filter(created_at__lt=cutoff, visitor_key__isnull=False).update(
+            visitor_key=None
         )
-        bot_sites = set(days_by_site) | {
-            str(w)
-            for w in WebsiteEvent.objects.filter(
-                created_at__lt=window_start_dt, visitor_key__isnull=False, is_bot=True
-            )
-            .values_list("website_id", flat=True)
-            .distinct()
-        }
-        for site in bot_sites:
-            _aggregate_bot_events(site, window_start_dt, bot_keys, window)
-
-        # 6) Discard the window's ephemeral data + salt, and NULL the per-event
-        #    visitor digests of finalised windows so those events are anonymous.
-        WebsiteEvent.objects.filter(
-            created_at__lt=window_start_dt, visitor_key__isnull=False
-        ).update(visitor_key=None)
-        # Delete ALL finished ephemeral rows (incl. bot digests, which were
-        # excluded from the human aggregates above but must still be discarded).
-        result["scope_rows"], _ = scope_all.delete()
-        result["rows"], _ = finished_all.delete()
+        result["scope_rows"], _ = scope_qs.delete()
+        result["rows"], _ = finished.delete()
         result["salts"], _ = VisitorSalt.objects.exclude(period=cur).delete()
 
     return result
@@ -626,20 +581,10 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
         for (w, d) in VisitorDayState.objects.values_list("website_id", "day").distinct()
     }
 
-    # Behavioural bot digests to exclude from the cookieless counts so the bot
-    # filter applies to visitors/visits/bounce (not just pageviews) — matching v3.
-    from core.mantecato_core.bot_sessions import compute_bot_visitor_keys, get_bot_config
-
-    bot_keys: set[str] = set()
-    for site in {str(s) for s in qs.values_list("website_id", flat=True).distinct()}:
-        bot_keys |= compute_bot_visitor_keys(site, None, None, get_bot_config(site))
-
-    # Human and bot counts kept separate so the bot filter is a dynamic toggle.
-    human_acc: dict[tuple[str, date], dict[str, int]] = {}
-    bot_acc: dict[tuple[str, date], dict[str, int]] = {}
+    site_acc: dict[tuple[str, date], dict[str, int]] = {}
     keys_by_site: dict[str, list[str]] = defaultdict(list)
-    # Per-(period, scope, scope_value) sets of distinct **human** visitor digests,
-    # so imported data also gets exact per-page / per-section unique visitors.
+    # Per-(period, scope, scope_value) sets of distinct visitor digests, so the
+    # anonymous aggregate also carries exact per-page / per-section unique visitors.
     scope_presence: dict[tuple[str, date, str, str], set[str]] = defaultdict(set)
 
     rows = (
@@ -654,7 +599,6 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
         if (site, day) in live_days:
             continue
         keys_by_site[site].append(key)
-        is_bot_key = key in bot_keys
 
         # Sessionise (30-min inactivity gap). visit_pv = pageviews in current visit.
         visits = 1
@@ -679,7 +623,7 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
         total_dur += cur_dur
         bounces = sum(1 for pv in visit_pvs if pv <= 1)
 
-        acc = (bot_acc if is_bot_key else human_acc).setdefault(
+        acc = site_acc.setdefault(
             (site, day),
             {
                 "unique_visitors": 0,
@@ -695,21 +639,19 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
         acc["total_pageviews"] += len(times)
         acc["total_duration_s"] += total_dur
 
-        if not is_bot_key:
-            # Per-scope presence (humans only): seen on each page/section this period.
-            p_start, _ = _period_bounds(day, window)
-            pages = {(r["url_path"] or "/")[:500] for r in events}
-            for page in pages:
-                scope_presence[(site, p_start, "page", page)].add(key)
-            for sec in {section_for_path(p) for p in pages}:
-                scope_presence[(site, p_start, "section", sec)].add(key)
+        p_start, _ = _period_bounds(day, window)
+        pages = {(r["url_path"] or "/")[:500] for r in events}
+        for page in pages:
+            scope_presence[(site, p_start, "page", page)].add(key)
+        for sec in {section_for_path(p) for p in pages}:
+            scope_presence[(site, p_start, "section", sec)].add(key)
 
-    if not human_acc and not bot_acc:
+    if not site_acc:
         return {"days": 0, "events": 0}
 
     nulled = 0
     with transaction.atomic():
-        for (site, day), acc in human_acc.items():
+        for (site, day), acc in site_acc.items():
             p_start, _ = _period_bounds(day, window)
             _upsert_counts(
                 VisitorDaily,
@@ -720,18 +662,6 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
                 VisitorPeriod,
                 {"website_id": site, "period_start": p_start, "scope": "site", "scope_value": ""},
                 acc,
-            )
-        for (site, day), acc in bot_acc.items():
-            p_start, _ = _period_bounds(day, window)
-            _upsert_counts(
-                VisitorDaily,
-                {"website_id": site, "day": day, "scope": "site", "scope_value": ""},
-                _bot_vals(acc),
-            )
-            _upsert_counts(
-                VisitorPeriod,
-                {"website_id": site, "period_start": p_start, "scope": "site", "scope_value": ""},
-                _bot_vals(acc),
             )
         for (s_site, sp_start, scope, scope_value), keyset in scope_presence.items():
             _upsert_period_counts(
@@ -748,7 +678,7 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
                     website_id=site, visitor_key__in=keys[i : i + 1000]
                 ).update(visitor_key=None)
 
-    return {"days": len(set(human_acc) | set(bot_acc)), "events": nulled}
+    return {"days": len(site_acc), "events": nulled}
 
 
 def _first_day_of_period(period: str, window: str) -> date:
@@ -814,18 +744,15 @@ def _upsert_counts(model: Any, keys: dict[str, Any], vals: dict[str, int]) -> No
         model.objects.filter(pk=obj.pk).update(**{k: F(k) + v for k, v in vals.items()})
 
 
-def _bot_vals(acc: dict[str, int]) -> dict[str, int]:
-    """Map a human-shaped count dict onto the ``bot_*`` aggregate columns."""
-    return {f"bot_{k}": v for k, v in acc.items()}
-
-
 def event_visitor_stats(qs: Any) -> dict[str, int]:
     """Sessionise a ``website_event`` queryset into visitor/visit/bounce/duration totals.
 
-    Pure-Python sessioniser (30-min gap) over ``(visitor_key, created_at)`` — used to
-    count, at read time, the live-window bot visitors that have not been rolled into
-    the ``bot_*`` aggregates yet (so the bot-filter toggle works on the current period
-    too). Returns the five count fields.
+    Pure-Python sessioniser (30-min inactivity gap) over ``(visitor_key, created_at)``.
+    This is the read-time visitor counter: callers pass a **filtered** pageview
+    queryset (any country/device/bot filter applied) and get exact unique visitors,
+    sessionised visits, single-pageview bounces and gap-based duration — the
+    session-based product's numbers, on the cookieless digest. Returns the five
+    count fields.
     """
     from itertools import groupby
 
@@ -867,79 +794,6 @@ def event_visitor_stats(qs: Any) -> dict[str, int]:
         out["total_pageviews"] += len(times)
         out["total_duration_s"] += total_dur
     return out
-
-
-def _aggregate_bot_events(
-    website_id: str, before_dt: datetime, behavioral_keys: set[str], window: str
-) -> None:
-    """Sessionise bot events (``is_bot`` OR behavioural) into the ``bot_*`` columns.
-
-    Counts UA/datacentre bots (``is_bot``) and behavioural bots separately from the
-    human aggregates so the bot filter is a **dynamic toggle**. Reads
-    ``website_event`` strictly before *before_dt* (the events the rollup is about to
-    discard). Pure-Python → portable across PostgreSQL and SQLite.
-    """
-    from itertools import groupby
-
-    from apps.core.models import VisitorDaily, VisitorPeriod, WebsiteEvent
-
-    qs = WebsiteEvent.objects.filter(
-        website_id=website_id,
-        created_at__lt=before_dt,
-        event_type=1,
-        visitor_key__isnull=False,
-    ).filter(Q(is_bot=True) | Q(visitor_key__in=behavioral_keys))
-
-    bot_acc: dict[date, dict[str, int]] = {}
-    rows = (
-        qs.order_by("visitor_key", "created_at").values_list("visitor_key", "created_at").iterator()
-    )
-    for _key, grp in groupby(rows, key=lambda r: r[0]):
-        times = [t for _k, t in grp]
-        day = utc_day(times[0])
-        visits = 1
-        visit_pv = 1
-        total_dur = 0
-        cur_dur = 0
-        last = times[0]
-        visit_pvs: list[int] = []
-        for t in times[1:]:
-            gap = max(0, int((t - last).total_seconds()))
-            if gap > SESSION_TIMEOUT_S:
-                visit_pvs.append(visit_pv)
-                total_dur += cur_dur
-                visits += 1
-                visit_pv = 1
-                cur_dur = 0
-            else:
-                visit_pv += 1
-                cur_dur += gap
-            last = t
-        visit_pvs.append(visit_pv)
-        total_dur += cur_dur
-        acc = bot_acc.setdefault(
-            day,
-            {"unique_visitors": 0, "visits": 0, "bounces": 0, "total_pageviews": 0,
-             "total_duration_s": 0},
-        )
-        acc["unique_visitors"] += 1
-        acc["visits"] += visits
-        acc["bounces"] += sum(1 for pv in visit_pvs if pv <= 1)
-        acc["total_pageviews"] += len(times)
-        acc["total_duration_s"] += total_dur
-
-    for day, acc in bot_acc.items():
-        p_start, _ = _period_bounds(day, window)
-        _upsert_counts(
-            VisitorDaily,
-            {"website_id": website_id, "day": day, "scope": "site", "scope_value": ""},
-            _bot_vals(acc),
-        )
-        _upsert_counts(
-            VisitorPeriod,
-            {"website_id": website_id, "period_start": p_start, "scope": "site", "scope_value": ""},
-            _bot_vals(acc),
-        )
 
 
 # ---------------------------------------------------------------------------

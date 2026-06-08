@@ -134,10 +134,11 @@ def _attach_visitors(
     end_date: datetime,
     granularity: str,
     rows: list[dict[str, Any]],
+    filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
-    """Add exact unique ``visitors`` and ``visits`` counts per bucket (any granularity)."""
-    by_visitor = visitors_by_bucket(website_id, start_date, end_date, granularity)
-    by_visits = visits_by_bucket(website_id, start_date, end_date, granularity)
+    """Add exact unique ``visitors`` and ``visits`` per bucket (filterable, any granularity)."""
+    by_visitor = visitors_by_bucket(website_id, start_date, end_date, granularity, filters)
+    by_visits = visits_by_bucket(website_id, start_date, end_date, granularity, filters)
     for row in rows:
         row["visitors"] = by_visitor.get(row["time"], 0)
         row["visits"] = by_visits.get(row["time"], 0)
@@ -161,7 +162,7 @@ def get_pageview_time_series(
 
     if should_use_orm_fallback():
         rows = pageview_time_series_rows(website_id, start_date, end_date, gran, filters)
-        return _attach_visitors(website_id, start_date, end_date, gran, rows)
+        return _attach_visitors(website_id, start_date, end_date, gran, rows, filters)
 
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
@@ -217,7 +218,7 @@ def get_pageview_time_series(
         }
         for row in rows
     ]
-    return _attach_visitors(website_id, start_date, end_date, gran, series)
+    return _attach_visitors(website_id, start_date, end_date, gran, series, filters)
 
 
 def get_website_stats_comparison(
@@ -308,10 +309,12 @@ def get_pageview_time_series_comparison(
             "current": _attach_visitors(
                 website_id, cur_start, cur_end, gran,
                 pageview_time_series_rows(website_id, cur_start, cur_end, gran, filters),
+                filters,
             ),
             "previous": _attach_visitors(
                 website_id, prev_start, prev_end, gran,
                 pageview_time_series_rows(website_id, prev_start, prev_end, gran, filters),
+                filters,
             ),
         }
 
@@ -388,8 +391,8 @@ def get_pageview_time_series_comparison(
                 "pageviews": int(row["pageviews"] or 0),
             }
         )
-    _attach_visitors(website_id, cur_start, cur_end, gran, out["current"])
-    _attach_visitors(website_id, prev_start, prev_end, gran, out["previous"])
+    _attach_visitors(website_id, cur_start, cur_end, gran, out["current"], filters)
+    _attach_visitors(website_id, prev_start, prev_end, gran, out["previous"], filters)
     return out
 
 

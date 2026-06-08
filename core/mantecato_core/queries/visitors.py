@@ -1,231 +1,88 @@
-"""Exact visitor/visit/bounce reads from the compute-and-discard aggregates.
+"""Exact visitor/visit/bounce reads — computed **at read time** from event digests.
 
-Values are **exact within the configured exactness window**
-(``settings.VISITOR_EXACT_WINDOW``, default month):
-- ``visits``, ``bounces`` and the derived bounce rate / duration / pages-per-
-  visit are additive → exact for any date range;
-- ``visitors`` (unique) is exact for any sub-range of the live window, and per
-  finalised window; a range spanning several windows sums per-window uniques (a
-  person returning in different windows counts once per window — cross-window
-  de-duplication needs a persistent identifier, i.e. consent, intentionally not
-  done).
+Unique visitors, sessionised visits, single-pageview bounces and gap-based
+duration are derived from the per-event window digest (``website_event.visitor_key``)
+each request, exactly like the session-based product but on a cookieless token.
 
-Metrics are suppressed (``None``) when a content/device/geo filter is active:
-the aggregates store only counts, not per-row dimensions.
+Because the count is computed from the (filtered) event rows, **every filter
+applies downstream** — country, device, URL and the bot filter all slice the
+visitor metrics; nothing is baked into stored data. Exact within the digest
+retention window (``settings.VISITOR_KEY_RETENTION_DAYS``, ~13 months); ranges
+reaching past it fold in the permanent anonymous daily aggregates (which, being
+dimensionless, are not filterable). Cross-window de-duplication is intentionally
+not done (it would need a persistent identifier, i.e. consent).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from django.db.models import Count, Sum
 from django.db.models.functions import Trunc
+from django.utils import timezone
 
 from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
     SESSION_TIMEOUT_S,
-    aggregate_state,
     current_window,
-    current_window_start,
     event_visitor_stats,
     has_only_bot_filter,
     periods_in_range,
     utc_day,
 )
 
-_SUPPRESSED: dict[str, Any] = {
-    "visitors": None,
-    "visits": None,
-    "bounces": None,
-    "totaltime": None,
-    "bounce_rate": None,
-    "avg_duration": None,
-    "pages_per_visit": None,
-}
-
-
-def _live_behavioral_keys(website_id: str, start_day: Any, end_day: Any) -> set[str]:
-    """Behavioural bot digests among live (un-rolled) state in range, computed now.
-
-    Lets the bot-filter toggle drop behavioural bots from the **current** period
-    (whose digests are still present) without re-deriving the finalised aggregates.
-    Empty when bot detection is disabled for the site.
-    """
-    from apps.core.models import VisitorDayState
-    from core.mantecato_core.bot_sessions import compute_bot_visitor_keys, get_bot_config
-
-    cfg = get_bot_config(website_id)
-    if not cfg.get("enabled", False):
-        return set()
-    engaged: dict[str, float] = {}
-    for r in VisitorDayState.objects.filter(
-        website_id=website_id, day__gte=start_day, day__lte=end_day
-    ).values("visitor_key", "total_duration_s", "cur_page_engaged_s"):
-        engaged[r["visitor_key"]] = (
-            engaged.get(r["visitor_key"], 0)
-            + (r["total_duration_s"] or 0)
-            + (r["cur_page_engaged_s"] or 0)
-        )
-    return compute_bot_visitor_keys(
-        website_id,
-        datetime.combine(start_day, time.min, tzinfo=UTC),
-        datetime.combine(end_day, time.max, tzinfo=UTC),
-        cfg,
-        engaged_dur_by_key=engaged,
-    )
-
-
-def _unique_visitors(
-    website_id: str,
-    start_date: datetime,
-    end_date: datetime,
-    *,
-    bot_filter_on: bool = False,
-    behavioral_keys: set[str] | None = None,
-) -> int:
-    """Exact unique visitors over a range.
-
-    Per exactness window: live ephemeral state if present, else the finalised
-    ``VisitorPeriod`` aggregate. The bot filter is a **dynamic toggle**: with it
-    **off** the finalised bot uniques are added back; **on** also excludes
-    behavioural bots from the live window.
-    """
-    from apps.core.models import VisitorDayState, VisitorPeriod
-
-    behavioral_keys = behavioral_keys or set()
-    start_day = utc_day(start_date)
-    end_day = utc_day(end_date)
-    total = 0
-    for pk, p_start, p_end in periods_in_range(start_day, end_day, current_window()):
-        ov_start = max(start_day, p_start)
-        ov_end = min(end_day, p_end)
-        base = VisitorDayState.objects.filter(
-            website_id=website_id, period=pk, day__gte=ov_start, day__lte=ov_end
-        )
-        if base.exists():
-            live_qs = base.exclude(visitor_key__in=behavioral_keys) if (
-                bot_filter_on and behavioral_keys
-            ) else base
-            total += live_qs.values("visitor_key").distinct().count()
-        else:
-            row = VisitorPeriod.objects.filter(
-                website_id=website_id, period_start=p_start, scope="site", scope_value=""
-            ).first()
-            if row:
-                total += row.unique_visitors + (0 if bot_filter_on else row.bot_unique_visitors)
-    return total
-
 
 def read_visit_stats(
     website_id: str,
     start_date: datetime,
     end_date: datetime,
-    *,
-    bot_filter_on: bool = False,
+    filters: list[Any] | None = None,
 ) -> dict[str, int]:
-    """Return exact site-level counts over a date range.
+    """Exact site-level visitor/visit/bounce/duration over a range — **filterable**.
 
-    Combines live ephemeral state (un-rolled days) with the finalised
-    ``VisitorDaily`` aggregates, excluding days that still have live state (each
-    day counted once). The bot filter is a **dynamic toggle**: with it **off** the
-    ``bot_*`` aggregate columns are added back; **on** also drops behavioural bots
-    from the live window.
+    Computed at read time from the per-event window digests (``visitor_key``),
+    sessionised (30-min inactivity gap) into visits, so **any** filter (country,
+    device, bot rules) applies downstream like the session-based product — within
+    the digest retention window (``VISITOR_KEY_RETENTION_DAYS``, ~13 months). Older
+    data, whose digests the rollup has discarded, reads the permanent anonymous
+    daily aggregates (which cannot be filtered).
     """
-    from apps.core.models import VisitorDaily, VisitorDayState
+    from django.conf import settings as dj_settings
 
-    start_day = utc_day(start_date)
-    end_day = utc_day(end_date)
+    from apps.core.models import VisitorDaily
+    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
-    live_days = set(
-        VisitorDayState.objects.filter(
-            website_id=website_id, day__gte=start_day, day__lte=end_day
-        )
-        .values_list("day", flat=True)
-        .distinct()
-    )
-    behavioral = _live_behavioral_keys(website_id, start_day, end_day) if bot_filter_on else set()
-    live_qs = VisitorDayState.objects.filter(
-        website_id=website_id, day__gte=start_day, day__lte=end_day
-    )
-    if behavioral:
-        live_qs = live_qs.exclude(visitor_key__in=behavioral)
-    live = aggregate_state(live_qs)
+    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+    boundary = timezone.now() - timedelta(days=retention)
 
-    fields: dict[str, Any] = {
-        "visits": Sum("visits"),
-        "bounces": Sum("bounces"),
-        "total_pageviews": Sum("total_pageviews"),
-        "total_duration_s": Sum("total_duration_s"),
-    }
-    if not bot_filter_on:
-        fields.update(
-            {
-                "bot_visits": Sum("bot_visits"),
-                "bot_bounces": Sum("bot_bounces"),
-                "bot_total_pageviews": Sum("bot_total_pageviews"),
-                "bot_total_duration_s": Sum("bot_total_duration_s"),
-            }
-        )
-    daily = (
-        VisitorDaily.objects.filter(
+    # Within retention: exact and filterable, straight from the event digests.
+    ev_qs = pageview_queryset(
+        website_id, max(start_date, boundary), end_date, filters
+    ).filter(visitor_key__isnull=False)
+    stats = event_visitor_stats(ev_qs)
+
+    # Beyond retention: anonymous daily aggregates (cannot be sliced by a filter).
+    if start_date < boundary:
+        agg = VisitorDaily.objects.filter(
             website_id=website_id,
             scope="site",
             scope_value="",
-            day__gte=start_day,
-            day__lte=end_day,
+            day__gte=utc_day(start_date),
+            day__lt=utc_day(boundary),
+        ).aggregate(
+            u=Sum("unique_visitors"),
+            v=Sum("visits"),
+            b=Sum("bounces"),
+            p=Sum("total_pageviews"),
+            d=Sum("total_duration_s"),
         )
-        .exclude(day__in=live_days)
-        .aggregate(**fields)
-    )
-
-    def _final(human: str, bot: str) -> int:
-        val = daily.get(human) or 0
-        if not bot_filter_on:
-            val += daily.get(bot) or 0
-        return val
-
-    result = {
-        "unique_visitors": _unique_visitors(
-            website_id,
-            start_date,
-            end_date,
-            bot_filter_on=bot_filter_on,
-            behavioral_keys=behavioral,
-        ),
-        "visits": _final("visits", "bot_visits") + live["visits"],
-        "bounces": _final("bounces", "bot_bounces") + live["bounces"],
-        "total_pageviews": _final("total_pageviews", "bot_total_pageviews")
-        + live["total_pageviews"],
-        "total_duration_s": _final("total_duration_s", "bot_total_duration_s")
-        + live["total_duration_s"],
-    }
-
-    # Current-period UA/datacentre bots (is_bot) aren't in VisitorDayState and aren't
-    # rolled into bot_* yet. With the filter OFF, count them from the events so the
-    # toggle moves visitors on live data too (not only after the rollup).
-    if not bot_filter_on:
-        from apps.core.models import WebsiteEvent
-
-        live_start = max(
-            start_date, datetime.combine(current_window_start(), time.min, tzinfo=UTC)
-        )
-        isb = event_visitor_stats(
-            WebsiteEvent.objects.filter(
-                website_id=website_id,
-                event_type=1,
-                is_bot=True,
-                visitor_key__isnull=False,
-                created_at__gte=live_start,
-                created_at__lte=end_date,
-            )
-        )
-        result["unique_visitors"] += isb["unique_visitors"]
-        result["visits"] += isb["visits"]
-        result["bounces"] += isb["bounces"]
-        result["total_pageviews"] += isb["total_pageviews"]
-        result["total_duration_s"] += isb["total_duration_s"]
-    return result
+        stats["unique_visitors"] += agg["u"] or 0
+        stats["visits"] += agg["v"] or 0
+        stats["bounces"] += agg["b"] or 0
+        stats["total_pageviews"] += agg["p"] or 0
+        stats["total_duration_s"] += agg["d"] or 0
+    return stats
 
 
 def read_scope_visitors(
@@ -341,27 +198,22 @@ def visitors_by_bucket(
     start_date: datetime,
     end_date: datetime,
     granularity: str,
+    filters: list[Any] | None = None,
 ) -> dict[str, int]:
     """Return ``{bucket_iso: unique_visitors}`` for the time series, **any granularity**.
 
     Exact unique visitors per bucket (including per hour) come from the per-event
-    window-salted digest on ``website_event`` — so the Visitors line is always
-    available, even at hourly resolution. Buckets are truncated in UTC to match
-    the pageview series. Finalised windows (digests NULLed at rollup) contribute
-    nothing here; the chart range is normally recent (live) data.
+    window digest on ``website_event``, with the active **filters** applied (so the
+    Visitors line responds to the bot/country/device filter). Buckets are truncated
+    in UTC to match the pageview series. Digests discarded past retention contribute
+    nothing here; the chart range is normally within retention.
     """
-    from apps.core.models import WebsiteEvent
+    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
     gran = granularity if granularity in _GRANULARITIES else "day"
     rows = (
-        WebsiteEvent.objects.filter(
-            website_id=website_id,
-            created_at__gte=start_date,
-            created_at__lte=end_date,
-            event_type=1,
-            is_bot=False,
-            visitor_key__isnull=False,
-        )
+        pageview_queryset(website_id, start_date, end_date, filters)
+        .filter(visitor_key__isnull=False)
         .annotate(bucket=Trunc("created_at", gran, tzinfo=UTC))
         .values("bucket")
         .annotate(v=Count("visitor_key", distinct=True))
@@ -379,30 +231,24 @@ def visits_by_bucket(
     start_date: datetime,
     end_date: datetime,
     granularity: str,
+    filters: list[Any] | None = None,
 ) -> dict[str, int]:
     """Return ``{bucket_iso: visits}`` bucketed by each visit's start, **any granularity**.
 
-    Visits are sessionised (30-min inactivity gap) from the per-event window
-    digests on ``website_event`` and each visit is attributed to the bucket of its
-    first pageview. The bucket truncation matches :func:`visitors_by_bucket` (same
-    ``Trunc`` in UTC) so keys align with the pageview/visitors series. Finalised
-    buckets (digests NULLed at rollup) contribute nothing — like the Visitors line,
-    the chart range is normally recent (live) data.
+    Visits are sessionised (30-min inactivity gap) from the per-event window digests
+    on ``website_event`` (with the active **filters** applied) and each visit is
+    attributed to the bucket of its first pageview. The bucket truncation matches
+    :func:`visitors_by_bucket` so keys align with the pageview/visitors series.
     """
     from itertools import groupby
 
     from apps.core.models import WebsiteEvent
+    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
     gran = granularity if granularity in _GRANULARITIES else "day"
     rows = (
-        WebsiteEvent.objects.filter(
-            website_id=website_id,
-            created_at__gte=start_date,
-            created_at__lte=end_date,
-            event_type=1,
-            is_bot=False,
-            visitor_key__isnull=False,
-        )
+        pageview_queryset(website_id, start_date, end_date, filters)
+        .filter(visitor_key__isnull=False)
         .order_by("visitor_key", "created_at")
         .values_list("event_id", "visitor_key", "created_at")
         .iterator()
@@ -437,14 +283,13 @@ def visit_metrics(
     end_date: datetime,
     filters: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """Exact visitor metrics ready to merge into a stats dict (``None`` when filtered)."""
-    if not has_only_bot_filter(filters):
-        return dict(_SUPPRESSED)
+    """Exact visitor metrics ready to merge into a stats dict.
 
-    # The bot-filter toggle (``__bot_filter__`` present) excludes bots dynamically;
-    # without it the bot counts are included (same data, filter just hides them).
-    bot_on = any(getattr(f, "column", "") == "__bot_filter__" for f in (filters or []))
-    vs = read_visit_stats(website_id, start_date, end_date, bot_filter_on=bot_on)
+    Fully **filterable**: the bot filter and any content/device/geo filter apply at
+    read time (downstream), and never change what is stored. Exact within the digest
+    retention window; older data folds in the anonymous aggregates.
+    """
+    vs = read_visit_stats(website_id, start_date, end_date, filters)
     derived = compute_derived_stats(
         {
             "pageviews": vs["total_pageviews"],

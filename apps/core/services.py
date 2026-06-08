@@ -208,17 +208,12 @@ class UmamiImporter:
                 continue
             self._copy_table(src, src_table, dst_table, is_user, label, progress)
 
-        # Attribute imported pageviews: sessionise the digests just derived from
-        # Umami session_id into the permanent visitor aggregates (then discard).
-        if not self.skip_events:
-            from core.mantecato_core.visitor_counting import aggregate_events_into_daily
-
-            try:
-                aggregate_events_into_daily(self.target_website)
-            except Exception:
-                logging.getLogger(__name__).warning(
-                    "Visitor aggregation after import failed", exc_info=True
-                )
+        # Imported pageviews carry the visitor digest (hashed from Umami session_id)
+        # on the event rows. They are **kept** (not aggregated/discarded here) so the
+        # visitor/visit metrics stay exact and **filterable** at read time, like the
+        # session-based product. The scheduled rollup folds them into the anonymous
+        # aggregates and discards the digests only once they age past the retention
+        # window (``VISITOR_KEY_RETENTION_DAYS``).
 
     def replace_target_data(self) -> None:
         """Delete the destination analytics rows for the target website.
