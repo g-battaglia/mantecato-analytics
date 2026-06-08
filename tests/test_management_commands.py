@@ -247,3 +247,105 @@ class TestImportUmamiEnvCommand:
         ):
             call_command("importumamienv")
         mock_call_command.assert_not_called()
+
+
+# ============================================================================
+# purgedata
+# ============================================================================
+
+SITE_UUID = "a0000000-0000-0000-0000-000000000001"
+
+
+def _mock_site(name: str = "My Site", domain: str = "example.com") -> MagicMock:
+    site = MagicMock()
+    site.id = SITE_UUID
+    site.name = name
+    site.domain = domain
+    return site
+
+
+class TestPurgeDataCommand:
+    @patch("apps.core.management.commands.purgedata.Website")
+    def test_missing_site_raises(self, mock_website: MagicMock) -> None:
+        mock_website.objects.get.side_effect = mock_website.DoesNotExist
+        mock_website.DoesNotExist = Exception
+        mock_website.objects.get.side_effect = Exception("not found")
+        with pytest.raises(CommandError, match="No active website"):
+            call_command("purgedata", SITE_UUID)
+
+    @patch("apps.core.management.commands.purgedata.VisitorSketch")
+    @patch("apps.core.management.commands.purgedata.WebsiteEvent")
+    @patch("apps.core.management.commands.purgedata.Website")
+    def test_no_data_exits_early(
+        self, mock_website: MagicMock, mock_event: MagicMock, mock_sketch: MagicMock
+    ) -> None:
+        mock_website.objects.get.return_value = _mock_site()
+        mock_event.objects.filter.return_value.count.return_value = 0
+        mock_sketch.objects.filter.return_value.count.return_value = 0
+        out = io.StringIO()
+        call_command("purgedata", SITE_UUID, stdout=out)
+        assert "No tracking data" in out.getvalue()
+        mock_event.objects.filter.return_value.delete.assert_not_called()
+
+    @patch("apps.core.management.commands.purgedata.VisitorSketch")
+    @patch("apps.core.management.commands.purgedata.WebsiteEvent")
+    @patch("apps.core.management.commands.purgedata.Website")
+    def test_wrong_confirmation_aborts(
+        self, mock_website: MagicMock, mock_event: MagicMock, mock_sketch: MagicMock
+    ) -> None:
+        mock_website.objects.get.return_value = _mock_site()
+        mock_event.objects.filter.return_value.count.return_value = 100
+        mock_sketch.objects.filter.return_value.count.return_value = 5
+        with (
+            patch("builtins.input", return_value="wrong name"),
+            pytest.raises(CommandError, match="did not match"),
+        ):
+            call_command("purgedata", SITE_UUID)
+        mock_event.objects.filter.return_value.delete.assert_not_called()
+
+    @patch("apps.core.management.commands.purgedata.timezone")
+    @patch("apps.core.management.commands.purgedata.VisitorSketch")
+    @patch("apps.core.management.commands.purgedata.WebsiteEvent")
+    @patch("apps.core.management.commands.purgedata.Website")
+    def test_correct_confirmation_purges(
+        self,
+        mock_website: MagicMock,
+        mock_event: MagicMock,
+        mock_sketch: MagicMock,
+        mock_tz: MagicMock,
+    ) -> None:
+        site = _mock_site()
+        mock_website.objects.get.return_value = site
+        mock_event.objects.filter.return_value.count.return_value = 1000
+        mock_sketch.objects.filter.return_value.count.return_value = 50
+        mock_event.objects.filter.return_value.delete.return_value = (1000, {})
+        mock_sketch.objects.filter.return_value.delete.return_value = (50, {})
+        out = io.StringIO()
+        with patch("builtins.input", return_value="My Site"):
+            call_command("purgedata", SITE_UUID, stdout=out)
+        mock_event.objects.filter.return_value.delete.assert_called_once()
+        mock_sketch.objects.filter.return_value.delete.assert_called_once()
+        site.save.assert_called_once_with(update_fields=["reset_at"])
+        assert "1,000 events" in out.getvalue()
+
+    @patch("apps.core.management.commands.purgedata.timezone")
+    @patch("apps.core.management.commands.purgedata.VisitorSketch")
+    @patch("apps.core.management.commands.purgedata.WebsiteEvent")
+    @patch("apps.core.management.commands.purgedata.Website")
+    def test_no_input_skips_confirmation(
+        self,
+        mock_website: MagicMock,
+        mock_event: MagicMock,
+        mock_sketch: MagicMock,
+        mock_tz: MagicMock,
+    ) -> None:
+        site = _mock_site()
+        mock_website.objects.get.return_value = site
+        mock_event.objects.filter.return_value.count.return_value = 10
+        mock_sketch.objects.filter.return_value.count.return_value = 2
+        mock_event.objects.filter.return_value.delete.return_value = (10, {})
+        mock_sketch.objects.filter.return_value.delete.return_value = (2, {})
+        out = io.StringIO()
+        call_command("purgedata", SITE_UUID, "--no-input", stdout=out)
+        mock_event.objects.filter.return_value.delete.assert_called_once()
+        assert "10 events" in out.getvalue()
