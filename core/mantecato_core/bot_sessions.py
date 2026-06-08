@@ -45,6 +45,12 @@ def get_bot_config(website_id: str) -> dict[str, Any]:
     ``highVelocityThreshold``, ``clusterDetection``…) that the v2/v3 config
     carried but the trimmed v4 defaults do not enumerate. Honors the saved
     ``enabled`` flag.
+
+    When bot detection is enabled but the config does not pin ``zeroEngagement``
+    (the trimmed v4 UI doesn't expose it), it defaults to **on** — that is the
+    rule that classifies single-pageview / no-engagement hits as bots, the v2/v3
+    baseline that produces the visible visitor/visit reduction. Engagement beacons
+    keep real single-page readers (active time > 0) from being flagged.
     """
     from apps.core.models import BOT_CONFIG_DEFAULTS, BotConfig
 
@@ -53,7 +59,10 @@ def get_bot_config(website_id: str) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — never block aggregation on config lookup
         return dict(BOT_CONFIG_DEFAULTS)
     params = row.parameters if (row is not None and isinstance(row.parameters, dict)) else {}
-    return {**BOT_CONFIG_DEFAULTS, **params}
+    cfg = {**BOT_CONFIG_DEFAULTS, **params}
+    if cfg.get("enabled") and "zeroEngagement" not in params:
+        cfg["zeroEngagement"] = True
+    return cfg
 
 
 def compute_bot_visitor_keys(

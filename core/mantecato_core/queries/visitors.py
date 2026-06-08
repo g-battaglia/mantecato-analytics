@@ -27,6 +27,8 @@ from core.mantecato_core.visitor_counting import (
     SESSION_TIMEOUT_S,
     aggregate_state,
     current_window,
+    current_window_start,
+    event_visitor_stats,
     has_only_bot_filter,
     periods_in_range,
     utc_day,
@@ -183,7 +185,7 @@ def read_visit_stats(
             val += daily.get(bot) or 0
         return val
 
-    return {
+    result = {
         "unique_visitors": _unique_visitors(
             website_id,
             start_date,
@@ -198,6 +200,32 @@ def read_visit_stats(
         "total_duration_s": _final("total_duration_s", "bot_total_duration_s")
         + live["total_duration_s"],
     }
+
+    # Current-period UA/datacentre bots (is_bot) aren't in VisitorDayState and aren't
+    # rolled into bot_* yet. With the filter OFF, count them from the events so the
+    # toggle moves visitors on live data too (not only after the rollup).
+    if not bot_filter_on:
+        from apps.core.models import WebsiteEvent
+
+        live_start = max(
+            start_date, datetime.combine(current_window_start(), time.min, tzinfo=UTC)
+        )
+        isb = event_visitor_stats(
+            WebsiteEvent.objects.filter(
+                website_id=website_id,
+                event_type=1,
+                is_bot=True,
+                visitor_key__isnull=False,
+                created_at__gte=live_start,
+                created_at__lte=end_date,
+            )
+        )
+        result["unique_visitors"] += isb["unique_visitors"]
+        result["visits"] += isb["visits"]
+        result["bounces"] += isb["bounces"]
+        result["total_pageviews"] += isb["total_pageviews"]
+        result["total_duration_s"] += isb["total_duration_s"]
+    return result
 
 
 def read_scope_visitors(

@@ -364,6 +364,19 @@ def test_visits_by_bucket_counts_sessions():
     assert sum(vb.values()) == 2  # two distinct visits
 
 
+def test_live_ua_bot_toggle_current_period():
+    # A UA bot ingested in the CURRENT (un-rolled) period is toggleable in real time.
+    base = _today()
+    _visit(ip="1.1.1.1", when=base)  # human → VisitorDayState (live)
+    ev = WebsiteEvent.objects.create(
+        website_id=WEBSITE_ID, url_path="/x", event_type=1, is_bot=True, visitor_key="botlive"
+    )
+    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=base)
+    s, e = base - timedelta(hours=1), base + timedelta(hours=1)
+    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=True)["unique_visitors"] == 1  # human
+    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=False)["unique_visitors"] == 2  # + bot
+
+
 def test_rollup_ua_bot_split_and_toggle():
     # A UA/datacenter bot (is_bot at ingest) is counted separately and toggleable.
     when = _days_ago(1)

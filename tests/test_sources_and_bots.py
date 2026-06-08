@@ -205,3 +205,35 @@ def test_import_bot_split_and_dynamic_toggle():
     assert not WebsiteEvent.objects.filter(
         website_id=WEBSITE_ID, visitor_key__isnull=False
     ).exists()
+
+
+def test_visit_metrics_toggle_via_bot_filter():
+    # Exercise the exact dashboard path: visit_metrics with the synthetic
+    # __bot_filter__ filter (toggle ON) vs no filter (toggle OFF).
+    import json
+    import uuid
+
+    from apps.core.models import BotConfig
+    from core.mantecato_core.filters import Filter
+    from core.mantecato_core.queries.visitors import visit_metrics
+    from core.mantecato_core.visitor_counting import aggregate_events_into_daily
+
+    BotConfig.objects.create(
+        user_id=uuid.uuid4(),
+        website_id=WEBSITE_ID,
+        name="bots",
+        parameters={"enabled": True, "zeroEngagement": True},
+    )
+    base = timezone.now() - timedelta(days=1)
+    _make_events("sessA", 1, base)  # bot
+    _make_events("sessB", 2, base, gap_minutes=5)  # human
+    aggregate_events_into_daily(WEBSITE_ID)
+
+    s, e = base - timedelta(hours=1), base + timedelta(hours=1)
+    bot_filter = Filter(
+        column="__bot_filter__", operator="eq", value=json.dumps({"config": {"enabled": True}})
+    )
+    on = visit_metrics(WEBSITE_ID, s, e, [bot_filter])
+    off = visit_metrics(WEBSITE_ID, s, e, [])
+    assert on["visitors"] == 1 and off["visitors"] == 2  # toggle moves visitors
+    assert on["visits"] == 1 and off["visits"] == 2  # …and visits

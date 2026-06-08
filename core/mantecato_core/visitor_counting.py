@@ -819,6 +819,56 @@ def _bot_vals(acc: dict[str, int]) -> dict[str, int]:
     return {f"bot_{k}": v for k, v in acc.items()}
 
 
+def event_visitor_stats(qs: Any) -> dict[str, int]:
+    """Sessionise a ``website_event`` queryset into visitor/visit/bounce/duration totals.
+
+    Pure-Python sessioniser (30-min gap) over ``(visitor_key, created_at)`` — used to
+    count, at read time, the live-window bot visitors that have not been rolled into
+    the ``bot_*`` aggregates yet (so the bot-filter toggle works on the current period
+    too). Returns the five count fields.
+    """
+    from itertools import groupby
+
+    out = {
+        "unique_visitors": 0,
+        "visits": 0,
+        "bounces": 0,
+        "total_pageviews": 0,
+        "total_duration_s": 0,
+    }
+    rows = (
+        qs.order_by("visitor_key", "created_at").values_list("visitor_key", "created_at").iterator()
+    )
+    for _key, grp in groupby(rows, key=lambda r: r[0]):
+        times = [t for _k, t in grp]
+        visits = 1
+        visit_pv = 1
+        total_dur = 0
+        cur_dur = 0
+        last = times[0]
+        visit_pvs: list[int] = []
+        for t in times[1:]:
+            gap = max(0, int((t - last).total_seconds()))
+            if gap > SESSION_TIMEOUT_S:
+                visit_pvs.append(visit_pv)
+                total_dur += cur_dur
+                visits += 1
+                visit_pv = 1
+                cur_dur = 0
+            else:
+                visit_pv += 1
+                cur_dur += gap
+            last = t
+        visit_pvs.append(visit_pv)
+        total_dur += cur_dur
+        out["unique_visitors"] += 1
+        out["visits"] += visits
+        out["bounces"] += sum(1 for pv in visit_pvs if pv <= 1)
+        out["total_pageviews"] += len(times)
+        out["total_duration_s"] += total_dur
+    return out
+
+
 def _aggregate_bot_events(
     website_id: str, before_dt: datetime, behavioral_keys: set[str], window: str
 ) -> None:
