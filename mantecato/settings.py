@@ -187,6 +187,14 @@ MIDDLEWARE += [
 # in production to reduce log noise.
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 
+# Exactness window for cookieless unique-visitor counting: "day" | "week" |
+# "month". The dedup salt is stable for this window, so unique visitors are
+# exact over it (and any sub-range of the live window). A longer window gives
+# more precision (e.g. exact monthly uniques) at the cost of the anonymous
+# dedup state living up to that long before the rollup discards it. Default
+# "month" for maximum precision; "day" minimises retention. See docs/privacy.md.
+VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "month").strip().lower()
+
 # ============================================================================
 # 4. URL and template configuration
 # ============================================================================

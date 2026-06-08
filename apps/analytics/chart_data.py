@@ -70,6 +70,15 @@ def build_timeseries_chart_data(
         },
     ]
 
+    # Exact "Visits" series — present only at day+ granularity (visits are daily).
+    if any("visits" in p for p in timeseries):
+        datasets.append({
+            "label": "Visits",
+            "data": [p.get("visits", 0) for p in timeseries],
+            "borderColor": _TS_VISITORS_BORDER,
+            "backgroundColor": _TS_VISITORS_BG,
+        })
+
     if prev_timeseries:
         prev_pv = [p["pageviews"] for p in prev_timeseries]
         n = len(labels)

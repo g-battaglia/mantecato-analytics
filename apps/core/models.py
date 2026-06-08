@@ -14,9 +14,11 @@ Model layout:
 - :class:`Website`: tracked sites.
 - :class:`WebsiteEvent`: anonymous pageview/custom-event rows (no session_id,
   no visit_id, no referrer, no UTM, no click IDs, no event payload).
-- :class:`VisitorDaySalt`, :class:`VisitorDayState`: ephemeral compute-and-
-  discard state for exact same-day visitor/visit counting (deleted at rollup).
-- :class:`VisitorDaily`: permanent, fully anonymous daily count aggregates.
+- :class:`VisitorSalt`, :class:`VisitorDayState`, :class:`VisitorScopeState`:
+  ephemeral compute-and-discard state for exact visitor/visit counting over the
+  configured exactness window (deleted at rollup).
+- :class:`VisitorDaily`, :class:`VisitorPeriod`: permanent, fully anonymous
+  per-day and per-window count aggregates.
 - :class:`Report`: polymorphic configuration table.  Discriminated by the
   :attr:`Report.type` column whose allowed values are enumerated in
   :class:`ReportType`.
@@ -247,43 +249,48 @@ class WebsiteEvent(models.Model):
         return str(self.event_id)
 
 
-class VisitorDaySalt(models.Model):
-    """Per-UTC-day random salt for the exact compute-and-discard counter.
+class VisitorSalt(models.Model):
+    """Per-exactness-window random salt for the compute-and-discard counter.
 
-    The salt keys the HMAC that turns a request's (IP + User-Agent) into a
-    daily, site-scoped dedup digest. It is created lazily on the first event of
-    each day and **deleted** by the nightly rollup once that day is finalised,
-    so past digests can never be recomputed (forward secrecy). The salt is
-    independent from ``SECRET_KEY``.
+    The salt keys the HMAC that turns a request's (IP + User-Agent) into an
+    ephemeral, site-scoped dedup digest. ``period`` is the window key (e.g.
+    ``"2026-06"`` for a month, ``"2026-W23"`` for a week, ``"2026-06-08"`` for a
+    day) controlled by ``settings.VISITOR_EXACT_WINDOW``. The salt is created
+    lazily on the first event of the window and **deleted** by the rollup once
+    the window is finalised, so past digests can never be recomputed (forward
+    secrecy). The salt is independent from ``SECRET_KEY``.
     """
 
-    day = models.DateField(primary_key=True)
+    period = models.CharField(max_length=16, primary_key=True)
     salt = models.BinaryField(max_length=32)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "visitor_day_salt"
+        db_table = "visitor_salt"
 
     def __str__(self) -> str:
-        return f"salt:{self.day}"
+        return f"salt:{self.period}"
 
 
 class VisitorDayState(models.Model):
-    """Ephemeral per-visitor, per-day state for **exact** visit/bounce counting.
+    """Ephemeral per-visitor, per-day visit state for **exact** counting.
 
-    One row per distinct daily visitor digest. Holds only aggregate counters
-    and timestamps needed to compute exact unique visitors, visits, bounce
-    rate, pages-per-visit and on-site duration for the day. It stores **no** IP,
-    User-Agent, or reversible identifier — only the salted ``visitor_key`` whose
-    salt is discarded at rollup. Rows are deleted by the nightly rollup after
-    being aggregated into :class:`VisitorDaily`.
+    One row per ``(site, day, visitor_key)``. ``visitor_key`` is stable for the
+    whole exactness window (see :class:`VisitorSalt`), so counting distinct keys
+    across the window's days yields exact window-unique visitors, while per-day
+    rows keep visit/bounce/duration exact per day. Holds only aggregate counters
+    and timestamps — **no** IP, User-Agent, or reversible identifier. Rows are
+    deleted by the rollup once their window is finalised.
     """
 
     id = _uuid_pk()
     website_id = models.UUIDField()
     day = models.DateField()
-    # Hex-encoded HMAC-SHA256 digest (salt discarded daily → not reversible).
+    period = models.CharField(max_length=16, default="")
+    # Hex-encoded HMAC-SHA256 digest (salt discarded at rollup → not reversible).
     visitor_key = models.CharField(max_length=64)
+    # Entry (landing) path of the in-progress visit, for per-landing bounce rate.
+    entry_path = models.CharField(max_length=500, null=True, blank=True)
     first_seen = models.DateTimeField()
     last_seen = models.DateTimeField()
     # Completed-visit counters plus the in-progress ("cur") visit.
@@ -304,11 +311,49 @@ class VisitorDayState(models.Model):
         ]
         indexes = [
             models.Index(fields=["website_id", "day"], name="idx_vds_site_day"),
-            models.Index(fields=["day"], name="idx_vds_day"),
+            models.Index(fields=["website_id", "period"], name="idx_vds_site_period"),
+            models.Index(fields=["period"], name="idx_vds_period"),
         ]
 
     def __str__(self) -> str:
         return f"{self.website_id}:{self.day}:{self.visitor_key[:8]}"
+
+
+class VisitorScopeState(models.Model):
+    """Ephemeral per-(visitor, scope) presence for **exact** per-scope uniques.
+
+    One row per ``(site, period, scope, scope_value, visitor_key)`` — i.e. "this
+    visitor was seen on this page/section/event during this window". Counting
+    distinct keys per ``scope_value`` gives exact per-page/section/event unique
+    visitors for the window. Period-grained (not per-day) to bound storage to
+    visitors×content. Deleted by the rollup; only integer counts survive in
+    :class:`VisitorPeriod`.
+    """
+
+    id = _uuid_pk()
+    website_id = models.UUIDField()
+    period = models.CharField(max_length=16)
+    scope = models.CharField(max_length=20)
+    scope_value = models.CharField(max_length=500)
+    visitor_key = models.CharField(max_length=64)
+
+    class Meta:
+        db_table = "visitor_scope_state"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["website_id", "period", "scope", "scope_value", "visitor_key"],
+                name="uniq_visitor_scope_key",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["website_id", "period", "scope"], name="idx_vss_site_period_scope"
+            ),
+            models.Index(fields=["period"], name="idx_vss_period"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.website_id}:{self.period}:{self.scope}:{self.scope_value}"
 
 
 class VisitorDaily(models.Model):
@@ -350,6 +395,48 @@ class VisitorDaily(models.Model):
 
     def __str__(self) -> str:
         return f"{self.website_id}:{self.day}:{self.scope}:{self.scope_value}"
+
+
+class VisitorPeriod(models.Model):
+    """Permanent, fully anonymous per-window aggregate — exact window uniques.
+
+    ``unique_visitors`` is the exact distinct-visitor count for the whole
+    exactness window (``period_start`` = first day of the window), computed at
+    rollup before the digests are discarded. ``scope='site'`` holds the headline;
+    ``page``/``section``/``event`` hold per-scope window uniques and ``landing``
+    holds per-entry-page visits/bounces. Integer-only; nothing per-person.
+    """
+
+    id = _uuid_pk()
+    website_id = models.UUIDField()
+    period_start = models.DateField()
+    scope = models.CharField(max_length=20, default="site")
+    scope_value = models.CharField(max_length=500, blank=True, default="")
+    unique_visitors = models.IntegerField(default=0)
+    visits = models.IntegerField(default=0)
+    bounces = models.IntegerField(default=0)
+    total_pageviews = models.IntegerField(default=0)
+    total_duration_s = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "visitor_period"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["website_id", "period_start", "scope", "scope_value"],
+                name="uniq_visitor_period_scope",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["website_id", "scope", "period_start"],
+                name="idx_vp_site_scope_period",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.website_id}:{self.period_start}:{self.scope}:{self.scope_value}"
 
 
 # ---------------------------------------------------------------------------

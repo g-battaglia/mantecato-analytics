@@ -24,7 +24,12 @@ from urllib.parse import unquote, urlparse
 from django.utils import timezone
 
 from core.mantecato_core.database import raw_query
-from core.mantecato_core.visitor_counting import record_visit
+from core.mantecato_core.visitor_counting import (
+    record_scope_presence,
+    record_visit,
+    section_for_path,
+    visitor_key_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +56,12 @@ def _maybe_rollup() -> None:
     _last_rollup_attempt = now
     try:
         from core.mantecato_core.visitor_counting import (
-            has_unrolled_past_days,
-            rollup_finished_days,
+            has_unrolled_past_periods,
+            rollup_finished_periods,
         )
 
-        if has_unrolled_past_days():
-            rollup_finished_days()
+        if has_unrolled_past_periods():
+            rollup_finished_periods()
     except Exception:
         logger.warning("Lazy visitor rollup failed; will retry later", exc_info=True)
 
@@ -141,13 +146,21 @@ def ingest_pageview(
             "botReason": bot_reason[:80] if bot_reason else None,
         },
     )
-    record_visit(
+    key = record_visit(
         website_id=website_id,
         occurred_at=now,
         ip=ip,
         user_agent=user_agent,
         is_bot=is_bot,
+        url_path=url_path,
     )
+    if key:
+        record_scope_presence(
+            website_id=website_id,
+            occurred_at=now,
+            visitor_key=key,
+            scopes=[("page", url_path), ("section", section_for_path(url_path))],
+        )
     _maybe_rollup()
 
 
@@ -159,12 +172,15 @@ def ingest_custom_event(
     country: str | None,
     is_bot: bool = False,
     bot_reason: str | None = None,
+    ip: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
     """Insert an anonymous custom event count.
 
     Only the event name is stored. Arbitrary event properties are rejected by
-    omission in the view layer and never persisted. Custom events do not open
-    or affect visits — only pageviews drive visitor/visit/bounce counting.
+    omission in the view layer and never persisted. Custom events do not open or
+    affect visits, but they do contribute to per-event **unique visitor** counts
+    via the window digest derived from ``ip``/``user_agent`` (never persisted).
     """
     clean_name = str(event_name).strip()[:100]
     if not clean_name:
@@ -207,3 +223,13 @@ def ingest_custom_event(
             "botReason": bot_reason[:80] if bot_reason else None,
         },
     )
+    if not is_bot:
+        key = visitor_key_for(
+            website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
+        )
+        record_scope_presence(
+            website_id=website_id,
+            occurred_at=now,
+            visitor_key=key,
+            scopes=[("event", clean_name)],
+        )

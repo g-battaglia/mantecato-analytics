@@ -26,7 +26,7 @@ from core.mantecato_core.queries.orm_fallbacks import (
     stats_dict,
     top_sections_from_qs,
 )
-from core.mantecato_core.queries.visitors import visit_metrics
+from core.mantecato_core.queries.visitors import visit_metrics, visits_by_bucket
 
 # -- URL normalisation regex patterns -----------------------------------------
 _PATTERNS_SMART = [
@@ -58,10 +58,12 @@ def get_first_event_date(website_id: str) -> datetime | None:
     if should_use_orm_fallback():
         from apps.core.models import WebsiteEvent
 
-        return WebsiteEvent.objects.filter(website_id=website_id).order_by("created_at").values_list(
-            "created_at",
-            flat=True,
-        ).first()
+        return (
+            WebsiteEvent.objects.filter(website_id=website_id)
+            .order_by("created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
 
     rows = raw_query(
         """SELECT MIN(created_at) AS first_event
@@ -122,6 +124,24 @@ def get_website_stats(
     return base
 
 
+def _attach_visits(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    granularity: str,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Add an exact ``visits`` count per bucket (day+ granularity only)."""
+    by_bucket = visits_by_bucket(website_id, start_date, end_date, granularity)
+    if not by_bucket:
+        return rows
+    for row in rows:
+        t = row["time"]
+        bucket = (datetime.fromisoformat(t) if isinstance(t, str) else t).date()
+        row["visits"] = by_bucket.get(bucket, 0)
+    return rows
+
+
 def get_pageview_time_series(
     website_id: str,
     start_date: datetime,
@@ -129,14 +149,17 @@ def get_pageview_time_series(
     granularity: str,
     filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
-    """Generate a time-bucketed series of pageview counts.
+    """Generate a time-bucketed series of pageviews (and exact visits at day+).
 
-    Uses ``generate_series`` for gapless time buckets and ``date_trunc``
-    for aggregation. Only pageview counts (no visitors) are returned.
+    Uses ``generate_series`` for gapless time buckets and ``date_trunc`` for
+    aggregation. A ``visits`` count is attached per bucket at day/week/month
+    granularity (visits are a daily metric).
     """
+    gran = safe_identifier(granularity, GRANULARITIES, "day")
+
     if should_use_orm_fallback():
-        gran = safe_identifier(granularity, GRANULARITIES, "day")
-        return pageview_time_series_rows(website_id, start_date, end_date, gran, filters)
+        rows = pageview_time_series_rows(website_id, start_date, end_date, gran, filters)
+        return _attach_visits(website_id, start_date, end_date, gran, rows)
 
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
@@ -183,7 +206,7 @@ def get_pageview_time_series(
         },
     )
 
-    return [
+    series = [
         {
             "time": row["time"].isoformat()
             if isinstance(row["time"], datetime)
@@ -192,6 +215,7 @@ def get_pageview_time_series(
         }
         for row in rows
     ]
+    return _attach_visits(website_id, start_date, end_date, gran, series)
 
 
 def get_website_stats_comparison(
@@ -275,16 +299,22 @@ def get_pageview_time_series_comparison(
     Returns ``{"current": [...], "previous": [...]}`` with ``{"time", "pageviews"}``
     row shape.
     """
+    gran = safe_identifier(granularity, GRANULARITIES, "day")
+
     if should_use_orm_fallback():
-        gran = safe_identifier(granularity, GRANULARITIES, "day")
         return {
-            "current": pageview_time_series_rows(website_id, cur_start, cur_end, gran, filters),
-            "previous": pageview_time_series_rows(website_id, prev_start, prev_end, gran, filters),
+            "current": _attach_visits(
+                website_id, cur_start, cur_end, gran,
+                pageview_time_series_rows(website_id, cur_start, cur_end, gran, filters),
+            ),
+            "previous": _attach_visits(
+                website_id, prev_start, prev_end, gran,
+                pageview_time_series_rows(website_id, prev_start, prev_end, gran, filters),
+            ),
         }
 
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
-    gran = safe_identifier(granularity, GRANULARITIES, "day")
     gran_interval = {
         "minute": "1 minute",
         "hour": "1 hour",
@@ -356,6 +386,8 @@ def get_pageview_time_series_comparison(
                 "pageviews": int(row["pageviews"] or 0),
             }
         )
+    _attach_visits(website_id, cur_start, cur_end, gran, out["current"])
+    _attach_visits(website_id, prev_start, prev_end, gran, out["previous"])
     return out
 
 
@@ -373,12 +405,17 @@ def get_top_pages(
         from django.db.models import Count
 
         qs = pageview_queryset(website_id, start_date, end_date, filters)
-        rows = qs.values("url_path").annotate(views=Count("event_id")).order_by("-views", "url_path")
+        rows = (
+            qs.values("url_path")
+            .annotate(views=Count("event_id"))
+            .order_by("-views", "url_path")
+        )
         if page_mode == "slug" and normalize_urls:
             merged: dict[str, dict[str, int]] = {}
             norm_mode = normalize_urls if isinstance(normalize_urls, str) else "smart"
             for row in rows[: limit * 10]:
-                key = _normalize_url((row["url_path"] or "/").split("?", 1)[0].rstrip("/") or "/", norm_mode)
+                clean = (row["url_path"] or "/").split("?", 1)[0].rstrip("/") or "/"
+                key = _normalize_url(clean, norm_mode)
                 merged.setdefault(key, {"views": 0})["views"] += int(row["views"] or 0)
             result_list = [{"urlPath": path, **vals} for path, vals in merged.items()]
             result_list.sort(key=lambda x: x["views"], reverse=True)

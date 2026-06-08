@@ -13,20 +13,21 @@ from typing import Any
 
 from django.core.management.base import BaseCommand
 
-from core.mantecato_core.visitor_counting import rollup_finished_days
+from core.mantecato_core.visitor_counting import rollup_finished_periods
 
 
 class Command(BaseCommand):
-    """Aggregate finished days into ``visitor_daily`` and delete the ephemeral
-    per-visitor state + that day's salt."""
+    """Finalise past exactness-windows into the permanent aggregates and delete
+    the ephemeral per-visitor state, scope-presence rows, and salts."""
 
-    help = "Roll up and discard past-day visitor state into permanent daily aggregates."
+    help = "Roll up and discard finished-window visitor state into permanent aggregates."
 
     def handle(self, *args: Any, **options: Any) -> None:
-        result = rollup_finished_days()
+        result = rollup_finished_periods()
         self.stdout.write(
             self.style.SUCCESS(
-                f"Rolled up {result['days']} site-day(s); "
-                f"discarded {result['rows']} state row(s) and {result['salts']} salt(s)."
+                f"Rolled up {result['periods']} site-window(s); discarded "
+                f"{result['rows']} state, {result['scope_rows']} scope, "
+                f"{result['salts']} salt row(s)."
             )
         )

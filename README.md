@@ -52,7 +52,7 @@ Every metric available in the dashboard is also available through the CLI, the R
 | ⚡ **Real-time** | See aggregate pageviews happening right now and which pages are active |
 | 📈 **Analytics views** | Overview, pages, sections, events, devices, geo maps, compare, heatmap, custom dashboards |
 | 🤖 **AI-native** | MCP server, REST API, Python SDK, CLI with JSON output — every interface an agent needs to work autonomously |
-| 💻 **50+ CLI commands** | Query everything from the terminal — output in table, JSON, or CSV |
+| 💻 **CLI** | Query everything from the terminal — output in table, JSON, or CSV |
 | 🔌 **Full REST API** | 25+ endpoints with API key auth — integrate analytics into any workflow |
 | 🐍 **Python SDK** | `mantecato-client` — access everything programmatically from scripts and notebooks |
 | 🕵️ **Bot detection** | Built-in heuristics to filter out crawlers, scrapers, and automated traffic |
@@ -130,9 +130,8 @@ Operators: `eq`, `neq`, `contains`, `not_contains`, `starts_with`, `not_starts_w
 Built-in heuristics to keep your data clean:
 
 - 🕷️ **User-agent matching** — detects Googlebot, Bingbot, Yandex, Baidu, Selenium, Puppeteer, and 30+ known crawler patterns
-- 🔄 **Cluster detection** — same IP making rapid requests
-- 👻 **Zero-engagement** — sessions with no interaction
-- 🚀 **High-velocity** — suspicious request rates
+- 🫥 **Empty user-agent** — flags requests with no User-Agent
+- 🌍 **Country exclusion** — optionally drop traffic from selected countries
 
 Configurable per website — toggle each heuristic on or off from the settings page.
 
@@ -145,7 +144,7 @@ Query your analytics from the terminal. Every command supports `--format table|j
 ```bash
 mantecato overview -w <website-id> -r 7d --format table
 mantecato top-pages -w <website-id> --filter country:IT --format json
-mantecato sessions -w <website-id> -r today --format csv > sessions.csv
+mantecato events -w <website-id> -r today --format csv > events.csv
 ```
 
 ### 📊 Analytics Commands
@@ -154,20 +153,13 @@ High-level commands that mirror the dashboard views:
 
 | Command | Description |
 |---|---|
-| `overview` | Site-wide overview metrics |
+| `overview` | Site-wide overview metrics (exact visitors, visits, bounce, duration) |
 | `pages` | Page-level analytics with pagination |
-| `sources` | Traffic sources (referrers, UTM, channels) |
 | `events` | Custom event breakdown |
-| `sessions` | Session list with pagination |
-| `devices` | Browser, OS, device type, screen, language |
-| `geo` | Geographic breakdown with drill-down |
+| `devices` | Browser, OS, device type |
+| `geo` | Country-level geographic breakdown |
 | `compare` | Period-over-period comparison |
-| `retention` | Cohort retention analysis |
-| `funnels` | Multi-step conversion funnels |
-| `journeys` | Visitor path sequences |
-| `revenue` | Revenue analytics |
-| `engagement` | Engagement metrics |
-| `realtime` | Live visitor data |
+| `realtime` | Live aggregate pageview data |
 
 ### 🔎 Query Commands
 
@@ -176,23 +168,10 @@ Low-level access to the query engine — more granular, more flexible:
 | Command | Description |
 |---|---|
 | `stats` | Raw overview stats with derived metrics |
-| `timeseries` | Pageview and visitor time series |
+| `timeseries` | Pageview and visits time series |
 | `top-pages` | Top pages ranked by views (path or title mode) |
 | `top-sections` | Hierarchical URL section analysis |
-| `top-referrers` | Top referrers by visitors |
-| `top-events` | Top custom events, optionally with properties |
-| `page-detail` | Full page analysis (referrers, next pages, duration) |
-| `page-referrers` | Referrers for a specific page |
-| `next-pages` | Pages visited after a specific URL |
-| `event-detail` | Event time series and property breakdown |
 | `event-timeseries` | Time series for a single event |
-| `event-properties` | Property values for a single event |
-| `session-activity` | Full event replay for a session |
-| `channels` | Auto-grouped traffic channels |
-| `utm` | UTM parameter breakdown |
-| `clickids` | Click ID analysis (gclid, fbclid, msclkid, ttclid) |
-| `hostnames` | Hostname breakdown |
-| `referrer-pages` | Pages driven by a specific referrer |
 | `filter-values` | Available filter values for a column |
 | `heatmap` | Traffic heatmap by hour/day |
 
@@ -232,20 +211,13 @@ All `GET` requests. Pass `website` (UUID), `start_at`, `end_at`, and optional `f
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/analytics/overview/` | Aggregated site-wide metrics |
+| `GET /api/analytics/overview/` | Aggregated site-wide metrics (exact visitors/visits/bounce) |
 | `GET /api/analytics/pages/` | Page-level analytics (paginated) |
-| `GET /api/analytics/sources/` | Traffic sources |
 | `GET /api/analytics/events/` | Custom event analytics |
-| `GET /api/analytics/sessions/` | Session-level data (paginated) |
 | `GET /api/analytics/devices/` | Device/browser/OS breakdowns |
-| `GET /api/analytics/geo/` | Geographic breakdown with drill-down |
+| `GET /api/analytics/geo/` | Country-level geographic breakdown |
 | `GET /api/analytics/compare/` | Period comparison |
-| `GET /api/analytics/retention/` | Cohort retention |
-| `GET /api/analytics/funnels/` | Funnel analysis |
-| `GET /api/analytics/journeys/` | Visitor path analysis |
-| `GET /api/analytics/revenue/` | Revenue analytics |
-| `GET /api/analytics/engagement/` | Engagement metrics |
-| `GET /api/analytics/realtime/` | Live visitor activity |
+| `GET /api/analytics/realtime/` | Live aggregate pageview activity |
 
 ### 🛠️ Management Endpoints
 
@@ -361,7 +333,7 @@ with MantecatoClient("https://analytics.example.com", api_key="mtk_xxx") as clie
     overview = client.analytics.overview(site_id, date_range="30d")
     pages = client.analytics.pages(site_id, date_range="7d", page=1)
     geo = client.analytics.geo(site_id, date_range="30d", country="IT")
-    funnels = client.analytics.funnels(site_id, date_range="30d", steps=[...], window=60)
+    compare = client.analytics.compare(site_id, date_range="30d")
     realtime = client.analytics.realtime(site_id)
 
     # 🌐 Sites

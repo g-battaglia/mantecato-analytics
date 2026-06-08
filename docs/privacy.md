@@ -35,42 +35,61 @@ For every pageview the server records one anonymous row (`website_event`) with:
 To count uniques exactly **without** a stored identifier, Mantecato uses a
 compute-and-discard scheme:
 
-1. A **random salt** is generated for each UTC day and shared across workers.
+1. A **random salt** is generated for each **exactness window** and shared
+   across workers. The window is `day`, `week` or `month`
+   (`VISITOR_EXACT_WINDOW`, **default `month`**).
 2. On each pageview the server computes
-   `HMAC-SHA256(daily_salt, website_id + IP + User-Agent)` — an ephemeral
-   per-day digest. The IP and User-Agent are used only for this computation and
-   are **not stored**.
-3. The digest deduplicates a visitor **within that day only** and updates small
-   integer counters (visits, bounces, pageviews, on-site seconds).
-4. A nightly **rollup** folds those counters into permanent, fully anonymous
-   daily totals (`visitor_daily`) and **deletes** the day's digests *and its
-   salt*. Once the salt is gone the digests can never be recomputed or linked
-   (forward secrecy). No cross-day or returning-visitor linkage is possible.
+   `HMAC-SHA256(window_salt, website_id + IP + User-Agent)` — an ephemeral
+   digest. The IP and User-Agent are used only for this computation and are
+   **not stored**.
+3. The digest deduplicates a visitor **within that window only** and updates
+   small integer counters (visits, bounces, pageviews, on-site seconds), plus
+   per-page/section/event presence for exact per-scope unique counts.
+4. A **rollup** folds those counters into permanent, fully anonymous aggregates
+   (`visitor_daily` per day, `visitor_period` per window — exact window uniques)
+   and **deletes** the window's digests, scope-presence rows *and its salt*.
+   Once the salt is gone the digests can never be recomputed or linked (forward
+   secrecy). No cross-window or returning-visitor linkage is possible.
 
 The salt is independent from `SECRET_KEY`.
 
 ### What "exact" means
 
 - **Visits** and **bounce rate** are additive → exact for any date range.
-- **Unique visitors** are exact **per day**. For a multi-day range the figure is
-  the **sum of daily uniques**, so a person visiting on several days is counted
-  once per day. Exact cross-day uniques / returning visitors are intentionally
-  **not** offered (they would require a persistent identifier, i.e. consent).
+- **Unique visitors** are exact **for the exactness window** (default month) and
+  for any sub-range of the live window. A range spanning several windows sums
+  per-window uniques (a person returning in different windows counts once per
+  window). Exact cross-window uniques / returning visitors are intentionally
+  **not** offered — they need a persistent identifier (consent).
+- Per-page / per-section / per-event unique visitors are exact for the window.
 - Visitor/visit metrics are shown only without a content/device/geo filter; with
   such a filter active they read `N/A` (aggregates cannot be sliced by those
   dimensions without re-introducing per-person data).
 
+### The cookieless ceiling (honest limit)
+
+"Exact" is over the salted **IP + User-Agent** token, not over a human. Across a
+long window an IP can change (mobile / DHCP / home↔office), so the same person
+may be counted more than once, and people sharing an IP+UA may merge. The longer
+the window, the more this drifts. Tracking a *person* over time would require a
+persistent identifier (a cookie + consent), which Mantecato deliberately avoids.
+This ceiling applies to every cookieless analytics tool.
+
 ## Retention
 
-- Ephemeral per-day digests (`visitor_day_state`) and the daily salt
-  (`visitor_day_salt`) exist for at most ~24h and are deleted by the rollup.
+- Ephemeral digests (`visitor_day_state`, `visitor_scope_state`) and the window
+  salt (`visitor_salt`) exist for at most **one exactness window** (default ~1
+  month; set `VISITOR_EXACT_WINDOW=day` for ~24h) and are deleted by the rollup.
   The rollup runs automatically (throttled, piggybacked on ingestion) and on
-  each deploy. **For a strict ≤24h guarantee, schedule it daily**, e.g. a
-  Railway Cron / Render Cron Job / system cron running:
+  each deploy. **For a strict guarantee, schedule it**, e.g. a Railway Cron /
+  Render Cron Job / system cron running:
 
   ```
   python manage.py rollup_visitors
   ```
+
+  Trade-off: a longer window gives more precise unique counts (e.g. exact
+  monthly visitors) but keeps the anonymous dedup state at rest for that long.
 
 - `website_event` rows are anonymous aggregates with no identifier; they are
   kept until you purge them. A per-site purge is available in Settings.

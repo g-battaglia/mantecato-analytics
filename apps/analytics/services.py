@@ -45,7 +45,7 @@ from core.mantecato_core.queries.stats import (
     get_top_sections,
     get_website_stats_comparison,
 )
-from core.mantecato_core.queries.visitors import visit_metrics
+from core.mantecato_core.queries.visitors import read_scope_visitors, visit_metrics
 from core.mantecato_core.visitor_counting import has_only_bot_filter
 
 _UNAVAILABLE_NOTE = "Unavailable with current filters"
@@ -129,16 +129,21 @@ def _attach_scope_visitors(
     target_key: str = "visitors",
     enabled: bool = True,
 ) -> None:
-    """Set the per-scope (page/section/event) visitor column.
+    """Attach **exact** per-scope (page/section/event) unique visitors to *rows*.
 
-    Exact site-level visitor counts ship in Phase 1; exact *per-scope* unique
-    visitors need per-(scope, visitor) dedup storage and are added in a later
-    phase. Until then the column is surfaced as ``None`` (rendered as "—") so it
-    never shows a misleading estimate. ``website_id``/``start``/``end``/``scope``
-    /``value_key``/``enabled`` are kept for that future wiring.
+    Counts come from the compute-and-discard scope aggregates and are exact for
+    the exactness window. When a content/device/geo filter narrows the population
+    (``enabled=False``) the aggregates can't be sliced, so the column is ``None``
+    (rendered as "—").
     """
+    if not enabled or not rows:
+        for row in rows:
+            row[target_key] = None
+        return
+    values = [str(r.get(value_key) or "") for r in rows]
+    counts = read_scope_visitors(website_id, start, end, scope=scope, scope_values=values)
     for row in rows:
-        row[target_key] = None
+        row[target_key] = counts.get(str(row.get(value_key) or ""))
 
 
 def resolve_websites_for_user(user_id: str, is_admin: bool) -> list[dict[str, Any]]:

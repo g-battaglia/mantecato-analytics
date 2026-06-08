@@ -18,9 +18,8 @@ import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from django.db import transaction
-
 from django.contrib.auth.hashers import check_password
+from django.db import transaction
 from django.utils import timezone
 
 from apps.core.api_keys import generate_key, hash_key
@@ -329,7 +328,13 @@ def purge_website_data(
     is global, not per-site, so it is left untouched. Returns a summary dict on
     success, or ``None`` if the site was not found / not owned by the user.
     """
-    from apps.core.models import VisitorDaily, VisitorDayState, WebsiteEvent
+    from apps.core.models import (
+        VisitorDaily,
+        VisitorDayState,
+        VisitorPeriod,
+        VisitorScopeState,
+        WebsiteEvent,
+    )
 
     qs = Website.objects.filter(id=site_id, is_deleted=False)
     if not is_admin:
@@ -340,15 +345,17 @@ def purge_website_data(
 
     with transaction.atomic():
         deleted_events, _ = WebsiteEvent.objects.filter(website_id=site.id).delete()
-        deleted_state, _ = VisitorDayState.objects.filter(website_id=site.id).delete()
-        deleted_daily, _ = VisitorDaily.objects.filter(website_id=site.id).delete()
+        visitor_rows = 0
+        for model in (VisitorDayState, VisitorScopeState, VisitorDaily, VisitorPeriod):
+            n, _ = model.objects.filter(website_id=site.id).delete()
+            visitor_rows += n
         site.reset_at = timezone.now()
         site.save(update_fields=["reset_at"])
 
     return {
         "name": site.name,
         "events": deleted_events,
-        "visitor_rows": deleted_state + deleted_daily,
+        "visitor_rows": visitor_rows,
     }
 
 

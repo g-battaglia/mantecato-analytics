@@ -4,7 +4,7 @@ Cookieless mode: pageviews, custom-event names, device, country, heatmap,
 realtime pageviews, and exact (compute-and-discard) visitor/visit/bounce counts.
 
 Active modules:
-    stats           Aggregate pageview counts, time series, top pages, top sections, country breakdown.
+    stats           Pageview counts, time series, top pages/sections, country breakdown.
     pageviews       Per-URL pageview metrics with pagination.
     realtime        Realtime aggregate pageviews and current pages.
     events          Custom-event counts by event name.
@@ -38,12 +38,14 @@ from core.mantecato_core.queries.stats import (
     get_website_stats_comparison,
 )
 from core.mantecato_core.queries.visitors import (
+    read_scope_visitors,
     read_visit_stats,
     visit_metrics,
 )
 
 __all__ = [
     "get_active_pageviews",
+    "read_scope_visitors",
     "read_visit_stats",
     "visit_metrics",
     "get_comparison_stats",

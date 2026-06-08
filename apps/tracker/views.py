@@ -127,6 +127,8 @@ class IngestView(View):
                 country=country,
                 is_bot=is_bot,
                 bot_reason=bot_reason,
+                ip=ip,
+                user_agent=ua_string,
             )
         else:
             ingest_pageview(
