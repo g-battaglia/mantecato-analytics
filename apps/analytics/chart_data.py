@@ -18,6 +18,8 @@ _TS_PAGEVIEWS_BORDER = "rgb(99, 102, 241)"
 _TS_PAGEVIEWS_BG = "rgba(99, 102, 241, 0.1)"
 _TS_VISITORS_BORDER = "rgb(34, 197, 94)"
 _TS_VISITORS_BG = "rgba(34, 197, 94, 0.1)"
+_TS_VISITS_BORDER = "rgb(245, 158, 11)"
+_TS_VISITS_BG = "rgba(245, 158, 11, 0.1)"
 
 # Doughnut palette reused for device / browser / OS slices.
 _DIMENSION_PALETTE = (
@@ -51,7 +53,7 @@ def build_timeseries_chart_data(
     timeseries: list[dict],
     prev_timeseries: list[dict] | None = None,
 ) -> dict:
-    """Convert ``[{"time", "pageviews", "visitors"}, ...]`` to Chart.js shape.
+    """Convert ``[{"time", "pageviews", "visitors", "visits"}, ...]`` to Chart.js shape.
 
     When *prev_timeseries* is provided, a dashed dataset is appended
     representing the previous period. Aligned by index — zero-padded if shorter,
@@ -77,6 +79,15 @@ def build_timeseries_chart_data(
             "data": [p.get("visitors", 0) for p in timeseries],
             "borderColor": _TS_VISITORS_BORDER,
             "backgroundColor": _TS_VISITORS_BG,
+        })
+
+    # Exact "Visits" series — sessionised, bucketed by each visit's start time.
+    if any("visits" in p for p in timeseries):
+        datasets.append({
+            "label": "Visits",
+            "data": [p.get("visits", 0) for p in timeseries],
+            "borderColor": _TS_VISITS_BORDER,
+            "backgroundColor": _TS_VISITS_BG,
         })
 
     if prev_timeseries:

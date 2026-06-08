@@ -66,6 +66,11 @@ beforeEach(() => {
     writable: true,
     configurable: true,
   });
+  Object.defineProperty(document, "referrer", {
+    value: "",
+    writable: true,
+    configurable: true,
+  });
 });
 
 afterEach(() => {
@@ -105,7 +110,7 @@ describe("pageview", () => {
     });
   });
 
-  it("allows overriding url and title, not referrer/language", async () => {
+  it("overrides url and title; omits empty referrer and never sends language", async () => {
     const tracker = createTracker(makeConfig());
     await tracker.pageview({ url: "/custom", title: "Custom" });
 
@@ -114,6 +119,19 @@ describe("pageview", () => {
     expect(payload.payload.title).toBe("Custom");
     expect(payload.payload.referrer).toBeUndefined();
     expect(payload.payload.language).toBeUndefined();
+  });
+
+  it("includes the referrer when the document has one (domain reduced server-side)", async () => {
+    Object.defineProperty(document, "referrer", {
+      value: "https://news.example.org/article?x=1",
+      writable: true,
+      configurable: true,
+    });
+    const tracker = createTracker(makeConfig());
+    await tracker.pageview();
+
+    const payload = lastPayload();
+    expect(payload.payload.referrer).toBe("https://news.example.org/article?x=1");
   });
 });
 

@@ -11,6 +11,10 @@ function getTitle() {
   if (typeof document === "undefined") return "";
   return document.title;
 }
+function getReferrer() {
+  if (typeof document === "undefined") return "";
+  return document.referrer || "";
+}
 function isDNT() {
   const w = typeof window !== "undefined" ? window : {};
   const n = typeof navigator !== "undefined" ? navigator : {};
@@ -19,7 +23,8 @@ function isDNT() {
 }
 function isBot() {
   if (typeof navigator === "undefined") return false;
-  return /bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent);
+  if (navigator.webdriver === true) return true;
+  return /bot|crawl|spider|slurp|lighthouse|headless/i.test(navigator.userAgent);
 }
 var SPA_DELAY = 300;
 function createTracker(config) {
@@ -35,11 +40,37 @@ function createTracker(config) {
     excludeSearch = false,
     excludeHash = false,
     beforeSend,
-    credentials = "omit"
+    credentials = "omit",
+    engagement = true,
+    heartbeatMs = 15e3
   } = config;
   let enabled = true;
   let currentUrl = "";
   let cleanupFns = [];
+  let activeMs = 0;
+  let activeStart = 0;
+  let heartbeatTimer = null;
+  function isVisible() {
+    return typeof document === "undefined" || document.visibilityState !== "hidden";
+  }
+  function startActive() {
+    if (activeStart === 0 && isVisible()) activeStart = Date.now();
+  }
+  function stopActive() {
+    if (activeStart !== 0) {
+      activeMs += Date.now() - activeStart;
+      activeStart = 0;
+    }
+  }
+  function activeSeconds() {
+    let ms = activeMs;
+    if (activeStart !== 0) ms += Date.now() - activeStart;
+    return Math.round(ms / 1e3);
+  }
+  function resetActive() {
+    activeMs = 0;
+    activeStart = isVisible() ? Date.now() : 0;
+  }
   function normalize(raw) {
     if (!raw) return raw;
     try {
@@ -66,11 +97,13 @@ function createTracker(config) {
   function buildPayload(eventPayload = {}) {
     const url = normalize(eventPayload.url || getUrl());
     const title = eventPayload.title || getTitle();
+    const referrer = getReferrer();
     return {
       website: websiteId,
       hostname: customHostname || getHostname(),
       title,
       url,
+      ...referrer ? { referrer } : {},
       ...tag ? { tag } : {}
     };
   }
@@ -107,10 +140,77 @@ function createTracker(config) {
     } catch {
     }
   }
+  function sendEngagement() {
+    if (!engagement || !shouldTrack()) return;
+    const seconds = activeSeconds();
+    if (seconds <= 0) return;
+    const url = currentUrl || normalize(getUrl());
+    const body = JSON.stringify({
+      type: "engagement",
+      payload: {
+        website: websiteId,
+        hostname: customHostname || getHostname(),
+        url,
+        seconds
+      }
+    });
+    const apiUrl = `${baseUrl}${endpoint}`;
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+        navigator.sendBeacon(apiUrl, new Blob([body], { type: "text/plain" }));
+      } else {
+        void fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+          credentials
+        });
+      }
+    } catch {
+    }
+  }
+  function nextPage() {
+    sendEngagement();
+    resetActive();
+  }
+  function onVisibility() {
+    if (isVisible()) {
+      startActive();
+    } else {
+      stopActive();
+      sendEngagement();
+    }
+  }
+  function onPageHide() {
+    stopActive();
+    sendEngagement();
+  }
+  function setupEngagement() {
+    if (!engagement) return;
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+    resetActive();
+    document.addEventListener("visibilitychange", onVisibility, true);
+    window.addEventListener("pagehide", onPageHide, true);
+    if (heartbeatMs > 0) {
+      heartbeatTimer = setInterval(() => {
+        if (isVisible()) sendEngagement();
+      }, heartbeatMs);
+    }
+    cleanupFns.push(() => {
+      document.removeEventListener("visibilitychange", onVisibility, true);
+      window.removeEventListener("pagehide", onPageHide, true);
+      if (heartbeatTimer !== null) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    });
+  }
   function handlePush(_state, _title, url) {
     if (!url) return;
     const newUrl = normalize(new URL(String(url), typeof location !== "undefined" ? location.href : void 0).toString());
     if (newUrl !== currentUrl) {
+      nextPage();
       currentUrl = newUrl;
       setTimeout(() => send(buildPayload()), SPA_DELAY);
     }
@@ -120,6 +220,7 @@ function createTracker(config) {
     if (!autoTrack) return;
     currentUrl = normalize(typeof location !== "undefined" ? location.href : "");
     send(buildPayload());
+    setupEngagement();
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
     history.pushState = function(...args) {
@@ -134,6 +235,7 @@ function createTracker(config) {
       setTimeout(() => {
         const newUrl = normalize(typeof location !== "undefined" ? location.href : "");
         if (newUrl !== currentUrl) {
+          nextPage();
           currentUrl = newUrl;
           send(buildPayload());
         }
@@ -163,6 +265,7 @@ function createTracker(config) {
   return {
     pageview(options) {
       const url = normalize(options?.url || getUrl());
+      if (url !== currentUrl) nextPage();
       currentUrl = url;
       return send(buildPayload({ url, title: options?.title }));
     },

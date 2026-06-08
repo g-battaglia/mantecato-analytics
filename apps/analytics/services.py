@@ -1,11 +1,12 @@
 """Analytics services — orchestrates read-only query calls for the dashboard.
 
 Pageview aggregates plus **exact** site-level visitor/visit/bounce/duration
-metrics from the cookieless compute-and-discard counter. No referrer, UTM,
-revenue, retention, funnel, journey, or engagement metrics, and no persistent
-per-person identifier. Unique visitors are exact over the configured exactness
-window (``VISITOR_EXACT_WINDOW``, default month); a range spanning several
-windows sums per-window uniques (no cross-window linkage).
+metrics from the cookieless compute-and-discard counter, and a referrer-**domain**
+traffic-source breakdown. No full referrer URL, UTM, revenue, retention, funnel,
+journey metrics, and no persistent per-person identifier. Unique visitors are
+exact over the configured exactness window (``VISITOR_EXACT_WINDOW``, default
+month); a range spanning several windows sums per-window uniques (no cross-window
+linkage).
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from core.mantecato_core.queries.realtime import (
     get_current_pages,
     get_recent_pageviews,
 )
+from core.mantecato_core.queries.sources import get_referrer_metrics
 from core.mantecato_core.queries.stats import (
     get_country_breakdown,
     get_pageview_time_series,
@@ -46,7 +48,11 @@ from core.mantecato_core.queries.stats import (
     get_top_sections,
     get_website_stats_comparison,
 )
-from core.mantecato_core.queries.visitors import read_scope_visitors, visit_metrics
+from core.mantecato_core.queries.visitors import (
+    get_landing_metrics,
+    read_scope_visitors,
+    visit_metrics,
+)
 from core.mantecato_core.visitor_counting import has_only_bot_filter
 
 _UNAVAILABLE_NOTE = "Unavailable with current filters"
@@ -360,6 +366,40 @@ def get_geo_data(
     )
 
     return {"geo": geo, "level": "country"}
+
+
+def get_sources_data(
+    website_id: str,
+    date_range: DateRange,
+    filters: list[Filter] | None = None,
+) -> dict[str, Any]:
+    """Fetch the traffic-source breakdown (top referrer domains)."""
+    filters = filters or []
+    sources = get_referrer_metrics(
+        website_id,
+        date_range.start_date,
+        date_range.end_date,
+        limit=50,
+        filters=filters,
+    )
+    return {"sources": sources}
+
+
+def get_landing_data(
+    website_id: str,
+    date_range: DateRange,
+    filters: list[Filter] | None = None,
+) -> dict[str, Any]:
+    """Fetch entry (landing) pages with visits and engaged bounce rate."""
+    filters = filters or []
+    landing = get_landing_metrics(
+        website_id,
+        date_range.start_date,
+        date_range.end_date,
+        limit=50,
+        filters=filters,
+    )
+    return {"landing": landing}
 
 
 def get_compare_data(

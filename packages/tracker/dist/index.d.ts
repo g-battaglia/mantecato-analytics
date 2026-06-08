@@ -38,6 +38,10 @@ interface TrackerConfig {
     beforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload | false | null | undefined | Promise<UmamiPayload | false | null | undefined>;
     /** Fetch credentials mode (default: "omit") */
     credentials?: RequestCredentials;
+    /** Track on-page engagement (active time) for accurate duration + bounce (default: true) */
+    engagement?: boolean;
+    /** Periodic engagement heartbeat interval (ms) while the tab is visible; 0 disables (default: 15000) */
+    heartbeatMs?: number;
 }
 interface EventPayload {
     /** Override page URL */
@@ -53,6 +57,8 @@ interface UmamiPayload {
     /** Custom event name. Omitted for pageviews. */
     name?: string;
     tag?: string;
+    /** Referring URL (reduced to its domain server-side; same-site dropped). */
+    referrer?: string;
 }
 /** Function that receives default payload and returns a modified payload */
 type TrackCallback = (props: UmamiPayload) => UmamiPayload;

@@ -5,7 +5,8 @@ produce **exact** daily unique-visitor/visit/bounce counts via a compute-and-
 discard scheme: each request's (IP + User-Agent) is hashed with a random daily
 salt into an ephemeral digest used only to deduplicate within the day; the salt
 and digests are deleted by the nightly rollup, leaving only anonymous integer
-aggregates. No referrer/UTM tracking, no cross-day or cross-site linkage.
+aggregates. Only the referrer **domain** is kept (no full URL/UTM/click IDs); no
+cross-day or cross-site linkage.
 
 Model layout:
 
@@ -193,12 +194,13 @@ class WebsiteEvent(models.Model):
     """A pageview event — the core analytics data unit.
 
     Every row is an independent pageview or custom-event count. No session_id,
-    visit_id, referrer, UTM parameters, click IDs, or event payload data is
-    stored, and no IP/User-Agent. The only per-person field is ``visitor_key``,
-    an ephemeral window-salted dedup digest (not derived-reversibly from stored
-    data) that the rollup NULLs once the window is finalised — so finalised rows
-    are fully anonymous. It exists only to count exact unique visitors at any
-    time granularity within the live window.
+    visit_id, full referrer URL, UTM parameters, click IDs, or event payload
+    data is stored, and no IP/User-Agent. Only the referrer **domain** is kept
+    (for aggregate traffic-source breakdowns). The only per-person field is
+    ``visitor_key``, an ephemeral window-salted dedup digest (not derived-
+    reversibly from stored data) that the rollup NULLs once the window is
+    finalised — so finalised rows are fully anonymous. It exists only to count
+    exact unique visitors at any time granularity within the live window.
 
     Device/browser metadata is stored directly on the event for aggregate
     breakdown queries (no session join needed). Geo data comes from IP
@@ -227,6 +229,11 @@ class WebsiteEvent(models.Model):
     # visitors at ANY granularity (e.g. per hour) and realtime visitors-online.
     # NULLed by the rollup once the window is finalised → anonymous thereafter.
     visitor_key = models.CharField(max_length=64, null=True, blank=True)
+    # Referrer **domain only** (e.g. "google.com") for aggregate traffic-source
+    # breakdowns. The full referrer URL, path and query string are parsed
+    # transiently at ingestion and never stored; same-site referrals are dropped
+    # to NULL (counted as direct). No UTM/click IDs are collected.
+    referrer_domain = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
         db_table = "website_event"
@@ -250,6 +257,11 @@ class WebsiteEvent(models.Model):
                 fields=["website_id", "event_name", "-created_at"],
                 condition=models.Q(event_type=2),
                 name="idx_we_event_name_hot",
+            ),
+            models.Index(
+                fields=["website_id", "referrer_domain", "-created_at"],
+                condition=models.Q(event_type=1),
+                name="idx_we_referrer_hot",
             ),
         ]
 
@@ -306,6 +318,10 @@ class VisitorDayState(models.Model):
     bounces = models.IntegerField(default=0)
     cur_visit_pageviews = models.IntegerField(default=1)
     cur_visit_duration_s = models.IntegerField(default=0)
+    # Cumulative active (engaged) seconds already credited for the CURRENT page,
+    # advanced by engagement beacons; reset to 0 on each new pageview. Lets a
+    # single-page visit accrue real on-page time (accurate duration + bounce).
+    cur_page_engaged_s = models.IntegerField(default=0)
     total_pageviews = models.IntegerField(default=1)
     total_duration_s = models.IntegerField(default=0)
 
@@ -511,6 +527,7 @@ BOT_CONFIG_DEFAULTS: dict[str, Any] = {
     "enabled": False,
     "knownBots": True,
     "emptyUa": True,
+    "datacenterIps": True,
     "excludedCountries": [],
 }
 

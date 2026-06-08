@@ -26,7 +26,11 @@ from core.mantecato_core.queries.orm_fallbacks import (
     stats_dict,
     top_sections_from_qs,
 )
-from core.mantecato_core.queries.visitors import visit_metrics, visitors_by_bucket
+from core.mantecato_core.queries.visitors import (
+    visit_metrics,
+    visitors_by_bucket,
+    visits_by_bucket,
+)
 
 # -- URL normalisation regex patterns -----------------------------------------
 _PATTERNS_SMART = [
@@ -131,10 +135,12 @@ def _attach_visitors(
     granularity: str,
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Add an exact unique-``visitors`` count per bucket (any granularity)."""
-    by_bucket = visitors_by_bucket(website_id, start_date, end_date, granularity)
+    """Add exact unique ``visitors`` and ``visits`` counts per bucket (any granularity)."""
+    by_visitor = visitors_by_bucket(website_id, start_date, end_date, granularity)
+    by_visits = visits_by_bucket(website_id, start_date, end_date, granularity)
     for row in rows:
-        row["visitors"] = by_bucket.get(row["time"], 0)
+        row["visitors"] = by_visitor.get(row["time"], 0)
+        row["visits"] = by_visits.get(row["time"], 0)
     return rows
 
 

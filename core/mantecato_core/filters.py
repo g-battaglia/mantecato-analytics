@@ -1,7 +1,8 @@
 """SQL filter builder — privacy-first aggregate mode.
 
 Filters operate directly on anonymous ``website_event`` rows. There are no
-session joins, visitor identifiers, referrers, UTM fields, or fingerprints.
+session joins, visitor identifiers, UTM fields, or fingerprints — only the
+referrer **domain** is filterable (never a full referrer URL).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ VALID_FILTER_COLUMNS: set[str] = {
     "device",
     "country",
     "event_name",
+    "referrer_domain",
 }
 
 VALID_OPERATORS = {
@@ -79,6 +81,8 @@ def build_bot_filter_sql(
         reasons.append("known_bot_user_agent")
     if cfg.get("emptyUa", True):
         reasons.append("empty_user_agent")
+    if cfg.get("datacenterIps", True):
+        reasons.append("datacenter_ip")
     if reasons:
         clauses.append("(we.bot_reason IS NULL OR we.bot_reason <> ALL({{botReasons::text[]}}))")
         params["botReasons"] = reasons
@@ -89,7 +93,9 @@ def build_bot_filter_sql(
         if isinstance(code, str) and len(code) == 2
     ]
     if excluded_countries:
-        clauses.append("(we.country IS NULL OR we.country <> ALL({{botExcludedCountries::text[]}}))")
+        clauses.append(
+            "(we.country IS NULL OR we.country <> ALL({{botExcludedCountries::text[]}}))"
+        )
         params["botExcludedCountries"] = excluded_countries
 
     return {

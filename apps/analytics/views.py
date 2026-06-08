@@ -6,12 +6,13 @@ Supported pages:
 - Sections: URL-prefix pageview groupings
 - Devices: browser, OS, device breakdowns
 - Geo: country/region/city pageview distribution
+- Sources: top referrer domains (referrer **domain** only — no full URL/UTM)
 - Compare: current vs previous period pageview comparison
 - Heatmap: 7x24 traffic heatmap
 - Realtime: live pageview feed
 
 Removed pages (require persistent identifiers):
-- Sessions, Sources, Retention, Funnels, Journeys, Revenue, Engagement, Entry/Exit
+- Sessions, Retention, Funnels, Journeys, Revenue, Entry/Exit
 """
 
 from __future__ import annotations
@@ -34,9 +35,11 @@ from apps.analytics.services import (
     get_events_data,
     get_geo_data,
     get_heatmap_data,
+    get_landing_data,
     get_overview_data,
     get_pages_data,
     get_sections_data,
+    get_sources_data,
     resolve_websites_for_user,  # noqa: F401 — test patch target
 )
 from apps.analytics.view_utils import AnalyticsBase, ChartMapping
@@ -55,7 +58,9 @@ class OverviewView(AnalyticsBase):
     template_name = "analytics/overview.html"
 
     def get_service_data(self) -> dict:
-        data = get_overview_data(self.website_id, self.date_range, self.filters, granularity=self.granularity)
+        data = get_overview_data(
+            self.website_id, self.date_range, self.filters, granularity=self.granularity
+        )
         return {
             "stats": data["stats"],
             "timeseries_data": build_timeseries_chart_data(
@@ -124,6 +129,24 @@ class GeoView(AnalyticsBase):
         return get_geo_data(self.website_id, self.date_range, self.filters)
 
 
+class SourcesView(AnalyticsBase):
+    """Traffic sources — top referrer domains (referrer domain only)."""
+
+    template_name = "analytics/sources.html"
+
+    def get_service_data(self) -> dict:
+        return get_sources_data(self.website_id, self.date_range, self.filters)
+
+
+class EntryPagesView(AnalyticsBase):
+    """Entry (landing) pages with visits and engaged bounce rate."""
+
+    template_name = "analytics/entry_pages.html"
+
+    def get_service_data(self) -> dict:
+        return get_landing_data(self.website_id, self.date_range, self.filters)
+
+
 class CompareView(AnalyticsBase):
     """Current vs previous period pageview comparison."""
 
@@ -174,11 +197,14 @@ class RealtimeView(
             ctx["no_data"] = True
             return ctx
 
+        from django.utils import timezone
+
         from apps.analytics.services import get_overview_data
         from core.mantecato_core.date_utils import DateRange
-        from django.utils import timezone
+
         now = timezone.now()
-        dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        dr = DateRange(start_date=start, end_date=now)
         data = get_overview_data(self.website_id, dr, self.filters, granularity="hour")
         return {**ctx, **data}
 

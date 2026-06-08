@@ -12,15 +12,17 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import connection
 from django.db.models import Count, Max, QuerySet
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
-from core.mantecato_core.filters import Filter
 from core.mantecato_core.visitor_counting import section_for_path
+
+if TYPE_CHECKING:
+    from core.mantecato_core.filters import Filter
 
 
 def should_use_orm_fallback() -> bool:
@@ -48,6 +50,8 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
                 reasons.append("known_bot_user_agent")
             if cfg.get("emptyUa", True):
                 reasons.append("empty_user_agent")
+            if cfg.get("datacenterIps", True):
+                reasons.append("datacenter_ip")
             if reasons:
                 qs = qs.exclude(bot_reason__in=reasons)
             countries = [
@@ -68,6 +72,7 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
             "device",
             "country",
             "event_name",
+            "referrer_domain",
         }:
             continue
 
@@ -158,7 +163,9 @@ def next_bucket(value: datetime, granularity: str) -> datetime:
     return value + timedelta(days=1)
 
 
-def empty_time_series(start_date: datetime, end_date: datetime, granularity: str) -> list[dict[str, Any]]:
+def empty_time_series(
+    start_date: datetime, end_date: datetime, granularity: str
+) -> list[dict[str, Any]]:
     """Build gapless time buckets with zero pageviews."""
     rows: list[dict[str, Any]] = []
     current = truncate_dt(start_date, granularity)
@@ -218,7 +225,9 @@ def count_by_field(qs: QuerySet, field: str, count_key: str, limit: int) -> list
     ]
 
 
-def top_sections_from_qs(qs: QuerySet, depth: int, limit: int, normalizer: Any | None = None) -> list[dict[str, Any]]:
+def top_sections_from_qs(
+    qs: QuerySet, depth: int, limit: int, normalizer: Any | None = None
+) -> list[dict[str, Any]]:
     counter: dict[str, int] = defaultdict(int)
     pages: dict[str, set[str]] = defaultdict(set)
     for path in qs.values_list("url_path", flat=True):

@@ -6,12 +6,13 @@ validated payloads from :mod:`apps.tracker.views` and inserts rows into the
 
 Privacy-first design (per PLAN.md):
 - No session_id or visit_id — every pageview is independent and anonymous.
-- No referrer tracking, UTM params, or click IDs.
+- Only the referrer **domain** is kept (for aggregate traffic sources); the full
+  referrer URL, its query string, UTM params and click IDs are never stored.
 - Custom events store only the event name; no payload/properties.
 - No identify calls, revenue tracking, or session data.
 - Only the minimal data needed for aggregate pageview analytics is stored:
-  url_path, url_query, page_title, event_name, hostname, and device/browser/geo
-  metadata for aggregate breakdowns and bot detection.
+  url_path, url_query, page_title, event_name, hostname, referrer_domain, and
+  device/browser/geo metadata for aggregate breakdowns and bot detection.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from django.utils import timezone
 
 from core.mantecato_core.database import raw_query
 from core.mantecato_core.visitor_counting import (
+    record_engagement,
     record_scope_presence,
     record_visit,
     section_for_path,
@@ -32,6 +34,10 @@ from core.mantecato_core.visitor_counting import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on a single engagement beacon's reported active seconds, to cap
+# abuse from a tampered client. A genuine long read still accrues up to this.
+_MAX_ENGAGEMENT_S = 3600
 
 # Throttle for the lazy, scheduler-free rollup piggybacked on ingestion.
 _ROLLUP_MIN_INTERVAL_S = 3600
@@ -92,6 +98,28 @@ def _parse_url(url: str) -> dict[str, str | None]:
     return {"url_path": path[:500], "url_query": None}
 
 
+def _referrer_domain(referrer: str | None, hostname: str | None) -> str | None:
+    """Reduce a raw referrer URL to its bare domain for aggregate source counts.
+
+    Only the registrable host is kept (``www.`` stripped); the referrer's path and
+    query string are parsed transiently and **never stored** (they can carry PII).
+    Same-site referrals (host equal to the page's own hostname) and missing/empty
+    referrers collapse to ``None`` — counted as direct traffic. No UTM/click IDs.
+    """
+    if not referrer:
+        return None
+    try:
+        host = (urlparse(referrer).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return None
+    if not host:
+        return None
+    own = (hostname or "").lower().removeprefix("www.")
+    if own and host == own:
+        return None
+    return host[:255]
+
+
 def ingest_pageview(
     website_id: str,
     payload: dict[str, Any],
@@ -133,13 +161,13 @@ def ingest_pageview(
              url_path, url_query,
              page_title, event_type, event_name, hostname,
              browser, os, device,
-             country, is_bot, bot_reason, visitor_key)
+             country, is_bot, bot_reason, visitor_key, referrer_domain)
         VALUES
             ({{eventId::uuid}}, {{websiteId::uuid}}, {{createdAt::timestamptz}},
              {{urlPath}}, {{urlQuery}},
              {{pageTitle}}, 1, NULL, {{hostname}},
              {{browser}}, {{os}}, {{device}},
-             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}})
+             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}}, {{referrerDomain}})
         """,
         {
             "eventId": event_id,
@@ -156,6 +184,7 @@ def ingest_pageview(
             "isBot": is_bot,
             "botReason": bot_reason[:80] if bot_reason else None,
             "visitorKey": key,
+            "referrerDomain": _referrer_domain(payload.get("referrer"), payload.get("hostname")),
         },
     )
     if key:
@@ -243,3 +272,37 @@ def ingest_custom_event(
             visitor_key=key,
             scopes=[("event", clean_name)],
         )
+
+
+def ingest_engagement(
+    website_id: str,
+    payload: dict[str, Any],
+    is_bot: bool = False,
+    ip: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    """Fold an engagement heartbeat into the visitor's open visit.
+
+    The beacon carries the cumulative active (tab-visible) seconds spent on the
+    current page. It updates the ephemeral visit state for accurate on-site
+    duration and the engaged-bounce decision, and writes **no** ``website_event``
+    row (engagement is not a pageview). The ``ip``/``user_agent`` are used
+    transiently to re-derive the same window digest and are never persisted.
+    """
+    if is_bot:
+        return
+    try:
+        seconds = int(float(payload.get("seconds", 0)))
+    except (TypeError, ValueError):
+        return
+    if seconds <= 0:
+        return
+
+    record_engagement(
+        website_id=website_id,
+        occurred_at=timezone.now(),
+        ip=ip,
+        user_agent=user_agent,
+        seconds=min(seconds, _MAX_ENGAGEMENT_S),
+        is_bot=is_bot,
+    )

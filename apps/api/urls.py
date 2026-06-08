@@ -7,11 +7,13 @@ from django.urls import path
 from apps.api.views import (
     AnalyticsCompareView,
     AnalyticsDevicesView,
+    AnalyticsEntryView,
     AnalyticsEventsView,
     AnalyticsGeoView,
     AnalyticsOverviewView,
     AnalyticsPagesView,
     AnalyticsRealtimeView,
+    AnalyticsSourcesView,
     ApiKeyCreateView,
     ApiKeyDeleteView,
     ApiKeyListView,
@@ -35,6 +37,8 @@ urlpatterns = [
     path("analytics/events/", AnalyticsEventsView.as_view(), name="api_analytics_events"),
     path("analytics/devices/", AnalyticsDevicesView.as_view(), name="api_analytics_devices"),
     path("analytics/geo/", AnalyticsGeoView.as_view(), name="api_analytics_geo"),
+    path("analytics/sources/", AnalyticsSourcesView.as_view(), name="api_analytics_sources"),
+    path("analytics/entry/", AnalyticsEntryView.as_view(), name="api_analytics_entry"),
     path("analytics/compare/", AnalyticsCompareView.as_view(), name="api_analytics_compare"),
     path("analytics/realtime/", AnalyticsRealtimeView.as_view(), name="api_analytics_realtime"),
     # Dashboards

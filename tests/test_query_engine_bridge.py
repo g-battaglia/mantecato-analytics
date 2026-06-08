@@ -485,19 +485,27 @@ class TestBuildBotFilterSql:
     """
 
     def test_empty_config_applies_known_bot_defaults(self) -> None:
-        """An empty config falls back to knownBots + emptyUa via the bot_reason clause."""
+        """An empty config falls back to knownBots + emptyUa + datacenterIps."""
         result = build_bot_filter_sql({})
         assert "we.bot_reason" in result["where"]
         assert result["needs_session_join"] is False
-        assert result["params"]["botReasons"] == ["known_bot_user_agent", "empty_user_agent"]
+        assert result["params"]["botReasons"] == [
+            "known_bot_user_agent",
+            "empty_user_agent",
+            "datacenter_ip",
+        ]
 
     def test_known_bots_only(self) -> None:
-        result = build_bot_filter_sql({"knownBots": True, "emptyUa": False})
+        result = build_bot_filter_sql(
+            {"knownBots": True, "emptyUa": False, "datacenterIps": False}
+        )
         assert result["params"]["botReasons"] == ["known_bot_user_agent"]
 
     def test_no_reasons_and_no_countries_is_empty(self) -> None:
         """With every reason disabled and no country list, the clause is empty."""
-        result = build_bot_filter_sql({"knownBots": False, "emptyUa": False})
+        result = build_bot_filter_sql(
+            {"knownBots": False, "emptyUa": False, "datacenterIps": False}
+        )
         assert result["where"] == ""
         assert result["needs_session_join"] is False
         assert result["params"] == {}
@@ -515,14 +523,18 @@ class TestBuildBotFilterSql:
 
     def test_config_wrapper_is_unwrapped(self) -> None:
         """The mixin passes ``{"config": {...}}``; the builder reads the inner dict."""
-        result = build_bot_filter_sql({"config": {"knownBots": True, "emptyUa": False}})
+        result = build_bot_filter_sql(
+            {"config": {"knownBots": True, "emptyUa": False, "datacenterIps": False}}
+        )
         assert result["params"]["botReasons"] == ["known_bot_user_agent"]
 
 
 class TestBotFilterPayloadShapes:
     def test_payload_with_config_wrapper(self) -> None:
         """``build_filter_sql`` understands the ``{"config": {...}}`` payload shape."""
-        payload = json.dumps({"config": {"knownBots": True, "emptyUa": False}})
+        payload = json.dumps(
+            {"config": {"knownBots": True, "emptyUa": False, "datacenterIps": False}}
+        )
         filters = [Filter(column="__bot_filter__", operator="eq", value=payload)]
         result = build_filter_sql(filters)
         assert "we.bot_reason" in result["where"]

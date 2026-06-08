@@ -200,6 +200,30 @@ def visitor_key_for(
 # ---------------------------------------------------------------------------
 
 
+def _bounce_threshold() -> int:
+    """On-page **active** seconds below which a single-pageview visit is a bounce.
+
+    Powered by engagement beacons (:func:`record_engagement`). ``0`` ⇒ the
+    classic rule (a single-pageview visit is always a bounce, regardless of
+    time), matching Umami. Configured by ``settings.BOUNCE_ENGAGEMENT_THRESHOLD_S``.
+    """
+    return max(0, int(getattr(settings, "BOUNCE_ENGAGEMENT_THRESHOLD_S", 10)))
+
+
+def _open_bounce_filter(threshold: int) -> Q:
+    """Q matching in-progress visits that count as bounces.
+
+    A single-pageview open visit (so ``cur_visit_duration_s == 0`` and its whole
+    duration is the current page's engaged time) is a bounce when that engaged
+    time is below *threshold*; with ``threshold <= 0`` every single-pageview visit
+    bounces (classic rule).
+    """
+    q = Q(cur_visit_pageviews__lte=1)
+    if threshold > 0:
+        q &= Q(cur_page_engaged_s__lt=threshold)
+    return q
+
+
 def record_visit(
     *,
     website_id: str,
@@ -240,6 +264,7 @@ def record_visit(
                 "bounces": 0,
                 "cur_visit_pageviews": 1,
                 "cur_visit_duration_s": 0,
+                "cur_page_engaged_s": 0,
                 "total_pageviews": 1,
                 "total_duration_s": 0,
             },
@@ -247,33 +272,93 @@ def record_visit(
         if created:
             return key
 
+        threshold = _bounce_threshold()
         gap = max(0, int((occurred_at - row.last_seen).total_seconds()))
         fields = [
             "visits",
             "bounces",
             "cur_visit_pageviews",
             "cur_visit_duration_s",
+            "cur_page_engaged_s",
             "total_pageviews",
             "total_duration_s",
             "last_seen",
         ]
         if gap > SESSION_TIMEOUT_S:
             # Close the previous visit, then open a new one (new landing page).
-            if row.cur_visit_pageviews <= 1:
+            # Its duration = folded completed pages + the last page's engaged time.
+            prev_dur = row.cur_visit_duration_s + row.cur_page_engaged_s
+            if row.cur_visit_pageviews <= 1 and (threshold <= 0 or prev_dur < threshold):
                 row.bounces += 1
-            row.total_duration_s += row.cur_visit_duration_s
+            row.total_duration_s += prev_dur
             row.visits += 1
             row.cur_visit_pageviews = 1
             row.cur_visit_duration_s = 0
+            row.cur_page_engaged_s = 0
             row.entry_path = entry
             fields.append("entry_path")
         else:
+            # Same visit, new page: fold the page that just ended. Prefer its
+            # measured active (engaged) time; fall back to the wall-clock gap when
+            # no engagement beacon was received for it (older clients / imports).
+            page_dur = row.cur_page_engaged_s if row.cur_page_engaged_s > 0 else gap
+            row.cur_visit_duration_s += page_dur
+            row.cur_page_engaged_s = 0
             row.cur_visit_pageviews += 1
-            row.cur_visit_duration_s += gap
         row.total_pageviews += 1
         row.last_seen = occurred_at
         row.save(update_fields=fields)
         return key
+
+
+def record_engagement(
+    *,
+    website_id: str,
+    occurred_at: datetime,
+    ip: str | None,
+    user_agent: str | None,
+    seconds: int,
+    is_bot: bool = False,
+) -> None:
+    """Fold a heartbeat's on-page **active** time into the visitor's open visit.
+
+    Engagement beacons report the cumulative active (tab-visible) seconds spent on
+    the current page. They update the open visit's duration and keep the session
+    alive **without** opening a visit or writing an event row, so single-page
+    visits accrue real on-page time (accurate duration + engaged bounce). Ignored
+    for bots, for visitors with no recorded pageview, and for stale beacons that
+    arrive after the visit's inactivity timeout (so a dead visit is never revived).
+    """
+    if is_bot:
+        return
+    seconds = max(0, int(seconds or 0))
+
+    from apps.core.models import VisitorDayState
+
+    day = utc_day(occurred_at)
+    period = _period_key_for_date(day, _window())
+    salt = get_or_create_salt(period)
+    key = compute_visitor_key(salt, website_id=website_id, ip=ip, user_agent=user_agent)
+
+    with transaction.atomic():
+        row = (
+            VisitorDayState.objects.select_for_update()
+            .filter(website_id=website_id, day=day, visitor_key=key)
+            .first()
+        )
+        if row is None:
+            return  # engagement with no recorded pageview → ignore
+        if (occurred_at - row.last_seen).total_seconds() > SESSION_TIMEOUT_S:
+            return  # beacon after the visit closed → don't revive a dead visit
+        fields: list[str] = []
+        if seconds > row.cur_page_engaged_s:
+            row.cur_page_engaged_s = seconds
+            fields.append("cur_page_engaged_s")
+        if occurred_at > row.last_seen:
+            row.last_seen = occurred_at
+            fields.append("last_seen")
+        if fields:
+            row.save(update_fields=fields)
 
 
 def record_scope_presence(
@@ -309,25 +394,29 @@ def aggregate_state(qs: QuerySet) -> dict[str, int]:
 
     ``unique_visitors`` counts **distinct** visitor digests (so a visitor active
     on several days of the window counts once). The in-progress visit of each row
-    is closed on the fly: a single-pageview open visit is a bounce, and its
-    accumulated duration is added. Used for the live window and as the rollup
-    formula.
+    is closed on the fly: a single-pageview open visit is a bounce when its active
+    on-page time is below the engaged threshold, and both its folded and current-
+    page durations are added. Used for the live window and as the rollup formula.
     """
+    threshold = _bounce_threshold()
     agg = qs.aggregate(
         unique_visitors=Count("visitor_key", distinct=True),
         visits=Sum("visits"),
         closed_bounces=Sum("bounces"),
-        open_bounces=Count("id", filter=Q(cur_visit_pageviews__lte=1)),
+        open_bounces=Count("id", filter=_open_bounce_filter(threshold)),
         total_pageviews=Sum("total_pageviews"),
         closed_duration=Sum("total_duration_s"),
         open_duration=Sum("cur_visit_duration_s"),
+        open_engaged=Sum("cur_page_engaged_s"),
     )
     return {
         "unique_visitors": agg["unique_visitors"] or 0,
         "visits": agg["visits"] or 0,
         "bounces": (agg["closed_bounces"] or 0) + (agg["open_bounces"] or 0),
         "total_pageviews": agg["total_pageviews"] or 0,
-        "total_duration_s": (agg["closed_duration"] or 0) + (agg["open_duration"] or 0),
+        "total_duration_s": (agg["closed_duration"] or 0)
+        + (agg["open_duration"] or 0)
+        + (agg["open_engaged"] or 0),
     }
 
 
@@ -364,6 +453,7 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
     )
 
     window = _window()
+    threshold = _bounce_threshold()
     cur = period_key(now) if now else current_period_key()
     result = {"periods": 0, "rows": 0, "salts": 0, "scope_rows": 0}
 
@@ -372,17 +462,48 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_ROLLUP_LOCK_KEY])
 
-        finished = VisitorDayState.objects.exclude(period=cur)
+        finished_all = VisitorDayState.objects.exclude(period=cur)
+
+        # Behavioural bot digests to exclude from visitor/visit/bounce counts so
+        # the bot filter applies to visitors (not just pageviews) — matching v3.
+        # The engaged on-page time keeps real single-page readers from being flagged.
+        from collections import defaultdict as _defaultdict
+
+        from core.mantecato_core.bot_sessions import compute_bot_visitor_keys, get_bot_config
+
+        bot_keys: set[str] = set()
+        days_by_site: dict[str, list[date]] = _defaultdict(list)
+        for w, d in finished_all.values_list("website_id", "day").distinct():
+            days_by_site[str(w)].append(d)
+        for site, days in days_by_site.items():
+            cfg = get_bot_config(site)
+            if not cfg.get("enabled", False):
+                continue
+            start = datetime.combine(min(days), datetime.min.time(), tzinfo=UTC)
+            end = datetime.combine(max(days), datetime.max.time(), tzinfo=UTC)
+            engaged: dict[str, float] = {}
+            for r in finished_all.filter(website_id=site).values(
+                "visitor_key", "total_duration_s", "cur_page_engaged_s"
+            ):
+                engaged[r["visitor_key"]] = (
+                    engaged.get(r["visitor_key"], 0)
+                    + (r["total_duration_s"] or 0)
+                    + (r["cur_page_engaged_s"] or 0)
+                )
+            bot_keys |= compute_bot_visitor_keys(site, start, end, cfg, engaged_dur_by_key=engaged)
+
+        finished = finished_all.exclude(visitor_key__in=bot_keys) if bot_keys else finished_all
 
         # 1) Per-day site aggregates (daily trend).
         for g in finished.values("website_id", "day").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
             visits=Sum("visits"),
             closed_bounces=Sum("bounces"),
-            open_bounces=Count("id", filter=Q(cur_visit_pageviews__lte=1)),
+            open_bounces=Count("id", filter=_open_bounce_filter(threshold)),
             total_pageviews=Sum("total_pageviews"),
             closed_duration=Sum("total_duration_s"),
             open_duration=Sum("cur_visit_duration_s"),
+            open_engaged=Sum("cur_page_engaged_s"),
         ):
             _upsert_daily(VisitorDaily, g, website_id=g["website_id"], day=g["day"])
 
@@ -392,10 +513,11 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             unique_visitors=Count("visitor_key", distinct=True),
             visits=Sum("visits"),
             closed_bounces=Sum("bounces"),
-            open_bounces=Count("id", filter=Q(cur_visit_pageviews__lte=1)),
+            open_bounces=Count("id", filter=_open_bounce_filter(threshold)),
             total_pageviews=Sum("total_pageviews"),
             closed_duration=Sum("total_duration_s"),
             open_duration=Sum("cur_visit_duration_s"),
+            open_engaged=Sum("cur_page_engaged_s"),
             min_day=Min("day"),
         ):
             p_start, _ = _period_bounds(g["min_day"], window)
@@ -408,7 +530,7 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             finished.values("website_id", "period", "entry_path")
             .annotate(
                 visits=Count("id"),
-                bounces=Count("id", filter=Q(cur_visit_pageviews__lte=1)),
+                bounces=Count("id", filter=_open_bounce_filter(threshold)),
                 min_day=Min("day"),
             )
             .exclude(entry_path__isnull=True)
@@ -425,7 +547,8 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             )
 
         # 4) Per-window per-scope unique visitors (pages/sections/events).
-        scope_qs = VisitorScopeState.objects.exclude(period=cur)
+        scope_all = VisitorScopeState.objects.exclude(period=cur)
+        scope_qs = scope_all.exclude(visitor_key__in=bot_keys) if bot_keys else scope_all
         for g in scope_qs.values("website_id", "period", "scope", "scope_value").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
         ):
@@ -449,8 +572,10 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
         WebsiteEvent.objects.filter(
             created_at__lt=window_start_dt, visitor_key__isnull=False
         ).update(visitor_key=None)
-        result["scope_rows"], _ = scope_qs.delete()
-        result["rows"], _ = finished.delete()
+        # Delete ALL finished ephemeral rows (incl. bot digests, which were
+        # excluded from the aggregates above but must still be discarded).
+        result["scope_rows"], _ = scope_all.delete()
+        result["rows"], _ = finished_all.delete()
         result["salts"], _ = VisitorSalt.objects.exclude(period=cur).delete()
 
     return result
@@ -466,10 +591,11 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     are skipped to avoid double counting.
 
     For each imported ``(site, day)`` it sessionises events per digest (30-min
-    gap) into exact site-level visitors/visits/bounces/duration, upserts
-    ``VisitorDaily``/``VisitorPeriod`` (scope ``site``), then NULLs the processed
-    digests. Idempotent (nulled rows are skipped on re-run). Pure-Python → works
-    on PostgreSQL and SQLite. Returns ``{"days", "events"}``.
+    gap) into exact site-level visitors/visits/bounces/duration, plus per-page and
+    per-section unique visitors (``VisitorPeriod`` scopes ``page``/``section``),
+    upserts ``VisitorDaily``/``VisitorPeriod``, then NULLs the processed digests.
+    Idempotent (nulled rows are skipped on re-run). Pure-Python → works on
+    PostgreSQL and SQLite. Returns ``{"days", "events"}``.
     """
     from collections import defaultdict
     from itertools import groupby
@@ -486,20 +612,42 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
         for (w, d) in VisitorDayState.objects.values_list("website_id", "day").distinct()
     }
 
+    # Behavioural bot digests to exclude from the cookieless counts so the bot
+    # filter applies to visitors/visits/bounce (not just pageviews) — matching v3.
+    from core.mantecato_core.bot_sessions import compute_bot_visitor_keys, get_bot_config
+
+    bot_keys: set[str] = set()
+    for site in {str(s) for s in qs.values_list("website_id", flat=True).distinct()}:
+        bot_keys |= compute_bot_visitor_keys(site, None, None, get_bot_config(site))
+
     site_acc: dict[tuple[str, date], dict[str, int]] = {}
     keys_by_site: dict[str, list[str]] = defaultdict(list)
+    # Per-(period, scope, scope_value) sets of distinct visitor digests, so imported
+    # data also gets exact per-page / per-section unique visitors (like live data).
+    scope_presence: dict[tuple[str, date, str, str], set[str]] = defaultdict(set)
 
     rows = (
         qs.order_by("website_id", "visitor_key", "created_at")
-        .values("website_id", "visitor_key", "created_at")
+        .values("website_id", "visitor_key", "created_at", "url_path")
         .iterator()
     )
     for (site, key), grp in groupby(rows, key=lambda r: (str(r["website_id"]), r["visitor_key"])):
-        times = [r["created_at"] for r in grp]
+        events = list(grp)
+        times = [r["created_at"] for r in events]
         day = utc_day(times[0])
         if (site, day) in live_days:
             continue
         keys_by_site[site].append(key)
+        if key in bot_keys:
+            continue  # bot digest: discarded (nulled) but never counted
+
+        # Per-scope presence: this visitor was seen on each page/section this period.
+        p_start, _ = _period_bounds(day, window)
+        pages = {(r["url_path"] or "/")[:500] for r in events}
+        for page in pages:
+            scope_presence[(site, p_start, "page", page)].add(key)
+        for sec in {section_for_path(p) for p in pages}:
+            scope_presence[(site, p_start, "section", sec)].add(key)
 
         # Sessionise (30-min inactivity gap). visit_pv = pageviews in current visit.
         visits = 1
@@ -557,6 +705,15 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
                 {"website_id": site, "period_start": p_start, "scope": "site", "scope_value": ""},
                 acc,
             )
+        for (s_site, sp_start, scope, scope_value), keyset in scope_presence.items():
+            _upsert_period_counts(
+                VisitorPeriod,
+                website_id=s_site,
+                period_start=sp_start,
+                scope=scope,
+                scope_value=scope_value,
+                unique_visitors=len(keyset),
+            )
         for site, keys in keys_by_site.items():
             for i in range(0, len(keys), 1000):
                 nulled += WebsiteEvent.objects.filter(
@@ -583,7 +740,9 @@ def _derived_counts(g: dict[str, Any]) -> dict[str, int]:
         "visits": g.get("visits") or 0,
         "bounces": (g.get("closed_bounces") or 0) + (g.get("open_bounces") or 0),
         "total_pageviews": g.get("total_pageviews") or 0,
-        "total_duration_s": (g.get("closed_duration") or 0) + (g.get("open_duration") or 0),
+        "total_duration_s": (g.get("closed_duration") or 0)
+        + (g.get("open_duration") or 0)
+        + (g.get("open_engaged") or 0),
     }
 
 

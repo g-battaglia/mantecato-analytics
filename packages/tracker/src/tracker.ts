@@ -41,6 +41,10 @@ export interface TrackerConfig {
   beforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload | false | null | undefined | Promise<UmamiPayload | false | null | undefined>;
   /** Fetch credentials mode (default: "omit") */
   credentials?: RequestCredentials;
+  /** Track on-page engagement (active time) for accurate duration + bounce (default: true) */
+  engagement?: boolean;
+  /** Periodic engagement heartbeat interval (ms) while the tab is visible; 0 disables (default: 15000) */
+  heartbeatMs?: number;
 }
 
 export interface EventPayload {
@@ -58,6 +62,8 @@ export interface UmamiPayload {
   /** Custom event name. Omitted for pageviews. */
   name?: string;
   tag?: string;
+  /** Referring URL (reduced to its domain server-side; same-site dropped). */
+  referrer?: string;
 }
 
 interface SendBody {
@@ -107,6 +113,11 @@ function getTitle(): string {
   return document.title;
 }
 
+function getReferrer(): string {
+  if (typeof document === "undefined") return "";
+  return document.referrer || "";
+}
+
 function isDNT(): boolean {
   const w = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : {};
   const n = typeof navigator !== "undefined" ? (navigator as unknown as Record<string, unknown>) : {};
@@ -116,7 +127,8 @@ function isDNT(): boolean {
 
 function isBot(): boolean {
   if (typeof navigator === "undefined") return false;
-  return /bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent);
+  if ((navigator as unknown as { webdriver?: boolean }).webdriver === true) return true;
+  return /bot|crawl|spider|slurp|lighthouse|headless/i.test(navigator.userAgent);
 }
 
 // --- Core ---
@@ -137,11 +149,40 @@ export function createTracker(config: TrackerConfig): Tracker {
     excludeHash = false,
     beforeSend,
     credentials = "omit",
+    engagement = true,
+    heartbeatMs = 15000,
   } = config;
 
   let enabled = true;
   let currentUrl = "";
   let cleanupFns: Array<() => void> = [];
+
+  // --- Engagement: cumulative active (tab-visible) time on the current page ---
+  let activeMs = 0;
+  let activeStart = 0;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  function isVisible(): boolean {
+    return typeof document === "undefined" || document.visibilityState !== "hidden";
+  }
+  function startActive(): void {
+    if (activeStart === 0 && isVisible()) activeStart = Date.now();
+  }
+  function stopActive(): void {
+    if (activeStart !== 0) {
+      activeMs += Date.now() - activeStart;
+      activeStart = 0;
+    }
+  }
+  function activeSeconds(): number {
+    let ms = activeMs;
+    if (activeStart !== 0) ms += Date.now() - activeStart;
+    return Math.round(ms / 1000);
+  }
+  function resetActive(): void {
+    activeMs = 0;
+    activeStart = isVisible() ? Date.now() : 0;
+  }
 
   function normalize(raw: string): string {
     if (!raw) return raw;
@@ -171,12 +212,14 @@ export function createTracker(config: TrackerConfig): Tracker {
   function buildPayload(eventPayload: EventPayload = {}): UmamiPayload {
     const url = normalize(eventPayload.url || getUrl());
     const title = eventPayload.title || getTitle();
+    const referrer = getReferrer();
 
     return {
       website: websiteId,
       hostname: customHostname || getHostname(),
       title,
       url,
+      ...(referrer ? { referrer } : {}),
       ...(tag ? { tag } : {}),
     };
   }
@@ -220,10 +263,86 @@ export function createTracker(config: TrackerConfig): Tracker {
     }
   }
 
+  function sendEngagement(): void {
+    if (!engagement || !shouldTrack()) return;
+    const seconds = activeSeconds();
+    if (seconds <= 0) return;
+    const url = currentUrl || normalize(getUrl());
+    const body = JSON.stringify({
+      type: "engagement",
+      payload: {
+        website: websiteId,
+        hostname: customHostname || getHostname(),
+        url,
+        seconds,
+      },
+    });
+    const apiUrl = `${baseUrl}${endpoint}`;
+    try {
+      // Prefer sendBeacon (survives unload); a "text/plain" Blob is CORS-safe and
+      // still parses as JSON server-side. Fall back to keepalive fetch.
+      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+        navigator.sendBeacon(apiUrl, new Blob([body], { type: "text/plain" }));
+      } else {
+        void fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+          credentials,
+        });
+      }
+    } catch {
+      // Silently ignore tracking failures
+    }
+  }
+
+  // Attribute accrued active time to the page that is ending, then start timing
+  // the new page. Called on every route change (SPA, popstate, manual pageview).
+  function nextPage(): void {
+    sendEngagement();
+    resetActive();
+  }
+
+  function onVisibility(): void {
+    if (isVisible()) {
+      startActive();
+    } else {
+      stopActive();
+      sendEngagement();
+    }
+  }
+  function onPageHide(): void {
+    stopActive();
+    sendEngagement();
+  }
+
+  function setupEngagement(): void {
+    if (!engagement) return;
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+    resetActive();
+    document.addEventListener("visibilitychange", onVisibility, true);
+    window.addEventListener("pagehide", onPageHide, true);
+    if (heartbeatMs > 0) {
+      heartbeatTimer = setInterval(() => {
+        if (isVisible()) sendEngagement();
+      }, heartbeatMs);
+    }
+    cleanupFns.push(() => {
+      document.removeEventListener("visibilitychange", onVisibility, true);
+      window.removeEventListener("pagehide", onPageHide, true);
+      if (heartbeatTimer !== null) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    });
+  }
+
   function handlePush(_state: unknown, _title: unknown, url?: string | URL | null): void {
     if (!url) return;
     const newUrl = normalize(new URL(String(url), typeof location !== "undefined" ? location.href : undefined).toString());
     if (newUrl !== currentUrl) {
+      nextPage();
       currentUrl = newUrl;
       setTimeout(() => send(buildPayload()), SPA_DELAY);
     }
@@ -236,6 +355,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     currentUrl = normalize(typeof location !== "undefined" ? location.href : "");
 
     send(buildPayload());
+    setupEngagement();
 
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
@@ -254,6 +374,7 @@ export function createTracker(config: TrackerConfig): Tracker {
       setTimeout(() => {
         const newUrl = normalize(typeof location !== "undefined" ? location.href : "");
         if (newUrl !== currentUrl) {
+          nextPage();
           currentUrl = newUrl;
           send(buildPayload());
         }
@@ -288,6 +409,7 @@ export function createTracker(config: TrackerConfig): Tracker {
   return {
     pageview(options) {
       const url = normalize(options?.url || getUrl());
+      if (url !== currentUrl) nextPage();
       currentUrl = url;
       return send(buildPayload({ url, title: options?.title }));
     },

@@ -201,6 +201,18 @@ VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
 # fine-grained history but more pseudonymous data at rest. See docs/privacy.md.
 VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=2)
 
+# A single-pageview visit counts as a bounce only if its real on-page (active)
+# time stays below this many seconds — the "engaged bounce" definition powered by
+# engagement beacons. Set to 0 for the classic Umami rule (single pageview =
+# bounce regardless of time). The active time also drives accurate avg duration.
+BOUNCE_ENGAGEMENT_THRESHOLD_S = _env_int("BOUNCE_ENGAGEMENT_THRESHOLD_S", default=10)
+
+# Flag requests from known cloud/datacenter IP ranges as bots at ingestion (the
+# IP is used transiently and never stored). Uses a bundled CIDR list with no
+# external calls. Extend the list via DATACENTER_CIDRS (comma-separated CIDRs).
+DETECT_DATACENTER_IPS = _env_bool("DETECT_DATACENTER_IPS", default=True)
+DATACENTER_CIDRS = _env_list("DATACENTER_CIDRS", default=[])
+
 # ============================================================================
 # 4. URL and template configuration
 # ============================================================================

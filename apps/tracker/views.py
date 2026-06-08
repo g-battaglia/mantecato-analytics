@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -24,8 +25,9 @@ from django.views.decorators.http import require_GET
 
 from apps.tracker.geo import resolve_geo
 from apps.tracker.ip import get_client_ip
-from apps.tracker.services import ingest_custom_event, ingest_pageview
+from apps.tracker.services import ingest_custom_event, ingest_engagement, ingest_pageview
 from apps.tracker.ua import classify_bot_user_agent, parse_user_agent
+from core.mantecato_core.ip_reputation import is_datacenter_ip
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -106,15 +108,31 @@ class IngestView(View):
         if not website_id:
             return JsonResponse({"error": "Missing website ID"}, status=400)
 
-        # Only process pageview events — ignore everything else silently
+        # Process pageviews/custom events and engagement beacons; ignore the rest.
         msg_type = body.get("type")
-        if msg_type != "event":
+        if msg_type not in ("event", "engagement"):
             return _add_cors(JsonResponse({"ok": True}))
 
         ip = get_client_ip(request)
         ua_string = request.META.get("HTTP_USER_AGENT", "")
-        device_info = parse_user_agent(ua_string)
         is_bot, bot_reason = classify_bot_user_agent(ua_string)
+        # Flag cloud/datacenter source IPs as bots (IP used transiently, never stored).
+        if not is_bot and settings.DETECT_DATACENTER_IPS and is_datacenter_ip(ip):
+            is_bot, bot_reason = True, "datacenter_ip"
+
+        # Engagement heartbeats only fold active time into the open visit; they
+        # write no event row and need no device/geo resolution.
+        if msg_type == "engagement":
+            ingest_engagement(
+                website_id=website_id,
+                payload=payload,
+                is_bot=is_bot,
+                ip=ip,
+                user_agent=ua_string,
+            )
+            return _add_cors(JsonResponse({"ok": True}))
+
+        device_info = parse_user_agent(ua_string)
         country = resolve_geo(request, ip)
 
         event_name = payload.get("name")

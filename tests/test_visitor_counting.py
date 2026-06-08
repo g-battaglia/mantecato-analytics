@@ -25,13 +25,16 @@ from apps.tracker.services import ingest_pageview
 from core.mantecato_core import visitor_counting
 from core.mantecato_core.filters import Filter
 from core.mantecato_core.queries.visitors import (
+    get_landing_metrics,
     read_scope_visitors,
     read_visit_stats,
     visit_metrics,
     visitors_by_bucket,
+    visits_by_bucket,
 )
 from core.mantecato_core.visitor_counting import (
     aggregate_events_into_daily,
+    record_engagement,
     record_scope_presence,
     record_visit,
     rollup_finished_periods,
@@ -277,3 +280,100 @@ def test_query_string_not_persisted():
     )
     ev = WebsiteEvent.objects.get(website_id=WEBSITE_ID)
     assert ev.url_path == "/checkout" and ev.url_query is None
+
+
+# --- engagement: real on-page time + engaged bounce -------------------------
+
+
+def test_engagement_makes_single_page_not_bounce():
+    # One pageview + an engagement beacon ≥ threshold → real duration, no bounce.
+    base = _today()
+    _visit(ip="1.2.3.4", when=base)
+    record_engagement(
+        website_id=WEBSITE_ID,
+        occurred_at=base + timedelta(seconds=5),
+        ip="1.2.3.4",
+        user_agent="Mozilla/5.0 Chrome",
+        seconds=30,
+    )
+    stats = read_visit_stats(WEBSITE_ID, *_full_range())
+    assert stats["visits"] == 1
+    assert stats["bounces"] == 0  # engaged 30s ≥ 10s threshold → not a bounce
+    assert stats["total_duration_s"] == 30
+
+
+def test_engagement_below_threshold_still_bounces():
+    base = _today()
+    _visit(ip="1.2.3.4", when=base)
+    record_engagement(
+        website_id=WEBSITE_ID,
+        occurred_at=base + timedelta(seconds=2),
+        ip="1.2.3.4",
+        user_agent="Mozilla/5.0 Chrome",
+        seconds=3,
+    )
+    stats = read_visit_stats(WEBSITE_ID, *_full_range())
+    assert stats["bounces"] == 1  # only 3s active < 10s threshold → bounce
+
+
+def test_engagement_without_pageview_is_noop():
+    record_engagement(
+        website_id=WEBSITE_ID,
+        occurred_at=_today(),
+        ip="9.9.9.9",
+        user_agent="X",
+        seconds=20,
+    )
+    assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 0
+
+
+def test_engagement_after_timeout_is_noop():
+    base = _today()
+    _visit(ip="1.2.3.4", when=base)
+    record_engagement(
+        website_id=WEBSITE_ID,
+        occurred_at=base + timedelta(minutes=45),
+        ip="1.2.3.4",
+        user_agent="Mozilla/5.0 Chrome",
+        seconds=60,
+    )
+    row = VisitorDayState.objects.get(website_id=WEBSITE_ID)
+    assert row.cur_page_engaged_s == 0  # stale beacon ignored, visit not revived
+
+
+# --- landing (entry) pages + visits-by-bucket -------------------------------
+
+
+def test_landing_metrics_visits_and_bounce():
+    base = _today()
+    _visit(ip="1.1.1.1", path="/a", when=base)  # single page → bounce
+    _visit(ip="2.2.2.2", path="/b", when=base)
+    _visit(ip="2.2.2.2", path="/b/2", when=base + timedelta(minutes=2))  # 2 pv → no bounce
+    rows = get_landing_metrics(WEBSITE_ID, *_full_range())
+    by_entry = {r["entry_path"]: r for r in rows}
+    assert by_entry["/a"]["visits"] == 1 and by_entry["/a"]["bounce_rate"] == 100.0
+    assert by_entry["/b"]["visits"] == 1 and by_entry["/b"]["bounce_rate"] == 0.0
+
+
+def test_visits_by_bucket_counts_sessions():
+    _ingest(ip="1.1.1.1")
+    _ingest(ip="2.2.2.2")
+    _ingest(ip="1.1.1.1")  # same visitor, same visit
+    now = timezone.now()
+    vb = visits_by_bucket(WEBSITE_ID, now - timedelta(hours=1), now + timedelta(hours=1), "hour")
+    assert sum(vb.values()) == 2  # two distinct visits
+
+
+def test_imported_per_scope_unique_visitors():
+    when = _days_ago(3)
+    for ip_key, paths in [("sessA", ["/x", "/x"]), ("sessB", ["/x", "/y"])]:
+        for p in paths:
+            ev = WebsiteEvent.objects.create(
+                website_id=WEBSITE_ID, url_path=p, event_type=1, visitor_key=ip_key
+            )
+            WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+    aggregate_events_into_daily(WEBSITE_ID)
+    counts = read_scope_visitors(
+        WEBSITE_ID, *_full_range(), scope="page", scope_values=["/x", "/y"]
+    )
+    assert counts["/x"] == 2 and counts["/y"] == 1

@@ -24,6 +24,7 @@ from django.db.models.functions import Trunc
 
 from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
+    SESSION_TIMEOUT_S,
     aggregate_state,
     current_window,
     has_only_bot_filter,
@@ -177,6 +178,68 @@ def read_scope_visitors(
     return out
 
 
+def get_landing_metrics(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    limit: int = 50,
+    filters: list[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Entry (landing) pages with visits, bounces and bounce rate.
+
+    Combines live ephemeral state (un-rolled periods, from ``VisitorDayState``
+    grouped by ``entry_path``) with finalised ``VisitorPeriod`` landing aggregates,
+    per period (live if present, else finalised) so each period is counted once.
+    Bounces use the engaged definition. Suppressed (``[]``) under a content/
+    device/geo filter — landing aggregates can't be sliced by those dimensions.
+    """
+    if not has_only_bot_filter(filters):
+        return []
+    from apps.core.models import VisitorDayState, VisitorPeriod
+    from core.mantecato_core.visitor_counting import _bounce_threshold, _open_bounce_filter
+
+    start_day = utc_day(start_date)
+    end_day = utc_day(end_date)
+    threshold = _bounce_threshold()
+    acc: dict[str, dict[str, int]] = {}
+
+    def _add(entry: str | None, visits: int, bounces: int) -> None:
+        row = acc.setdefault(entry or "/", {"visits": 0, "bounces": 0})
+        row["visits"] += visits
+        row["bounces"] += bounces
+
+    for pk, p_start, _p_end in periods_in_range(start_day, end_day, current_window()):
+        live = list(
+            VisitorDayState.objects.filter(website_id=website_id, period=pk)
+            .exclude(entry_path__isnull=True)
+            .values("entry_path")
+            .annotate(
+                visits=Count("id"),
+                bounces=Count("id", filter=_open_bounce_filter(threshold)),
+            )
+        )
+        if live:
+            for r in live:
+                _add(r["entry_path"], r["visits"] or 0, r["bounces"] or 0)
+        else:
+            for r in VisitorPeriod.objects.filter(
+                website_id=website_id, period_start=p_start, scope="landing"
+            ).values("scope_value", "visits", "bounces"):
+                _add(r["scope_value"], r["visits"] or 0, r["bounces"] or 0)
+
+    rows = [
+        {
+            "entry_path": entry,
+            "visits": v["visits"],
+            "bounces": v["bounces"],
+            "bounce_rate": round((v["bounces"] / v["visits"]) * 100, 1) if v["visits"] else 0.0,
+        }
+        for entry, v in acc.items()
+    ]
+    rows.sort(key=lambda r: (-r["visits"], r["entry_path"]))
+    return rows[:limit]
+
+
 _GRANULARITIES = ("minute", "hour", "day", "week", "month")
 
 
@@ -212,6 +275,63 @@ def visitors_by_bucket(
     )
     out: dict[str, int] = {}
     for r in rows:
+        bucket = r["bucket"]
+        key = bucket.isoformat() if hasattr(bucket, "isoformat") else str(bucket)
+        out[key] = r["v"] or 0
+    return out
+
+
+def visits_by_bucket(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    granularity: str,
+) -> dict[str, int]:
+    """Return ``{bucket_iso: visits}`` bucketed by each visit's start, **any granularity**.
+
+    Visits are sessionised (30-min inactivity gap) from the per-event window
+    digests on ``website_event`` and each visit is attributed to the bucket of its
+    first pageview. The bucket truncation matches :func:`visitors_by_bucket` (same
+    ``Trunc`` in UTC) so keys align with the pageview/visitors series. Finalised
+    buckets (digests NULLed at rollup) contribute nothing — like the Visitors line,
+    the chart range is normally recent (live) data.
+    """
+    from itertools import groupby
+
+    from apps.core.models import WebsiteEvent
+
+    gran = granularity if granularity in _GRANULARITIES else "day"
+    rows = (
+        WebsiteEvent.objects.filter(
+            website_id=website_id,
+            created_at__gte=start_date,
+            created_at__lte=end_date,
+            event_type=1,
+            is_bot=False,
+            visitor_key__isnull=False,
+        )
+        .order_by("visitor_key", "created_at")
+        .values_list("event_id", "visitor_key", "created_at")
+        .iterator()
+    )
+    start_ids: list[Any] = []
+    for _key, grp in groupby(rows, key=lambda r: r[1]):
+        last = None
+        for event_id, _k, created_at in grp:
+            if last is None or (created_at - last).total_seconds() > SESSION_TIMEOUT_S:
+                start_ids.append(event_id)
+            last = created_at
+    if not start_ids:
+        return {}
+
+    agg = (
+        WebsiteEvent.objects.filter(event_id__in=start_ids)
+        .annotate(bucket=Trunc("created_at", gran, tzinfo=UTC))
+        .values("bucket")
+        .annotate(v=Count("event_id"))
+    )
+    out: dict[str, int] = {}
+    for r in agg:
         bucket = r["bucket"]
         key = bucket.isoformat() if hasattr(bucket, "isoformat") else str(bucket)
         out[key] = r["v"] or 0

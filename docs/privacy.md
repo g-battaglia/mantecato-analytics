@@ -15,10 +15,17 @@ persistence, or cross-site/cross-day tracking.
 For every pageview the server records one anonymous row (`website_event`) with:
 
 - `url_path` (path only — see below), `page_title`, `hostname`
+- the referrer **domain** only (e.g. `google.com`) — never the full referrer
+  URL, its query string, or any UTM/click ID; same-site referrals are dropped
 - coarse device class derived from the User-Agent: `browser`, `os`, `device`
 - `country` (ISO-3166 alpha-2 only — never region or city)
-- a server timestamp, and a bot classification (`is_bot`, `bot_reason`)
+- a server timestamp, and a bot classification (`is_bot`, `bot_reason`; the
+  reason may be `datacenter_ip` — see "Bot filtering" below)
 - a random per-event UUID (not linked to any visitor)
+
+Separately, small per-visit integer counters track **active on-page time**
+(engagement) for accurate visit duration and the "engaged bounce" rate. No
+per-event timing log or scroll map is kept — only the aggregate seconds.
 
 ## What is **never** stored
 
@@ -26,7 +33,8 @@ For every pageview the server records one anonymous row (`website_event`) with:
 - ❌ IP addresses (used transiently, then discarded — see below)
 - ❌ Raw User-Agent strings (only the coarse browser/os/device class is kept)
 - ❌ Query strings (`?...`) — discarded at ingestion; they can carry PII
-- ❌ Referrer, UTM, click IDs, custom-event payloads, `identify()` data
+- ❌ Full referrer URLs (only the bare domain is kept), UTM/click IDs,
+  custom-event payloads, `identify()` data
 - ❌ Sessions lists, visitor profiles, journeys, session replay, region/city
 - ❌ Any persistent or cross-site visitor/session identifier
 
@@ -116,6 +124,22 @@ The tracker honours DNT and GPC **by default** (opt out per site with
 `data-do-not-track="false"`). GPC is treated as a binding opt-out signal
 (CCPA/CPRA).
 
+## Bot filtering
+
+Known bots are excluded by User-Agent pattern, and requests from cloud/datacenter
+IP ranges are flagged (`bot_reason = datacenter_ip`) using a **bundled** CIDR list
+— no third-party service is contacted, and the IP is used only transiently (never
+stored, exactly as for visitor counting). Datacenter detection can be disabled
+(`DETECT_DATACENTER_IPS=false`) and the CIDR list extended (`DATACENTER_CIDRS`).
+Bot hits never enter the visitor/visit counts and are excluded from pageview
+breakdowns when bot filtering is enabled for a site.
+
+When a per-site bot config enables behavioural rules (zero-engagement,
+high-velocity, datacentre clusters, excluded countries), those run **at
+aggregation time** on the window digest — the cookieless equivalent of a session —
+so the bot filter reduces the exact **visitor/visit/bounce** counts too, not only
+pageviews. The digest is discarded as usual; only anonymous integer counts remain.
+
 ## Why no consent banner is required
 
 - **ePrivacy Art. 5(3) / UK PECR**: these govern *storing or accessing
@@ -145,6 +169,7 @@ The tracker honours DNT and GPC **by default** (opt out per site with
 > does not store your IP address, your full browser User-Agent, or any
 > identifier that can recognise you across days or across sites. We only see
 > anonymous, aggregate statistics (e.g. total pageviews and visits, bounce rate,
-> coarse device type, and country). Because nothing is stored on your device and
+> average time on page, coarse device type, country, and the domain of the site
+> that referred you — never the full address). Because nothing is stored on your device and
 > no profile is built, no consent banner is required. We honour Do Not Track and
 > Global Privacy Control signals.

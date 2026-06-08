@@ -43,9 +43,11 @@ from apps.analytics.services import (
     get_devices_data,  # noqa: F401
     get_events_data,  # noqa: F401
     get_geo_data,  # noqa: F401
+    get_landing_data,  # noqa: F401
     get_overview_data,  # noqa: F401
     get_pages_data,  # noqa: F401
     get_realtime_data,
+    get_sources_data,  # noqa: F401
     resolve_websites_for_user,
 )
 from apps.common.http import safe_int
@@ -185,7 +187,9 @@ class SitesListView(ApiAuthMixin, JSONView):
 # ============================================================================
 
 
-class _AnalyticsJSONView(ApiAuthMixin, WebsiteContextMixin, DateRangeMixin, GranularityMixin, FiltersMixin, JSONView):
+class _AnalyticsJSONView(
+    ApiAuthMixin, WebsiteContextMixin, DateRangeMixin, GranularityMixin, FiltersMixin, JSONView
+):
     """Base for analytics ``GET`` endpoints needing website + date range.
 
     Subclasses define:
@@ -372,6 +376,38 @@ class AnalyticsGeoView(_AnalyticsJSONView):
     """
 
     service_name = "get_geo_data"
+
+
+class AnalyticsSourcesView(_AnalyticsJSONView):
+    """``GET /api/analytics/sources/`` -- traffic sources (referrer domain only).
+
+    Authentication:
+        Requires API key with access to the specified website.
+
+    Query params:
+        ``website`` (required), ``start_at``, ``end_at``, plus filter params.
+
+    Response:
+        200 JSON with pageview counts grouped by referrer domain.
+    """
+
+    service_name = "get_sources_data"
+
+
+class AnalyticsEntryView(_AnalyticsJSONView):
+    """``GET /api/analytics/entry/`` -- entry (landing) pages with bounce rate.
+
+    Authentication:
+        Requires API key with access to the specified website.
+
+    Query params:
+        ``website`` (required), ``start_at``, ``end_at``, plus filter params.
+
+    Response:
+        200 JSON with visits and engaged bounce rate per entry page.
+    """
+
+    service_name = "get_landing_data"
 
 
 class AnalyticsCompareView(_AnalyticsJSONView):
