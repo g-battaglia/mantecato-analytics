@@ -466,7 +466,7 @@ class SitePurgeView(LoginRequiredMixin, View):
             messages.success(
                 request,
                 f"Purged all data for '{result['name']}': "
-                f"{result['events']:,} events, {result['sketches']:,} visitor sketches.",
+                f"{result['events']:,} events, {result['visitor_rows']:,} visitor count rows.",
             )
         return redirect("site_list")
 

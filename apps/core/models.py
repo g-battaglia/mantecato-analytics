@@ -1,7 +1,11 @@
-"""Django models for the Mantecato analytics platform — privacy-first, aggregate-only.
+"""Django models for the Mantecato analytics platform — privacy-first, cookieless.
 
-Mantecato tracks anonymous aggregate pageviews only. No sessions, no visitors,
-no fingerprinting, no persistent identifiers, no referrer/UTM tracking.
+Mantecato is cookieless and stores no persistent per-person identifier. It does
+produce **exact** daily unique-visitor/visit/bounce counts via a compute-and-
+discard scheme: each request's (IP + User-Agent) is hashed with a random daily
+salt into an ephemeral digest used only to deduplicate within the day; the salt
+and digests are deleted by the nightly rollup, leaving only anonymous integer
+aggregates. No referrer/UTM tracking, no cross-day or cross-site linkage.
 
 Model layout:
 
@@ -10,6 +14,9 @@ Model layout:
 - :class:`Website`: tracked sites.
 - :class:`WebsiteEvent`: anonymous pageview/custom-event rows (no session_id,
   no visit_id, no referrer, no UTM, no click IDs, no event payload).
+- :class:`VisitorDaySalt`, :class:`VisitorDayState`: ephemeral compute-and-
+  discard state for exact same-day visitor/visit counting (deleted at rollup).
+- :class:`VisitorDaily`: permanent, fully anonymous daily count aggregates.
 - :class:`Report`: polymorphic configuration table.  Discriminated by the
   :attr:`Report.type` column whose allowed values are enumerated in
   :class:`ReportType`.
@@ -240,40 +247,109 @@ class WebsiteEvent(models.Model):
         return str(self.event_id)
 
 
-class VisitorSketch(models.Model):
-    """Hourly aggregate sketch for estimated unique visitor counts.
+class VisitorDaySalt(models.Model):
+    """Per-UTC-day random salt for the exact compute-and-discard counter.
 
-    The table stores only HyperLogLog registers by website/time/scope. It does
-    not store IP addresses, User-Agents, visitor IDs, hashes, sessions, or any
-    per-event identifier.
+    The salt keys the HMAC that turns a request's (IP + User-Agent) into a
+    daily, site-scoped dedup digest. It is created lazily on the first event of
+    each day and **deleted** by the nightly rollup once that day is finalised,
+    so past digests can never be recomputed (forward secrecy). The salt is
+    independent from ``SECRET_KEY``.
+    """
+
+    day = models.DateField(primary_key=True)
+    salt = models.BinaryField(max_length=32)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "visitor_day_salt"
+
+    def __str__(self) -> str:
+        return f"salt:{self.day}"
+
+
+class VisitorDayState(models.Model):
+    """Ephemeral per-visitor, per-day state for **exact** visit/bounce counting.
+
+    One row per distinct daily visitor digest. Holds only aggregate counters
+    and timestamps needed to compute exact unique visitors, visits, bounce
+    rate, pages-per-visit and on-site duration for the day. It stores **no** IP,
+    User-Agent, or reversible identifier — only the salted ``visitor_key`` whose
+    salt is discarded at rollup. Rows are deleted by the nightly rollup after
+    being aggregated into :class:`VisitorDaily`.
     """
 
     id = _uuid_pk()
     website_id = models.UUIDField()
-    bucket_start = models.DateTimeField()
+    day = models.DateField()
+    # Hex-encoded HMAC-SHA256 digest (salt discarded daily → not reversible).
+    visitor_key = models.CharField(max_length=64)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+    # Completed-visit counters plus the in-progress ("cur") visit.
+    visits = models.IntegerField(default=1)
+    bounces = models.IntegerField(default=0)
+    cur_visit_pageviews = models.IntegerField(default=1)
+    cur_visit_duration_s = models.IntegerField(default=0)
+    total_pageviews = models.IntegerField(default=1)
+    total_duration_s = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "visitor_day_state"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["website_id", "day", "visitor_key"],
+                name="uniq_visitor_day_key",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["website_id", "day"], name="idx_vds_site_day"),
+            models.Index(fields=["day"], name="idx_vds_day"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.website_id}:{self.day}:{self.visitor_key[:8]}"
+
+
+class VisitorDaily(models.Model):
+    """Permanent, fully anonymous daily aggregate — the rollup target.
+
+    Stores only integer counts per website/day/scope. There is nothing
+    per-person here: it is the irreversible result of discarding the daily
+    digests. ``scope='site'`` holds the headline totals; page/section/entry
+    scopes (added later) hold per-page breakdowns.
+    """
+
+    id = _uuid_pk()
+    website_id = models.UUIDField()
+    day = models.DateField()
     scope = models.CharField(max_length=20, default="site")
     scope_value = models.CharField(max_length=500, blank=True, default="")
-    registers = models.BinaryField(default=_visitor_sketch_registers)
+    unique_visitors = models.IntegerField(default=0)
+    visits = models.IntegerField(default=0)
+    bounces = models.IntegerField(default=0)
+    total_pageviews = models.IntegerField(default=0)
+    total_duration_s = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "visitor_sketch"
+        db_table = "visitor_daily"
         constraints = [
             models.UniqueConstraint(
-                fields=["website_id", "bucket_start", "scope", "scope_value"],
-                name="uniq_visitor_sketch_bucket_scope",
+                fields=["website_id", "day", "scope", "scope_value"],
+                name="uniq_visitor_daily_scope",
             )
         ]
         indexes = [
             models.Index(
-                fields=["website_id", "scope", "bucket_start"],
-                name="idx_vs_site_scope_bucket",
+                fields=["website_id", "scope", "day"],
+                name="idx_vd_site_scope_day",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.website_id}:{self.bucket_start}:{self.scope}:{self.scope_value}"
+        return f"{self.website_id}:{self.day}:{self.scope}:{self.scope_value}"
 
 
 # ---------------------------------------------------------------------------

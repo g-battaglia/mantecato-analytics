@@ -11,7 +11,7 @@
       <span class="h-1.5 w-1.5 shrink-0 rounded-sm bg-primary"></span>{{ event.eventName }}
     </span>
     <div class="relative flex gap-3 font-mono text-[12px]">
-      <span class="text-muted-foreground">{% if event.visitors is not None %}~{{ event.visitors|intcomma }}{% else %}—{% endif %}</span>
+      <span class="text-muted-foreground">{% if event.visitors is not None %}{{ event.visitors|intcomma }}{% else %}—{% endif %}</span>
       <span class="min-w-[50px] text-right text-foreground">{{ event.count|intcomma }}</span>
     </div>
   </a>

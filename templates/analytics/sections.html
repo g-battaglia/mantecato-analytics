@@ -25,7 +25,7 @@
         <span class="flex-1">{% trans "Section" %}</span>
         <div class="flex gap-4 text-right">
           <span class="w-16">{% trans "Views" %}</span>
-          <span class="w-20">{% trans "Est. visitors" %}</span>
+          <span class="w-20">{% trans "Visitors" %}</span>
           <span class="hidden w-14 sm:inline">{% trans "Pages" %}</span>
           <span class="hidden w-14 sm:inline">{% trans "%" %}</span>
         </div>
@@ -39,7 +39,7 @@
         </div>
         <div class="relative flex gap-4 text-right tabular-nums">
           <span class="w-16 font-medium">{{ s.views|intcomma }}</span>
-          <span class="w-20 text-muted-foreground">{% if s.visitors is not None %}~{{ s.visitors|intcomma }}{% else %}—{% endif %}</span>
+          <span class="w-20 text-muted-foreground">{% if s.visitors is not None %}{{ s.visitors|intcomma }}{% else %}—{% endif %}</span>
           <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.pages|intcomma }}</span>
           <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.pct|floatformat:1 }}%</span>
         </div>

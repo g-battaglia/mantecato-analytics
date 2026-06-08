@@ -198,8 +198,8 @@ class TestOverviewTabFetchers:
         from apps.analytics.services import get_overview_tab_pages
         from core.mantecato_core.filters import Filter
 
-        # Content filter keeps the call off the anonymous-visitor estimate path
-        # (which would query VisitorSketch rows) so the test stays DB-free.
+        # A content filter suppresses per-scope visitor counts, so the call
+        # stays off the visitor-aggregate path and the test stays DB-free.
         result = get_overview_tab_pages(
             WEBSITE_ID,
             _make_date_range(),

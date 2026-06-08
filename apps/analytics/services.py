@@ -1,9 +1,10 @@
-"""Analytics services — orchestrates read-only query calls for aggregate pageview analytics.
+"""Analytics services — orchestrates read-only query calls for the dashboard.
 
-The product supports aggregate pageview metrics plus anonymous estimated
-unique-visitor counts from aggregate sketches. No exact visitor identities,
-sessions, bounce, time-on-site, referrer, UTM, revenue, retention, funnel,
-journey, or engagement metrics are stored.
+Pageview aggregates plus **exact** site-level visitor/visit/bounce/duration
+metrics from the cookieless compute-and-discard counter. No referrer, UTM,
+revenue, retention, funnel, journey, or engagement metrics, and no persistent
+per-person identifier. Unique visitors are exact per day; over a multi-day range
+the total is the sum of daily uniques (no cross-day linkage).
 """
 
 from __future__ import annotations
@@ -25,11 +26,7 @@ from apps.analytics.formatting import (
 from apps.analytics.formatting import (
     percentage_change as _percentage_change,
 )
-from core.mantecato_core.queries.visitors import (
-    estimate_unique_visitors,
-    estimate_unique_visitors_by_scope,
-)
-from core.mantecato_core.visitor_estimation import has_only_bot_filter
+from core.mantecato_core.helpers import format_duration
 from core.mantecato_core.queries.devices import get_device_metrics_multi
 from core.mantecato_core.queries.events import get_event_metrics, get_event_time_series
 from core.mantecato_core.queries.geo import get_geo_metrics
@@ -48,42 +45,65 @@ from core.mantecato_core.queries.stats import (
     get_top_sections,
     get_website_stats_comparison,
 )
+from core.mantecato_core.queries.visitors import visit_metrics
+from core.mantecato_core.visitor_counting import has_only_bot_filter
+
+_UNAVAILABLE_NOTE = "Unavailable with current filters"
 
 
 def _stats_with_change(
-    stats: dict[str, int | None],
-    prev_stats: dict[str, int | None],
+    stats: dict[str, Any],
+    prev_stats: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build KPI cards compatible with privacy-first aggregate data."""
+    """Build the dashboard KPI cards.
+
+    Pageview cards are always present. The visitor-derived cards (visitors,
+    visits, bounce_rate, avg_duration, pages_per_visit) carry **exact** values
+    when available and show ``N/A`` when suppressed (a content/device/geo filter
+    narrows the population, which aggregate counts cannot represent). ``visitors``
+    over a multi-day range is the sum of daily uniques.
+    """
+
+    def _change(cur: Any, prev: Any) -> Any:
+        if cur is None or prev is None:
+            return None
+        return _percentage_change(cur, prev)
+
+    def _pageview_card(key: str) -> dict[str, Any]:
+        cur = stats.get(key) or 0
+        return {"value": _format_compact(cur), "change": _change(cur, prev_stats.get(key) or 0)}
+
+    def _exact_card(key: str, value: Any, *, note: str | None = None) -> dict[str, Any]:
+        if stats.get(key) is None:
+            return {"value": "N/A", "change": None, "unsupported": True, "note": _UNAVAILABLE_NOTE}
+        change = _change(stats.get(key), prev_stats.get(key))
+        return {"value": value, "change": change, "note": note}
+
+    bounce = stats.get("bounce_rate")
+    avg_duration = stats.get("avg_duration")
+    ppv = stats.get("pages_per_visit")
     visitors = stats.get("visitors")
-    prev_visitors = prev_stats.get("visitors")
+    visits = stats.get("visits")
+
     return {
-        "pageviews": {
-            "value": _format_compact(stats["pageviews"]),
-            "change": _percentage_change(stats["pageviews"], prev_stats["pageviews"]),
-        },
-        "visitors": {
-            "value": f"~{_format_compact(visitors)}" if visitors is not None else "N/A",
-            "change": _percentage_change(visitors, prev_visitors)
-            if visitors is not None and prev_visitors is not None
-            else None,
-            "estimated": visitors is not None,
-            "note": "Estimated" if visitors is not None else "Unavailable with current filters",
-        },
-        "human_pageviews": {
-            "value": _format_compact(stats.get("human_pageviews") or 0),
-            "change": _percentage_change(
-                stats.get("human_pageviews") or 0,
-                prev_stats.get("human_pageviews") or 0,
-            ),
-        },
-        "bot_pageviews": {
-            "value": _format_compact(stats.get("bot_pageviews") or 0),
-            "change": _percentage_change(
-                stats.get("bot_pageviews") or 0,
-                prev_stats.get("bot_pageviews") or 0,
-            ),
-        },
+        "pageviews": _pageview_card("pageviews"),
+        "visitors": _exact_card(
+            "visitors",
+            _format_compact(visitors) if visitors is not None else "N/A",
+            note="Sum of daily uniques" if visitors is not None else None,
+        ),
+        "visits": _exact_card("visits", _format_compact(visits) if visits is not None else "N/A"),
+        "bounce_rate": _exact_card("bounce_rate", bounce),
+        "avg_duration": _exact_card(
+            "avg_duration",
+            format_duration(avg_duration) if avg_duration is not None else "N/A",
+        ),
+        "pages_per_visit": _exact_card(
+            "pages_per_visit",
+            f"{ppv:.2f}" if ppv is not None else "N/A",
+        ),
+        "human_pageviews": _pageview_card("human_pageviews"),
+        "bot_pageviews": _pageview_card("bot_pageviews"),
     }
 
 
@@ -98,7 +118,7 @@ def _add_percentage(
         r[target_key] = round(r[value_key] / total * 100, 1) if total else 0
 
 
-def _attach_estimated_visitors(
+def _attach_scope_visitors(
     website_id: str,
     start: Any,
     end: Any,
@@ -109,21 +129,16 @@ def _attach_estimated_visitors(
     target_key: str = "visitors",
     enabled: bool = True,
 ) -> None:
-    """Add anonymous estimated visitor counts to page/section rows."""
-    if not enabled:
-        for row in rows:
-            row[target_key] = None
-        return
-    values = [str(r.get(value_key) or "") for r in rows]
-    estimates = estimate_unique_visitors_by_scope(
-        website_id,
-        start,
-        end,
-        scope=scope,
-        scope_values=values,
-    )
+    """Set the per-scope (page/section/event) visitor column.
+
+    Exact site-level visitor counts ship in Phase 1; exact *per-scope* unique
+    visitors need per-(scope, visitor) dedup storage and are added in a later
+    phase. Until then the column is surfaced as ``None`` (rendered as "—") so it
+    never shows a misleading estimate. ``website_id``/``start``/``end``/``scope``
+    /``value_key``/``enabled`` are kept for that future wiring.
+    """
     for row in rows:
-        row[target_key] = estimates.get(str(row.get(value_key) or ""), 0)
+        row[target_key] = None
 
 
 def resolve_websites_for_user(user_id: str, is_admin: bool) -> list[dict[str, Any]]:
@@ -145,9 +160,9 @@ def get_overview_data(
 ) -> dict[str, Any]:
     """Execute all read-only queries for the main overview/dashboard page.
 
-    In the strict aggregate product, this returns pageview counts, trends,
-    top pages, top sections, device breakdowns, geo data, heatmap, and
-    realtime counters.
+    Returns pageview counts, exact visitor/visit/bounce KPIs, trends, top
+    pages, top sections, device breakdowns, geo data, heatmap, and realtime
+    counters.
     """
     filters = filters or []
     start = date_range.start_date
@@ -158,14 +173,6 @@ def get_overview_data(
     stats_cmp = get_website_stats_comparison(
         website_id, start, end, prev_range.start_date, prev_range.end_date, filters
     )
-    if has_only_bot_filter(filters):
-        stats_cmp["current"]["visitors"] = estimate_unique_visitors(website_id, start, end)
-        stats_cmp["previous"]["visitors"] = estimate_unique_visitors(
-            website_id, prev_range.start_date, prev_range.end_date
-        )
-    else:
-        stats_cmp["current"]["visitors"] = None
-        stats_cmp["previous"]["visitors"] = None
     stats = _stats_with_change(stats_cmp["current"], stats_cmp["previous"])
 
     ts_cmp = get_pageview_time_series_comparison(
@@ -176,7 +183,7 @@ def get_overview_data(
 
     sections = get_top_sections(website_id, start, end, limit=10, filters=filters)
     estimates_enabled = has_only_bot_filter(filters)
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -193,7 +200,7 @@ def get_overview_data(
     _add_percentage(country_data, "pageviews")
 
     top_pages = get_top_pages(website_id, start, end, limit=10, filters=filters)
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -204,7 +211,7 @@ def get_overview_data(
     )
     event_metrics = get_event_metrics(website_id, start, end, limit=10, filters=filters)
     _add_percentage(event_metrics, "count")
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -248,7 +255,7 @@ def get_pages_data(
     offset = (page - 1) * 50
 
     pages = get_page_metrics(website_id, start, end, limit=50, offset=offset, filters=filters)
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -275,7 +282,7 @@ def get_sections_data(
     end = date_range.end_date
 
     sections = get_top_sections(website_id, start, end, limit=100, filters=filters)
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -383,32 +390,27 @@ def get_compare_data(
     previous = next((r for r in comparison if r["period"] == "previous"), None)
 
     if current and previous:
-        if has_only_bot_filter(filters):
-            current["visitors"] = estimate_unique_visitors(website_id, start, end)
-            previous["visitors"] = estimate_unique_visitors(
-                website_id,
-                comp_range.start_date,
-                comp_range.end_date,
-            )
-        else:
-            current["visitors"] = None
-            previous["visitors"] = None
+        cur_vm = visit_metrics(website_id, start, end, filters)
+        prev_vm = visit_metrics(website_id, comp_range.start_date, comp_range.end_date, filters)
+        # Surface exact metrics on the comparison rows for the per-period table.
+        current |= cur_vm
+        previous |= prev_vm
         stats = _stats_with_change(
             {
                 "pageviews": current["pageviews"],
-                "visitors": current["visitors"],
                 "human_pageviews": current.get("human_pageviews", 0),
                 "bot_pageviews": current.get("bot_pageviews", 0),
+                **cur_vm,
             },
             {
                 "pageviews": previous["pageviews"],
-                "visitors": previous["visitors"],
                 "human_pageviews": previous.get("human_pageviews", 0),
                 "bot_pageviews": previous.get("bot_pageviews", 0),
+                **prev_vm,
             },
         )
     else:
-        stats = _stats_with_change({"pageviews": 0, "visitors": None}, {"pageviews": 0, "visitors": None})
+        stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0})
 
     granularity = resolve_granularity(granularity, date_range)
     current_ts = get_pageview_time_series(website_id, start, end, granularity, filters=filters)
@@ -441,7 +443,7 @@ def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
 
     events = get_event_metrics(website_id, start, end, limit=50, filters=filters)
     _add_percentage(events, "count")
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -467,12 +469,14 @@ def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
         ),
     }
 
-def get_overview_tab_pages(website_id: str, date_range: DateRange, filters: list[Filter] | None = None) -> dict[str, Any]:
+def get_overview_tab_pages(
+    website_id: str, date_range: DateRange, filters: list[Filter] | None = None
+) -> dict[str, Any]:
     """Fetch top-pages for the overview tab."""
     filters = filters or []
     start, end = date_range.start_date, date_range.end_date
     pages = get_top_pages(website_id, start, end, limit=10, filters=filters)
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -493,7 +497,7 @@ def get_overview_tab_events(
     start, end = date_range.start_date, date_range.end_date
     events = get_event_metrics(website_id, start, end, limit=10, filters=filters)
     _add_percentage(events, "count")
-    _attach_estimated_visitors(
+    _attach_scope_visitors(
         website_id,
         start,
         end,
@@ -504,7 +508,9 @@ def get_overview_tab_events(
     )
     return {"event_metrics": events}
 
-def get_overview_tab_devices(website_id: str, date_range: DateRange, filters: list[Filter] | None = None) -> dict[str, Any]:
+def get_overview_tab_devices(
+    website_id: str, date_range: DateRange, filters: list[Filter] | None = None
+) -> dict[str, Any]:
     """Fetch device breakdowns for the overview tab."""
     filters = filters or []
     start, end = date_range.start_date, date_range.end_date
@@ -515,7 +521,9 @@ def get_overview_tab_devices(website_id: str, date_range: DateRange, filters: li
         "device_data": breakdown["device"],
     }
 
-def get_overview_tab_geo(website_id: str, date_range: DateRange, filters: list[Filter] | None = None) -> dict[str, Any]:
+def get_overview_tab_geo(
+    website_id: str, date_range: DateRange, filters: list[Filter] | None = None
+) -> dict[str, Any]:
     """Fetch geographic data for the overview tab."""
     filters = filters or []
     start, end = date_range.start_date, date_range.end_date

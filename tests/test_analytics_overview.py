@@ -431,8 +431,8 @@ class TestOverviewViewRendered:
             {"urlPath": "/", "views": 42, "visitors": 30},
         ]
 
-        # A content filter keeps the request off the anonymous-visitor estimate
-        # path (which would otherwise query the DB for VisitorSketch rows).
+        # A content filter suppresses visitor counts, keeping the request off
+        # the visitor-aggregate path (no DB query for visitor tables).
         response = client.get(
             "/overview/tab/?tab=pages&f=country:eq:US&website=" + WEBSITE_ID
         )

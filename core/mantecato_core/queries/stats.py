@@ -1,7 +1,9 @@
-"""Website statistics queries — aggregate pageview metrics and time series.
+"""Website statistics queries — pageview metrics, time series, and exact counts.
 
-Privacy-first: only aggregate pageview counts. No visitor, session, bounce,
-or time-on-site metrics (those require persistent identifiers).
+Cookieless: pageview aggregates come from ``website_event``; exact
+visitor/visit/bounce/duration metrics come from the compute-and-discard
+aggregates (see :mod:`core.mantecato_core.visitor_counting`). No persistent
+per-person identifier is stored.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from core.mantecato_core.queries.orm_fallbacks import (
     stats_dict,
     top_sections_from_qs,
 )
+from core.mantecato_core.queries.visitors import visit_metrics
 
 # -- URL normalisation regex patterns -----------------------------------------
 _PATTERNS_SMART = [
@@ -77,20 +80,22 @@ def get_website_stats(
     end_date: datetime,
     filters: list[Filter] | None = None,
 ) -> dict[str, Any]:
-    """Aggregate website stats over a date range — pageviews only.
+    """Aggregate website stats over a date range.
 
-    Returns a dict with ``pageviews`` count. The product does not
-    track visitors, sessions, bounces, or time-on-site (those require
-    persistent identifiers).
+    Returns pageview counts plus **exact** visitor/visit/bounce metrics from the
+    compute-and-discard aggregates (``visitors``, ``visits``, ``bounces``,
+    ``totaltime`` and the derived ``bounce_rate``/``avg_duration``/
+    ``pages_per_visit``). Visitor metrics are ``None`` when a content/device/geo
+    filter is active (aggregates cannot be sliced by those dimensions).
     """
-    if should_use_orm_fallback():
-        return stats_dict(pageview_queryset(website_id, start_date, end_date, filters))
-
     filters = filters or []
-    filter_where, filter_params, _ = prepare_filters(filters)
 
-    rows = raw_query(
-        """SELECT
+    if should_use_orm_fallback():
+        base = stats_dict(pageview_queryset(website_id, start_date, end_date, filters))
+    else:
+        filter_where, filter_params, _ = prepare_filters(filters)
+        rows = raw_query(
+            """SELECT
       COUNT(*)::bigint AS pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = false)::bigint AS human_pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = true)::bigint AS bot_pageviews
@@ -99,20 +104,22 @@ def get_website_stats(
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
       """ + filter_where,
-        {
-            "websiteId": website_id,
-            "startDate": start_date,
-            "endDate": end_date,
-            **filter_params,
-        },
-    )
+            {
+                "websiteId": website_id,
+                "startDate": start_date,
+                "endDate": end_date,
+                **filter_params,
+            },
+        )
+        row = rows[0] if rows else {}
+        base = {
+            "pageviews": int(row.get("pageviews") or 0),
+            "human_pageviews": int(row.get("human_pageviews") or 0),
+            "bot_pageviews": int(row.get("bot_pageviews") or 0),
+        }
 
-    row = rows[0] if rows else {}
-    return {
-        "pageviews": int(row.get("pageviews") or 0),
-        "human_pageviews": int(row.get("human_pageviews") or 0),
-        "bot_pageviews": int(row.get("bot_pageviews") or 0),
-    }
+    base.update(visit_metrics(website_id, start_date, end_date, filters))
+    return base
 
 
 def get_pageview_time_series(
@@ -197,20 +204,24 @@ def get_website_stats_comparison(
 ) -> dict[str, dict[str, Any]]:
     """Return :func:`get_website_stats` for the current and previous periods at once.
 
-    Returns ``{"current": {...}, "previous": {...}}`` where each value
-    contains ``pageviews`` count.
+    Returns ``{"current": {...}, "previous": {...}}`` where each value contains
+    pageview counts plus the exact visitor/visit/bounce metrics (see
+    :func:`get_website_stats`).
     """
-    if should_use_orm_fallback():
-        return {
-            "current": stats_dict(pageview_queryset(website_id, cur_start, cur_end, filters)),
-            "previous": stats_dict(pageview_queryset(website_id, prev_start, prev_end, filters)),
-        }
-
     filters = filters or []
-    filter_where, filter_params, _ = prepare_filters(filters)
 
-    rows = raw_query(
-        """SELECT 'current' AS period,
+    def _zero() -> dict[str, Any]:
+        return {"pageviews": 0, "human_pageviews": 0, "bot_pageviews": 0}
+
+    out: dict[str, dict[str, Any]] = {"current": _zero(), "previous": _zero()}
+
+    if should_use_orm_fallback():
+        out["current"] = stats_dict(pageview_queryset(website_id, cur_start, cur_end, filters))
+        out["previous"] = stats_dict(pageview_queryset(website_id, prev_start, prev_end, filters))
+    else:
+        filter_where, filter_params, _ = prepare_filters(filters)
+        rows = raw_query(
+            """SELECT 'current' AS period,
       COUNT(*)::bigint AS pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = false)::bigint AS human_pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = true)::bigint AS bot_pageviews
@@ -229,26 +240,24 @@ def get_website_stats_comparison(
       AND we.created_at BETWEEN {{prevStart::timestamptz}} AND {{prevEnd::timestamptz}}
       AND we.event_type = 1
       """ + filter_where,
-        {
-            "websiteId": website_id,
-            "curStart": cur_start,
-            "curEnd": cur_end,
-            "prevStart": prev_start,
-            "prevEnd": prev_end,
-            **filter_params,
-        },
-    )
+            {
+                "websiteId": website_id,
+                "curStart": cur_start,
+                "curEnd": cur_end,
+                "prevStart": prev_start,
+                "prevEnd": prev_end,
+                **filter_params,
+            },
+        )
+        for row in rows:
+            out[row["period"]] = {
+                "pageviews": int(row.get("pageviews") or 0),
+                "human_pageviews": int(row.get("human_pageviews") or 0),
+                "bot_pageviews": int(row.get("bot_pageviews") or 0),
+            }
 
-    def _zero() -> dict[str, Any]:
-        return {"pageviews": 0, "human_pageviews": 0, "bot_pageviews": 0}
-
-    out: dict[str, dict[str, Any]] = {"current": _zero(), "previous": _zero()}
-    for row in rows:
-        out[row["period"]] = {
-            "pageviews": int(row.get("pageviews") or 0),
-            "human_pageviews": int(row.get("human_pageviews") or 0),
-            "bot_pageviews": int(row.get("bot_pageviews") or 0),
-        }
+    out["current"].update(visit_metrics(website_id, cur_start, cur_end, filters))
+    out["previous"].update(visit_metrics(website_id, prev_start, prev_end, filters))
     return out
 
 

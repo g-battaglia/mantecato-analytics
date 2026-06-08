@@ -62,8 +62,9 @@ import { createTracker, type Tracker } from "./tracker";
     .filter(Boolean);
 
   const autoTrack = script.getAttribute("data-auto-track") !== "false";
-  // Match Umami: data-do-not-track="true" opts IN to DNT checking (default: off)
-  const respectDNT = script.getAttribute("data-do-not-track") === "true";
+  // Privacy-first: honour Do Not Track / Global Privacy Control by default
+  // (GPC is legally binding under CCPA/CPRA). Opt OUT with data-do-not-track="false".
+  const respectDNT = script.getAttribute("data-do-not-track") !== "false";
   const tag = script.getAttribute("data-tag") || undefined;
   const excludeSearch = script.getAttribute("data-exclude-search") === "true";
   const excludeHash = script.getAttribute("data-exclude-hash") === "true";

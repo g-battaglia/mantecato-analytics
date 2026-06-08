@@ -45,12 +45,13 @@ Every metric available in the dashboard is also available through the CLI, the R
 
 | | |
 |---|---|
-| 🔒 **Privacy-first** | Cookieless aggregate analytics with no fingerprinting, no persistent visitor/session identifiers, and no third-party tracking |
+| 🔒 **Privacy-first** | Cookieless, no browser storage, no persistent or cross-site identifier, no third-party tracking — runs without a consent banner |
+| 🎯 **Exact, not estimated** | Exact daily unique visitors, visits and bounce rate via a compute-and-discard scheme — no cookies, no stored identifier ([how](docs/privacy.md)) |
 | 🪶 **Lightweight tracker** | ~2 KB JavaScript — your site stays fast, your Lighthouse score stays high |
 | 🏠 **Self-hosted** | Your analytics infrastructure can run on your own server. Hosted or third-party deployments may require appropriate agreements |
-| ⚡ **Real-time** | See who's on your site right now, where they come from, and what they're doing |
-| 📈 **17 analytics views** | Pages, sources, events, funnels, journeys, retention, revenue, geo maps, engagement, custom dashboards, and more |
-| 🤖 **AI-native** | MCP server with 41 tools, REST API, Python SDK, CLI with JSON output — every interface an agent needs to work autonomously |
+| ⚡ **Real-time** | See aggregate pageviews happening right now and which pages are active |
+| 📈 **Analytics views** | Overview, pages, sections, events, devices, geo maps, compare, heatmap, custom dashboards |
+| 🤖 **AI-native** | MCP server, REST API, Python SDK, CLI with JSON output — every interface an agent needs to work autonomously |
 | 💻 **50+ CLI commands** | Query everything from the terminal — output in table, JSON, or CSV |
 | 🔌 **Full REST API** | 25+ endpoints with API key auth — integrate analytics into any workflow |
 | 🐍 **Python SDK** | `mantecato-client` — access everything programmatically from scripts and notebooks |
@@ -70,24 +71,19 @@ Add one script tag to your site:
 
 That's it. Aggregate pageview data starts flowing into your dashboard instantly. No build step, no npm install, no configuration files.
 
-Want custom events? Revenue tracking? Visitor identification?
+Want to track custom events?
 
 ```html
 <!-- 🎯 Track clicks with HTML attributes -->
-<button data-mantecato-event="signup" data-plan="pro">Sign Up</button>
-
-<!-- 💰 Track revenue -->
-<script>
-  mantecato.revenue(49.99, "EUR", { plan: "pro" });
-</script>
-
-<!-- 👤 Identify a visitor -->
-<script>
-  mantecato.identify("user-123", { plan: "pro", company: "Acme" });
-</script>
+<button data-mantecato-event="signup">Sign Up</button>
 ```
 
-The tracker automatically handles SPA route changes, respects Do Not Track / Global Privacy Control, and can be toggled on and off by visitors.
+Custom events record an **event name only**. By design there is no event
+payload, no revenue tracking, and no visitor identification — Mantecato is
+cookieless and aggregate, so there is nothing to attach a person to.
+
+The tracker automatically handles SPA route changes, **respects Do Not Track /
+Global Privacy Control by default**, and can be toggled on and off by visitors.
 
 ---
 
@@ -97,36 +93,37 @@ A full-featured, responsive analytics dashboard with interactive charts and maps
 
 | | |
 |---|---|
-| 📋 **Overview** | Visitors, pageviews, bounce rate, avg. session duration — all at a glance, with tabs for quick drill-downs |
-| 📄 **Pages** | Top pages by views, entry/exit rates, time-on-page distribution |
+| 📋 **Overview** | Exact visitors, visits, bounce rate, avg. duration, pages/visit and pageviews at a glance, with tabs for quick drill-downs |
+| 📄 **Pages** | Top pages by views |
 | 📂 **Sections** | Hierarchical URL grouping — see how `/blog/`, `/docs/`, `/pricing/` perform as a whole |
-| 🔗 **Sources** | Referrers, UTM campaigns, auto-grouped channels, click IDs (gclid, fbclid, etc.), hostnames |
-| 🎯 **Events** | Custom event breakdown with property drill-down and time series |
-| 👤 **Sessions** | Individual session list with full activity replay |
-| 📱 **Devices** | Browsers, operating systems, device types, screen resolutions, languages |
-| 🌍 **Geo** | Interactive world map with country → region → city drill-down |
+| 🎯 **Events** | Custom event breakdown (event name + counts) and time series |
+| 📱 **Devices** | Browsers, operating systems, device types |
+| 🌍 **Geo** | Interactive world map at **country level only** (no region/city, to avoid re-identification) |
 | ⚖️ **Compare** | Period-over-period comparison (previous period or previous year) with % change |
-| 🔁 **Retention** | Cohort retention matrix — weekly or monthly granularity |
-| 🔀 **Funnels** | Multi-step conversion funnels with drop-off rates |
-| 🛤️ **Journeys** | Sankey diagrams of visitor navigation paths (configurable depth 1–6) |
-| 💰 **Revenue** | Revenue by event, by country, time series — with totals and averages |
-| 📊 **Engagement** | Duration distribution, bounce rates by page and source, scroll depth, percentiles (p25–p99) |
-| ⚡ **Realtime** | Live visitor count, current pages, recent event feed |
-| 🎨 **Custom Dashboards** | Build your own views with the metrics that matter to you |
+| ⚡ **Realtime** | Live aggregate pageview count and current pages |
 | 🗓️ **Heatmap** | Traffic heatmap by hour of day × day of week |
+| 🎨 **Custom Dashboards** | Build your own views with the metrics that matter to you |
+
+> Unique visitors are exact **per day**; over a multi-day range the figure is the
+> sum of daily uniques. Returning-visitor / cross-day metrics, sessions lists,
+> journeys, funnels, retention and revenue are intentionally **not** offered —
+> they require a persistent identifier. See [docs/privacy.md](docs/privacy.md).
 
 ### 🔍 Filtering
 
-Every analytics view supports powerful filtering with 16 dimensions:
+Every analytics view supports filtering on the dimensions actually stored:
 
 | Filter | Examples |
 |---|---|
-| **Content** | `url_path`, `page_title`, `hostname`, `event_name`, `tag` |
-| **Sources** | `referrer_domain`, `utm_source`, `utm_medium`, `utm_campaign` |
-| **Devices** | `browser`, `os`, `device`, `screen`, `language` |
-| **Geo** | `country`, `region`, `city` |
+| **Content** | `url_path`, `page_title`, `hostname`, `event_name` |
+| **Devices** | `browser`, `os`, `device` |
+| **Geo** | `country` |
 
 Operators: `eq`, `neq`, `contains`, `not_contains`, `starts_with`, `not_starts_with`.
+
+> Note: visitor/visit/bounce KPIs are shown without a content/device/geo filter
+> active; with such a filter they read `N/A` (exact counts come from aggregate
+> tables that cannot be sliced by those dimensions).
 
 ### 🤖 Bot Detection
 
@@ -281,14 +278,12 @@ This isn't a wrapper around the dashboard. It's the same query engine, the same 
 | | |
 |---|---|
 | 📊 **Query** | "Show me top pages for the last 7 days, filtered by country:IT" |
-| 🔍 **Drill down** | "Which referrers drive the most traffic to `/pricing`?" |
-| 📈 **Compare** | "How did signups change compared to last month?" |
-| 🌍 **Geo analysis** | "Break down revenue by country for Q1" |
-| 🔀 **Funnels** | "What's the conversion rate from `/signup` → `/onboarding` → `/dashboard`?" |
-| 🛤️ **Journeys** | "What paths do users take after landing on the blog?" |
-| 🔁 **Retention** | "Show me monthly cohort retention for the last 6 months" |
+| 📈 **Compare** | "How did visits and bounce rate change compared to last month?" |
+| 🎯 **Events** | "Which custom events fired most this week?" |
+| 🌍 **Geo analysis** | "Break down pageviews by country for Q1" |
+| 📱 **Devices** | "What's the browser and OS split for `/pricing`?" |
 | 🛠️ **Manage** | "Create a new dashboard tracking weekly KPIs for the marketing team" |
-| ⚡ **Realtime** | "How many people are on the site right now and what are they looking at?" |
+| ⚡ **Realtime** | "How many aggregate pageviews are happening right now and on which pages?" |
 
 **Why this matters:**
 
@@ -312,14 +307,15 @@ Lightweight JavaScript tracker (~2 KB minified). Cookie-free, Umami-compatible.
 **Features:**
 - ✅ Automatic pageview tracking
 - ✅ SPA route change detection
-- ✅ Custom event tracking with properties
-- ✅ Revenue tracking (amount + currency)
-- ✅ Visitor identification
+- ✅ Custom event tracking (event **name only** — no event properties)
 - ✅ Click tracking via `data-mantecato-event` attributes (with `data-umami-event` fallback)
-- ✅ Do Not Track / Global Privacy Control respect
-- ✅ User opt-out via `localStorage`
-- ✅ Bot and localhost filtering
+- ✅ Do Not Track / Global Privacy Control respected **by default**
+- ✅ Client-side bot filtering
 - ✅ CORS-enabled for cross-origin tracking
+- ✅ No cookies, no `localStorage`/`sessionStorage`, no fingerprinting
+
+> Not supported by design (cookieless, aggregate): revenue tracking, visitor
+> identification, and event properties/payloads.
 
 **JavaScript API:**
 
@@ -327,14 +323,8 @@ Lightweight JavaScript tracker (~2 KB minified). Cookie-free, Umami-compatible.
 // 📄 Track a pageview
 mantecato.pageview();
 
-// 🎯 Track a custom event
-mantecato.event("signup", { plan: "pro", source: "landing" });
-
-// 💰 Track revenue
-mantecato.revenue(49.99, "EUR", { plan: "pro" });
-
-// 👤 Identify a visitor
-mantecato.identify("user-123", { company: "Acme" });
+// 🎯 Track a custom event (name only)
+mantecato.event("signup");
 
 // ⏸️ Toggle tracking
 mantecato.disable();
@@ -343,16 +333,16 @@ mantecato.enable();
 
 ### ⚛️ @mantecato/tracker-react
 
-React/Next.js hooks for event tracking:
+React/Next.js hooks for pageview and event tracking:
 
 ```jsx
 import { useTracker } from '@mantecato/tracker-react';
 
 function App() {
-  const { track, trackRevenue, identify } = useTracker();
+  const { track } = useTracker();
 
   return (
-    <button onClick={() => track('signup', { plan: 'pro' })}>
+    <button onClick={() => track('signup')}>
       Sign Up
     </button>
   );

@@ -20,7 +20,7 @@ from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
 from core.mantecato_core.filters import Filter
-from core.mantecato_core.visitor_estimation import section_for_path
+from core.mantecato_core.visitor_counting import section_for_path
 
 
 def should_use_orm_fallback() -> bool:

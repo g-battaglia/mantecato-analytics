@@ -9,7 +9,7 @@
     {% endif %}
     <span class="relative flex-1 truncate font-mono text-foreground" title="{{ page.urlPath }}">{{ page.urlPath }}</span>
     <div class="relative flex gap-3 font-mono text-[12px]">
-      <span class="text-muted-foreground">{% if page.visitors is not None %}~{{ page.visitors|intcomma }}{% else %}—{% endif %}</span>
+      <span class="text-muted-foreground">{% if page.visitors is not None %}{{ page.visitors|intcomma }}{% else %}—{% endif %}</span>
       <span class="min-w-[50px] text-right text-foreground">{{ page.views|intcomma }}</span>
     </div>
   </a>

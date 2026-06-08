@@ -1,7 +1,7 @@
 """Analytics query modules — read-only SQL via the Django/psycopg3 bridge.
 
-Privacy-first aggregate-only mode: pageviews, custom-event names, device,
-country, heatmap, realtime pageviews, and anonymous visitor estimates.
+Cookieless mode: pageviews, custom-event names, device, country, heatmap,
+realtime pageviews, and exact (compute-and-discard) visitor/visit/bounce counts.
 
 Active modules:
     stats           Aggregate pageview counts, time series, top pages, top sections, country breakdown.
@@ -38,14 +38,14 @@ from core.mantecato_core.queries.stats import (
     get_website_stats_comparison,
 )
 from core.mantecato_core.queries.visitors import (
-    estimate_unique_visitors,
-    estimate_unique_visitors_by_scope,
+    read_visit_stats,
+    visit_metrics,
 )
 
 __all__ = [
     "get_active_pageviews",
-    "estimate_unique_visitors",
-    "estimate_unique_visitors_by_scope",
+    "read_visit_stats",
+    "visit_metrics",
     "get_comparison_stats",
     "get_country_breakdown",
     "get_current_pages",

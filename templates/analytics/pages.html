@@ -24,7 +24,7 @@
         <span class="flex-1">{% trans "Page" %}</span>
         <div class="flex gap-4 text-right">
           <span class="w-16">{% trans "Views" %}</span>
-          <span class="w-20">{% trans "Est. visitors" %}</span>
+          <span class="w-20">{% trans "Visitors" %}</span>
         </div>
       </div>
       {% for p in pages %}
@@ -35,7 +35,7 @@
         </div>
         <div class="flex gap-4 text-right tabular-nums">
           <span class="w-16 font-medium">{{ p.views|intcomma }}</span>
-          <span class="w-20 text-muted-foreground">{% if p.visitors is not None %}~{{ p.visitors|intcomma }}{% else %}—{% endif %}</span>
+          <span class="w-20 text-muted-foreground">{% if p.visitors is not None %}{{ p.visitors|intcomma }}{% else %}—{% endif %}</span>
         </div>
       </div>
       {% endfor %}

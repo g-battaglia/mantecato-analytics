@@ -127,7 +127,6 @@ class IngestView(View):
                 country=country,
                 is_bot=is_bot,
                 bot_reason=bot_reason,
-                ip=ip,
             )
         else:
             ingest_pageview(
@@ -138,6 +137,7 @@ class IngestView(View):
                 is_bot=is_bot,
                 bot_reason=bot_reason,
                 ip=ip,
+                user_agent=ua_string,
             )
 
         return _add_cors(JsonResponse({"ok": True}))

@@ -452,7 +452,7 @@ class TestSitePurgeView:
         site = MagicMock()
         site.name = "My Site"
         mock_ws.objects.filter.return_value.first.return_value = site
-        mock_purge.return_value = {"name": "My Site", "events": 500, "sketches": 10}
+        mock_purge.return_value = {"name": "My Site", "events": 500, "visitor_rows": 10}
         response = _authed_post(
             client,
             f"/settings/sites/{WEBSITE_ID}/purge/",

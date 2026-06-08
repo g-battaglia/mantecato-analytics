@@ -6,14 +6,16 @@
     <div class="flex items-center justify-between">
       <p class="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         {% if key == "pageviews" %}{% trans "Pageviews" %}
-        {% elif key == "visitors" %}{% trans "Estimated Visitors" %}
+        {% elif key == "visitors" %}{% trans "Visitors" %}
+        {% elif key == "visits" %}{% trans "Visits" %}
+        {% elif key == "bounce_rate" %}{% trans "Bounce Rate" %}
+        {% elif key == "avg_duration" %}{% trans "Avg Duration" %}
+        {% elif key == "pages_per_visit" %}{% trans "Pages / Visit" %}
         {% elif key == "human_pageviews" %}{% trans "Human Pageviews" %}
         {% elif key == "bot_pageviews" %}{% trans "Bot Pageviews" %}
         {% endif %}
       </p>
-      {% if card.estimated %}
-      <span class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{% trans "est." %}</span>
-      {% elif card.change %}
+      {% if card.change %}
       <span class="flex items-center gap-0.5 font-mono text-[11px] font-medium
                    {% if key == 'bounce_rate' %}{% if card.change.trend == 'up' %}text-red-500{% elif card.change.trend == 'down' %}text-green-500{% else %}text-muted-foreground{% endif %}{% else %}{% if card.change.trend == 'up' %}text-green-500{% elif card.change.trend == 'down' %}text-red-500{% else %}text-muted-foreground{% endif %}{% endif %}">
         {% if card.change.trend == 'up' %}<i data-lucide="trending-up" class="size-3"></i>
