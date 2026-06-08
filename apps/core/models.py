@@ -399,6 +399,14 @@ class VisitorDaily(models.Model):
     bounces = models.IntegerField(default=0)
     total_pageviews = models.IntegerField(default=0)
     total_duration_s = models.IntegerField(default=0)
+    # Bot contribution kept separately so the bot filter is a dynamic toggle:
+    # ``off`` shows human + bot, ``on`` shows human only — without re-deriving from
+    # the discarded digests. Disjoint from the human counts above (bot keys differ).
+    bot_unique_visitors = models.IntegerField(default=0)
+    bot_visits = models.IntegerField(default=0)
+    bot_bounces = models.IntegerField(default=0)
+    bot_total_pageviews = models.IntegerField(default=0)
+    bot_total_duration_s = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -441,6 +449,13 @@ class VisitorPeriod(models.Model):
     bounces = models.IntegerField(default=0)
     total_pageviews = models.IntegerField(default=0)
     total_duration_s = models.IntegerField(default=0)
+    # Bot contribution kept separately for the dynamic bot-filter toggle (see
+    # :class:`VisitorDaily`). Disjoint from the human counts above.
+    bot_unique_visitors = models.IntegerField(default=0)
+    bot_visits = models.IntegerField(default=0)
+    bot_bounces = models.IntegerField(default=0)
+    bot_total_pageviews = models.IntegerField(default=0)
+    bot_total_duration_s = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

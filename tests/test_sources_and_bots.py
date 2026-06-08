@@ -170,10 +170,11 @@ def test_compute_bot_visitor_keys_engaged_single_page_not_bot():
     assert bots == set()
 
 
-def test_import_aggregation_excludes_bots_from_visitors():
+def test_import_bot_split_and_dynamic_toggle():
     import uuid
 
     from apps.core.models import BotConfig, VisitorDaily
+    from core.mantecato_core.queries.visitors import read_visit_stats
     from core.mantecato_core.visitor_counting import aggregate_events_into_daily, utc_day
 
     BotConfig.objects.create(
@@ -188,10 +189,19 @@ def test_import_aggregation_excludes_bots_from_visitors():
 
     aggregate_events_into_daily(WEBSITE_ID)
 
+    # Human and bot counts are stored separately (not destroyed).
     daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=utc_day(base))
-    assert daily.unique_visitors == 1  # only sessB — the bot filter now hits visitors
-    assert daily.total_pageviews == 2  # sessB's 2 pageviews; the bot's is excluded
-    # Both digests are still discarded (forward secrecy).
+    assert daily.unique_visitors == 1 and daily.bot_unique_visitors == 1
+    assert daily.total_pageviews == 2 and daily.bot_total_pageviews == 1
+
+    # Dynamic toggle: ON → humans only, OFF → human + bot (same data, just hidden).
+    s, e = base - timedelta(hours=1), base + timedelta(hours=1)
+    on = read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=True)
+    off = read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=False)
+    assert on["unique_visitors"] == 1 and on["total_pageviews"] == 2
+    assert off["unique_visitors"] == 2 and off["total_pageviews"] == 3
+
+    # Digests still discarded (forward secrecy).
     assert not WebsiteEvent.objects.filter(
         website_id=WEBSITE_ID, visitor_key__isnull=False
     ).exists()

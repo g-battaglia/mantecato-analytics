@@ -16,8 +16,8 @@ the aggregates store only counts, not per-row dimensions.
 
 from __future__ import annotations
 
-from datetime import UTC
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime, time
+from typing import Any
 
 from django.db.models import Count, Sum
 from django.db.models.functions import Trunc
@@ -32,9 +32,6 @@ from core.mantecato_core.visitor_counting import (
     utc_day,
 )
 
-if TYPE_CHECKING:
-    from datetime import datetime
-
 _SUPPRESSED: dict[str, Any] = {
     "visitors": None,
     "visits": None,
@@ -46,37 +43,75 @@ _SUPPRESSED: dict[str, Any] = {
 }
 
 
-def _unique_visitors(website_id: str, start_date: datetime, end_date: datetime) -> int:
+def _live_behavioral_keys(website_id: str, start_day: Any, end_day: Any) -> set[str]:
+    """Behavioural bot digests among live (un-rolled) state in range, computed now.
+
+    Lets the bot-filter toggle drop behavioural bots from the **current** period
+    (whose digests are still present) without re-deriving the finalised aggregates.
+    Empty when bot detection is disabled for the site.
+    """
+    from apps.core.models import VisitorDayState
+    from core.mantecato_core.bot_sessions import compute_bot_visitor_keys, get_bot_config
+
+    cfg = get_bot_config(website_id)
+    if not cfg.get("enabled", False):
+        return set()
+    engaged: dict[str, float] = {}
+    for r in VisitorDayState.objects.filter(
+        website_id=website_id, day__gte=start_day, day__lte=end_day
+    ).values("visitor_key", "total_duration_s", "cur_page_engaged_s"):
+        engaged[r["visitor_key"]] = (
+            engaged.get(r["visitor_key"], 0)
+            + (r["total_duration_s"] or 0)
+            + (r["cur_page_engaged_s"] or 0)
+        )
+    return compute_bot_visitor_keys(
+        website_id,
+        datetime.combine(start_day, time.min, tzinfo=UTC),
+        datetime.combine(end_day, time.max, tzinfo=UTC),
+        cfg,
+        engaged_dur_by_key=engaged,
+    )
+
+
+def _unique_visitors(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    *,
+    bot_filter_on: bool = False,
+    behavioral_keys: set[str] | None = None,
+) -> int:
     """Exact unique visitors over a range.
 
-    Per exactness window: if live ephemeral state exists for the window (not yet
-    rolled up) use its distinct digest count; otherwise use the finalised
-    ``VisitorPeriod`` aggregate. With a day window each day is a window, so the
-    total is the sum of daily uniques (Umami-aligned).
+    Per exactness window: live ephemeral state if present, else the finalised
+    ``VisitorPeriod`` aggregate. The bot filter is a **dynamic toggle**: with it
+    **off** the finalised bot uniques are added back; **on** also excludes
+    behavioural bots from the live window.
     """
     from apps.core.models import VisitorDayState, VisitorPeriod
 
+    behavioral_keys = behavioral_keys or set()
     start_day = utc_day(start_date)
     end_day = utc_day(end_date)
     total = 0
     for pk, p_start, p_end in periods_in_range(start_day, end_day, current_window()):
         ov_start = max(start_day, p_start)
         ov_end = min(end_day, p_end)
-        live_count = (
-            VisitorDayState.objects.filter(
-                website_id=website_id, period=pk, day__gte=ov_start, day__lte=ov_end
-            )
-            .values("visitor_key")
-            .distinct()
-            .count()
+        base = VisitorDayState.objects.filter(
+            website_id=website_id, period=pk, day__gte=ov_start, day__lte=ov_end
         )
-        if live_count:
-            total += live_count
+        if base.exists():
+            live_qs = base.exclude(visitor_key__in=behavioral_keys) if (
+                bot_filter_on and behavioral_keys
+            ) else base
+            total += live_qs.values("visitor_key").distinct().count()
         else:
             row = VisitorPeriod.objects.filter(
                 website_id=website_id, period_start=p_start, scope="site", scope_value=""
             ).first()
-            total += row.unique_visitors if row else 0
+            if row:
+                total += row.unique_visitors + (0 if bot_filter_on else row.bot_unique_visitors)
     return total
 
 
@@ -84,13 +119,16 @@ def read_visit_stats(
     website_id: str,
     start_date: datetime,
     end_date: datetime,
+    *,
+    bot_filter_on: bool = False,
 ) -> dict[str, int]:
     """Return exact site-level counts over a date range.
 
-    Additive metrics combine live ephemeral state (un-rolled days) with the
-    finalised ``VisitorDaily`` aggregates, **excluding days that still have live
-    state** so each day is counted exactly once (no double counting, visits never
-    exceed pageviews).
+    Combines live ephemeral state (un-rolled days) with the finalised
+    ``VisitorDaily`` aggregates, excluding days that still have live state (each
+    day counted once). The bot filter is a **dynamic toggle**: with it **off** the
+    ``bot_*`` aggregate columns are added back; **on** also drops behavioural bots
+    from the live window.
     """
     from apps.core.models import VisitorDaily, VisitorDayState
 
@@ -104,11 +142,29 @@ def read_visit_stats(
         .values_list("day", flat=True)
         .distinct()
     )
-    live = aggregate_state(
-        VisitorDayState.objects.filter(
-            website_id=website_id, day__gte=start_day, day__lte=end_day
-        )
+    behavioral = _live_behavioral_keys(website_id, start_day, end_day) if bot_filter_on else set()
+    live_qs = VisitorDayState.objects.filter(
+        website_id=website_id, day__gte=start_day, day__lte=end_day
     )
+    if behavioral:
+        live_qs = live_qs.exclude(visitor_key__in=behavioral)
+    live = aggregate_state(live_qs)
+
+    fields: dict[str, Any] = {
+        "visits": Sum("visits"),
+        "bounces": Sum("bounces"),
+        "total_pageviews": Sum("total_pageviews"),
+        "total_duration_s": Sum("total_duration_s"),
+    }
+    if not bot_filter_on:
+        fields.update(
+            {
+                "bot_visits": Sum("bot_visits"),
+                "bot_bounces": Sum("bot_bounces"),
+                "bot_total_pageviews": Sum("bot_total_pageviews"),
+                "bot_total_duration_s": Sum("bot_total_duration_s"),
+            }
+        )
     daily = (
         VisitorDaily.objects.filter(
             website_id=website_id,
@@ -118,20 +174,29 @@ def read_visit_stats(
             day__lte=end_day,
         )
         .exclude(day__in=live_days)
-        .aggregate(
-            visits=Sum("visits"),
-            bounces=Sum("bounces"),
-            total_pageviews=Sum("total_pageviews"),
-            total_duration_s=Sum("total_duration_s"),
-        )
+        .aggregate(**fields)
     )
 
+    def _final(human: str, bot: str) -> int:
+        val = daily.get(human) or 0
+        if not bot_filter_on:
+            val += daily.get(bot) or 0
+        return val
+
     return {
-        "unique_visitors": _unique_visitors(website_id, start_date, end_date),
-        "visits": (daily["visits"] or 0) + live["visits"],
-        "bounces": (daily["bounces"] or 0) + live["bounces"],
-        "total_pageviews": (daily["total_pageviews"] or 0) + live["total_pageviews"],
-        "total_duration_s": (daily["total_duration_s"] or 0) + live["total_duration_s"],
+        "unique_visitors": _unique_visitors(
+            website_id,
+            start_date,
+            end_date,
+            bot_filter_on=bot_filter_on,
+            behavioral_keys=behavioral,
+        ),
+        "visits": _final("visits", "bot_visits") + live["visits"],
+        "bounces": _final("bounces", "bot_bounces") + live["bounces"],
+        "total_pageviews": _final("total_pageviews", "bot_total_pageviews")
+        + live["total_pageviews"],
+        "total_duration_s": _final("total_duration_s", "bot_total_duration_s")
+        + live["total_duration_s"],
     }
 
 
@@ -348,7 +413,10 @@ def visit_metrics(
     if not has_only_bot_filter(filters):
         return dict(_SUPPRESSED)
 
-    vs = read_visit_stats(website_id, start_date, end_date)
+    # The bot-filter toggle (``__bot_filter__`` present) excludes bots dynamically;
+    # without it the bot counts are included (same data, filter just hides them).
+    bot_on = any(getattr(f, "column", "") == "__bot_filter__" for f in (filters or []))
+    vs = read_visit_stats(website_id, start_date, end_date, bot_filter_on=bot_on)
     derived = compute_derived_stats(
         {
             "pageviews": vs["total_pageviews"],

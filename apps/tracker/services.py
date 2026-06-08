@@ -143,8 +143,10 @@ def ingest_pageview(
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
 
-    # Fold into visit/bounce state first; the returned digest (None for bots) is
-    # stored on the event row to power exact unique visitors at any granularity.
+    # Fold into visit/bounce state first; ``record_visit`` returns the human
+    # digest (None for bots, which open no visit). The digest is also computed for
+    # bots and stored on the event row so the bot filter can be a **dynamic
+    # toggle**: bot traffic is counted separately and shown only when filtering off.
     key = record_visit(
         website_id=website_id,
         occurred_at=now,
@@ -152,6 +154,9 @@ def ingest_pageview(
         user_agent=user_agent,
         is_bot=is_bot,
         url_path=url_path,
+    )
+    event_key = key or visitor_key_for(
+        website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
     )
 
     raw_query(
@@ -183,7 +188,7 @@ def ingest_pageview(
             "country": country,
             "isBot": is_bot,
             "botReason": bot_reason[:80] if bot_reason else None,
-            "visitorKey": key,
+            "visitorKey": event_key,
             "referrerDomain": _referrer_domain(payload.get("referrer"), payload.get("hostname")),
         },
     )
@@ -224,12 +229,10 @@ def ingest_custom_event(
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
 
-    key = (
-        None
-        if is_bot
-        else visitor_key_for(
-            website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
-        )
+    # Digest computed for everyone (incl. bots) so bot custom events are counted
+    # separately for the dynamic bot-filter toggle; scope presence stays human-only.
+    event_key = visitor_key_for(
+        website_id=website_id, occurred_at=now, ip=ip, user_agent=user_agent
     )
 
     raw_query(
@@ -262,14 +265,14 @@ def ingest_custom_event(
             "country": country,
             "isBot": is_bot,
             "botReason": bot_reason[:80] if bot_reason else None,
-            "visitorKey": key,
+            "visitorKey": event_key,
         },
     )
-    if key:
+    if not is_bot:
         record_scope_presence(
             website_id=website_id,
             occurred_at=now,
-            visitor_key=key,
+            visitor_key=event_key,
             scopes=[("event", clean_name)],
         )
 

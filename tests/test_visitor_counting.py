@@ -364,6 +364,25 @@ def test_visits_by_bucket_counts_sessions():
     assert sum(vb.values()) == 2  # two distinct visits
 
 
+def test_rollup_ua_bot_split_and_toggle():
+    # A UA/datacenter bot (is_bot at ingest) is counted separately and toggleable.
+    when = _days_ago(1)
+    day = utc_day(when)
+    _visit(ip="1.1.1.1", when=when)  # human → VisitorDayState
+    ev = WebsiteEvent.objects.create(
+        website_id=WEBSITE_ID, url_path="/x", event_type=1, is_bot=True, visitor_key="botkey"
+    )
+    WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+
+    rollup_finished_periods()
+
+    daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=day)
+    assert daily.unique_visitors == 1 and daily.bot_unique_visitors == 1
+    s, e = when - timedelta(hours=1), when + timedelta(hours=1)
+    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=True)["unique_visitors"] == 1
+    assert read_visit_stats(WEBSITE_ID, s, e, bot_filter_on=False)["unique_visitors"] == 2
+
+
 def test_imported_per_scope_unique_visitors():
     when = _days_ago(3)
     for ip_key, paths in [("sessA", ["/x", "/x"]), ("sessB", ["/x", "/y"])]:

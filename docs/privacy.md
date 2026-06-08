@@ -134,11 +134,14 @@ stored, exactly as for visitor counting). Datacenter detection can be disabled
 Bot hits never enter the visitor/visit counts and are excluded from pageview
 breakdowns when bot filtering is enabled for a site.
 
-When a per-site bot config enables behavioural rules (zero-engagement,
-high-velocity, datacentre clusters, excluded countries), those run **at
-aggregation time** on the window digest — the cookieless equivalent of a session —
-so the bot filter reduces the exact **visitor/visit/bounce** counts too, not only
-pageviews. The digest is discarded as usual; only anonymous integer counts remain.
+Bot traffic — known-UA, datacentre IP, and (when a per-site config enables them)
+behavioural rules like zero-engagement / high-velocity / datacentre clusters /
+excluded countries — is classified at aggregation time on the window digest (the
+cookieless equivalent of a session) and counted **separately** from human traffic.
+So the bot filter is a non-destructive **toggle** that also moves the exact
+**visitor/visit/bounce** counts, not only pageviews: off shows human + bot, on
+shows humans only — from the same stored anonymous integer counts either way. The
+digests themselves are discarded by the rollup as usual; nothing per-person remains.
 
 ## Why no consent banner is required
 
