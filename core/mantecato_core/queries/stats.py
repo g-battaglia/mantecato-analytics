@@ -88,11 +88,11 @@ def get_website_stats(
 ) -> dict[str, Any]:
     """Aggregate website stats over a date range.
 
-    Returns pageview counts plus **exact** visitor/visit/bounce metrics from the
-    compute-and-discard aggregates (``visitors``, ``visits``, ``bounces``,
+    Returns pageview counts plus **exact** visitor/visit/bounce metrics computed
+    at read time from the event digests (``visitors``, ``visits``, ``bounces``,
     ``totaltime`` and the derived ``bounce_rate``/``avg_duration``/
-    ``pages_per_visit``). Visitor metrics are ``None`` when a content/device/geo
-    filter is active (aggregates cannot be sliced by those dimensions).
+    ``pages_per_visit``). A content/device/geo/bot filter slices them downstream
+    (no longer suppressed), within the digest retention window.
     """
     filters = filters or []
 

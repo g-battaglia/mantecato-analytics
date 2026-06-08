@@ -193,13 +193,14 @@ def _make_date_range():
 
 
 class TestOverviewTabFetchers:
+    @pytest.mark.django_db
     @patch("apps.analytics.services.get_top_pages", return_value=[{"urlPath": "/", "views": 10}])
     def test_tab_pages_returns_expected_keys(self, mock_fn: MagicMock) -> None:
         from apps.analytics.services import get_overview_tab_pages
         from core.mantecato_core.filters import Filter
 
-        # A content filter suppresses per-scope visitor counts, so the call
-        # stays off the visitor-aggregate path and the test stays DB-free.
+        # A content filter now slices the per-scope visitor counts at read time
+        # (no longer suppressed), so the call reads the event digests from the DB.
         result = get_overview_tab_pages(
             WEBSITE_ID,
             _make_date_range(),

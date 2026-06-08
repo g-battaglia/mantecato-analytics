@@ -53,7 +53,6 @@ from core.mantecato_core.queries.visitors import (
     read_scope_visitors,
     visit_metrics,
 )
-from core.mantecato_core.visitor_counting import has_only_bot_filter
 
 _UNAVAILABLE_NOTE = "Unavailable with current filters"
 
@@ -131,21 +130,20 @@ def _attach_scope_visitors(
     scope: str,
     value_key: str,
     target_key: str = "visitors",
-    enabled: bool = True,
+    filters: list[Filter] | None = None,
 ) -> None:
     """Attach **exact** per-scope (page/section/event) unique visitors to *rows*.
 
-    Counts come from the compute-and-discard scope aggregates and are exact for
-    the exactness window. When a content/device/geo filter narrows the population
-    (``enabled=False``) the aggregates can't be sliced, so the column is ``None``
-    (rendered as "—").
+    Counts come from the per-event digests at read time, so the active **filters**
+    (country/device/bot) slice them downstream — like the session-based product.
+    Exact within the digest retention window.
     """
-    if not enabled or not rows:
-        for row in rows:
-            row[target_key] = None
+    if not rows:
         return
     values = [str(r.get(value_key) or "") for r in rows]
-    counts = read_scope_visitors(website_id, start, end, scope=scope, scope_values=values)
+    counts = read_scope_visitors(
+        website_id, start, end, scope=scope, scope_values=values, filters=filters
+    )
     for row in rows:
         row[target_key] = counts.get(str(row.get(value_key) or ""))
 
@@ -191,7 +189,6 @@ def get_overview_data(
     prev_timeseries = ts_cmp["previous"]
 
     sections = get_top_sections(website_id, start, end, limit=10, filters=filters)
-    estimates_enabled = has_only_bot_filter(filters)
     _attach_scope_visitors(
         website_id,
         start,
@@ -199,7 +196,7 @@ def get_overview_data(
         sections,
         scope="section",
         value_key="section",
-        enabled=estimates_enabled,
+        filters=filters,
     )
     _add_percentage(sections, "views")
 
@@ -216,7 +213,7 @@ def get_overview_data(
         top_pages,
         scope="page",
         value_key="urlPath",
-        enabled=estimates_enabled,
+        filters=filters,
     )
     event_metrics = get_event_metrics(website_id, start, end, limit=10, filters=filters)
     _add_percentage(event_metrics, "count")
@@ -227,7 +224,7 @@ def get_overview_data(
         event_metrics,
         scope="event",
         value_key="eventName",
-        enabled=estimates_enabled,
+        filters=filters,
     )
 
     return {
@@ -271,7 +268,7 @@ def get_pages_data(
         pages,
         scope="page",
         value_key="urlPath",
-        enabled=has_only_bot_filter(filters),
+        filters=filters,
     )
 
     return {
@@ -298,7 +295,7 @@ def get_sections_data(
         sections,
         scope="section",
         value_key="section",
-        enabled=has_only_bot_filter(filters),
+        filters=filters,
     )
     _add_percentage(sections, "views")
 
@@ -493,7 +490,7 @@ def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
         events,
         scope="event",
         value_key="eventName",
-        enabled=has_only_bot_filter(filters),
+        filters=filters,
     )
     total = sum(e["count"] for e in events)
     top_names = [e["eventName"] for e in events[:5]]
@@ -526,7 +523,7 @@ def get_overview_tab_pages(
         pages,
         scope="page",
         value_key="urlPath",
-        enabled=has_only_bot_filter(filters),
+        filters=filters,
     )
     return {"top_pages": pages}
 
@@ -547,7 +544,7 @@ def get_overview_tab_events(
         events,
         scope="event",
         value_key="eventName",
-        enabled=has_only_bot_filter(filters),
+        filters=filters,
     )
     return {"event_metrics": events}
 

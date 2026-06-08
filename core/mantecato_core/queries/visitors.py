@@ -6,11 +6,13 @@ each request, exactly like the session-based product but on a cookieless token.
 
 Because the count is computed from the (filtered) event rows, **every filter
 applies downstream** — country, device, URL and the bot filter all slice the
-visitor metrics; nothing is baked into stored data. Exact within the digest
-retention window (``settings.VISITOR_KEY_RETENTION_DAYS``, ~13 months); ranges
-reaching past it fold in the permanent anonymous daily aggregates (which, being
-dimensionless, are not filterable). Cross-window de-duplication is intentionally
-not done (it would need a persistent identifier, i.e. consent).
+visitor metrics; nothing is baked into stored data. This holds for the site-level
+KPIs, the time-series, the per-page / per-section / per-event breakdowns and the
+landing-page table alike. Exact within the digest retention window
+(``settings.VISITOR_KEY_RETENTION_DAYS``, ~13 months); ranges reaching past it
+fold in the permanent anonymous aggregates (which, being dimensionless, are not
+filterable). Cross-window de-duplication is intentionally not done (it would need
+a persistent identifier, i.e. consent).
 """
 
 from __future__ import annotations
@@ -26,9 +28,11 @@ from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
     SESSION_TIMEOUT_S,
     current_window,
+    event_landing_stats,
     event_visitor_stats,
     has_only_bot_filter,
     periods_in_range,
+    section_for_path,
     utc_day,
 )
 
@@ -92,37 +96,70 @@ def read_scope_visitors(
     *,
     scope: str,
     scope_values: list[str],
+    filters: list[Any] | None = None,
 ) -> dict[str, int]:
-    """Return exact unique visitors per ``scope_value`` for the window(s) in range.
+    """Return exact unique visitors per ``scope_value`` — **filterable** at read time.
 
-    Per-scope counts are window-grained: for a range inside the live window they
-    reflect that window's uniques per value (exact for the window, not for an
-    arbitrary sub-range). Returns ``{scope_value: count}``.
+    Computed from the per-event window digests (``visitor_key``) for ``page`` /
+    ``section`` (pageviews) and ``event`` (custom events), so a country/device/bot
+    filter slices them downstream — the dimensionless aggregates couldn't. Exact
+    within the digest retention window; the portion of the range beyond retention
+    folds in the permanent ``VisitorPeriod`` aggregates (only when no content
+    filter narrows the population — they can't be sliced). Returns
+    ``{scope_value: count}``.
     """
     if not scope_values:
         return {}
-    from apps.core.models import VisitorPeriod, VisitorScopeState
+    from collections import defaultdict
 
+    from django.conf import settings as dj_settings
+
+    from apps.core.models import VisitorPeriod
+    from core.mantecato_core.queries.orm_fallbacks import (
+        custom_event_queryset,
+        pageview_queryset,
+    )
+
+    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+    boundary = timezone.now() - timedelta(days=retention)
+    want = set(scope_values)
     out: dict[str, int] = {v: 0 for v in scope_values}
-    spans = periods_in_range(utc_day(start_date), utc_day(end_date), current_window())
-    for pk, p_start, _p_end in spans:
-        live = (
-            VisitorScopeState.objects.filter(
-                website_id=website_id, period=pk, scope=scope, scope_value__in=scope_values
-            )
-            .values("scope_value")
+
+    # Within retention: exact and filterable, straight from the event digests.
+    qs_factory = custom_event_queryset if scope == "event" else pageview_queryset
+    ev_qs = qs_factory(website_id, max(start_date, boundary), end_date, filters).filter(
+        visitor_key__isnull=False
+    )
+    if scope == "section":
+        from core.mantecato_core.queries.stats import _normalize_url
+
+        seen: dict[str, set[str]] = defaultdict(set)
+        for url_path, vkey in ev_qs.values_list("url_path", "visitor_key").iterator():
+            sec = _normalize_url(section_for_path(url_path or "/"), "smart")
+            if sec in want:
+                seen[sec].add(vkey)
+        for sec, keys in seen.items():
+            out[sec] = len(keys)
+    else:
+        field = "event_name" if scope == "event" else "url_path"
+        rows = (
+            ev_qs.filter(**{f"{field}__in": list(want)})
+            .values(field)
             .annotate(n=Count("visitor_key", distinct=True))
         )
-        live_rows = list(live)
-        if live_rows:
-            for r in live_rows:
-                out[r["scope_value"]] = out.get(r["scope_value"], 0) + (r["n"] or 0)
-        else:
+        for r in rows:
+            out[r[field]] = r["n"] or 0
+
+    # Beyond retention: dimensionless aggregates (cannot be sliced by a filter).
+    if start_date < boundary and has_only_bot_filter(filters):
+        for _pk, p_start, _p_end in periods_in_range(
+            utc_day(start_date), utc_day(boundary), current_window()
+        ):
             for r in VisitorPeriod.objects.filter(
                 website_id=website_id,
                 period_start=p_start,
                 scope=scope,
-                scope_value__in=scope_values,
+                scope_value__in=list(want),
             ).values("scope_value", "unique_visitors"):
                 out[r["scope_value"]] = out.get(r["scope_value"], 0) + (r["unique_visitors"] or 0)
     return out
@@ -135,47 +172,44 @@ def get_landing_metrics(
     limit: int = 50,
     filters: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Entry (landing) pages with visits, bounces and bounce rate.
+    """Entry (landing) pages with visits, bounces and bounce rate — **filterable**.
 
-    Combines live ephemeral state (un-rolled periods, from ``VisitorDayState``
-    grouped by ``entry_path``) with finalised ``VisitorPeriod`` landing aggregates,
-    per period (live if present, else finalised) so each period is counted once.
-    Bounces use the engaged definition. Suppressed (``[]``) under a content/
-    device/geo filter — landing aggregates can't be sliced by those dimensions.
+    Sessionises the (filtered) per-event digests at read time and attributes each
+    visit to its entry page, so a country/device/bot filter slices the landing
+    table downstream like the session-based product. Within the digest retention
+    window; the portion of the range beyond retention folds in the finalised
+    ``VisitorPeriod`` landing aggregates (only when no content filter narrows the
+    population — they can't be sliced). Single-pageview (gap-based) bounce rule,
+    consistent with the site-level KPIs.
     """
-    if not has_only_bot_filter(filters):
-        return []
-    from apps.core.models import VisitorDayState, VisitorPeriod
-    from core.mantecato_core.visitor_counting import _bounce_threshold, _open_bounce_filter
+    from django.conf import settings as dj_settings
 
-    start_day = utc_day(start_date)
-    end_day = utc_day(end_date)
-    threshold = _bounce_threshold()
-    acc: dict[str, dict[str, int]] = {}
+    from apps.core.models import VisitorPeriod
+    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
-    def _add(entry: str | None, visits: int, bounces: int) -> None:
+    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+    boundary = timezone.now() - timedelta(days=retention)
+
+    def _add(acc: dict[str, dict[str, int]], entry: str | None, visits: int, bounces: int) -> None:
         row = acc.setdefault(entry or "/", {"visits": 0, "bounces": 0})
         row["visits"] += visits
         row["bounces"] += bounces
 
-    for pk, p_start, _p_end in periods_in_range(start_day, end_day, current_window()):
-        live = list(
-            VisitorDayState.objects.filter(website_id=website_id, period=pk)
-            .exclude(entry_path__isnull=True)
-            .values("entry_path")
-            .annotate(
-                visits=Count("id"),
-                bounces=Count("id", filter=_open_bounce_filter(threshold)),
-            )
-        )
-        if live:
-            for r in live:
-                _add(r["entry_path"], r["visits"] or 0, r["bounces"] or 0)
-        else:
+    # Within retention: from the (filtered) event digests, sessionised per visit.
+    ev_qs = pageview_queryset(
+        website_id, max(start_date, boundary), end_date, filters
+    ).filter(visitor_key__isnull=False)
+    acc = event_landing_stats(ev_qs)
+
+    # Beyond retention: finalised landing aggregates (cannot be sliced by a filter).
+    if start_date < boundary and has_only_bot_filter(filters):
+        for _pk, p_start, _p_end in periods_in_range(
+            utc_day(start_date), utc_day(boundary), current_window()
+        ):
             for r in VisitorPeriod.objects.filter(
                 website_id=website_id, period_start=p_start, scope="landing"
             ).values("scope_value", "visits", "bounces"):
-                _add(r["scope_value"], r["visits"] or 0, r["bounces"] or 0)
+                _add(acc, r["scope_value"], r["visits"] or 0, r["bounces"] or 0)
 
     rows = [
         {

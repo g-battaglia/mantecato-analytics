@@ -88,7 +88,9 @@ sessionises those into the permanent aggregates and then discards the digests
   per-window uniques (with the day default, the sum of daily uniques). Exact
   cross-window uniques / returning visitors are intentionally **not** offered —
   they need a persistent identifier (consent).
-- Per-page / per-section / per-event unique visitors are exact for the window.
+- Per-page / per-section / per-entry-page / per-event unique visitors (and the
+  landing-page visits/bounce table) are computed from the digests at read time as
+  well, so they slice under the same filters — exact within the retention window.
 - Visitor/visit metrics are computed from the event digests **at read time**, so a
   content/device/geo/bot filter slices them downstream too (within the retention
   window) — the stored data never changes. Ranges reaching past retention fold in

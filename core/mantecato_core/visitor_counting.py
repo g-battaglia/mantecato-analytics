@@ -796,6 +796,50 @@ def event_visitor_stats(qs: Any) -> dict[str, int]:
     return out
 
 
+def event_landing_stats(qs: Any) -> dict[str, dict[str, int]]:
+    """Sessionise a ``website_event`` queryset into per-entry-page visits/bounces.
+
+    Like :func:`event_visitor_stats` but attributes each sessionised visit to its
+    **entry page** (the first pageview of the visit) and tallies single-pageview
+    bounces there. Callers pass a **filtered** pageview queryset, so the landing
+    table responds to any country/device/bot filter. The gap-based, single-pageview
+    bounce rule is used (consistent with the site-level KPIs); the live engaged-time
+    refinement does not apply to historical event rows. Returns
+    ``{entry_path: {"visits": int, "bounces": int}}``.
+    """
+    from itertools import groupby
+
+    acc: dict[str, dict[str, int]] = {}
+
+    def _close(entry: str, pv: int) -> None:
+        row = acc.setdefault(entry or "/", {"visits": 0, "bounces": 0})
+        row["visits"] += 1
+        if pv <= 1:
+            row["bounces"] += 1
+
+    rows = (
+        qs.order_by("visitor_key", "created_at")
+        .values_list("visitor_key", "created_at", "url_path")
+        .iterator()
+    )
+    for _key, grp in groupby(rows, key=lambda r: r[0]):
+        events = [(t, p) for _k, t, p in grp]
+        entry = events[0][1]
+        visit_pv = 1
+        last = events[0][0]
+        for t, p in events[1:]:
+            gap = max(0, int((t - last).total_seconds()))
+            if gap > SESSION_TIMEOUT_S:
+                _close(entry, visit_pv)
+                entry = p
+                visit_pv = 1
+            else:
+                visit_pv += 1
+            last = t
+        _close(entry, visit_pv)
+    return acc
+
+
 # ---------------------------------------------------------------------------
 # Small shared helpers (used across the analytics read path).
 # ---------------------------------------------------------------------------

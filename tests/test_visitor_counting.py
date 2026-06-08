@@ -210,6 +210,20 @@ def test_per_scope_unique_visitors():
     assert counts["/a"] == 2 and counts["/b"] == 1
 
 
+def test_per_scope_unique_visitors_filterable_by_country():
+    # Per-page uniques are read from the digests, so a content filter slices them.
+    base = _today()
+    _visit(ip="1.1.1.1", path="/a", country="US", when=base)
+    _visit(ip="2.2.2.2", path="/a", country="SG", when=base)
+    s, e = _full_range()
+    assert read_scope_visitors(WEBSITE_ID, s, e, scope="page", scope_values=["/a"])["/a"] == 2
+    only_us = [Filter(column="country", operator="eq", value="US")]
+    counts = read_scope_visitors(
+        WEBSITE_ID, s, e, scope="page", scope_values=["/a"], filters=only_us
+    )
+    assert counts["/a"] == 1
+
+
 # --- rollup (day window) ----------------------------------------------------
 
 
@@ -371,6 +385,19 @@ def test_landing_metrics_visits_and_bounce():
     assert by_entry["/b"]["visits"] == 1 and by_entry["/b"]["bounce_rate"] == 0.0
 
 
+def test_landing_metrics_filterable_by_country():
+    # The landing table is sessionised from the digests, so a content filter slices
+    # it downstream (no longer suppressed to []).
+    base = _today()
+    _visit(ip="1.1.1.1", path="/a", country="US", when=base)
+    _visit(ip="2.2.2.2", path="/a", country="SG", when=base)
+    s, e = _full_range()
+    assert {r["entry_path"]: r["visits"] for r in get_landing_metrics(WEBSITE_ID, s, e)}["/a"] == 2
+    only_us = [Filter(column="country", operator="eq", value="US")]
+    rows_us = get_landing_metrics(WEBSITE_ID, s, e, filters=only_us)
+    assert {r["entry_path"]: r["visits"] for r in rows_us}["/a"] == 1
+
+
 def test_visits_by_bucket_counts_sessions():
     _ingest(ip="1.1.1.1")
     _ingest(ip="2.2.2.2")
@@ -397,15 +424,35 @@ def test_bot_filter_excludes_bots_at_read_time():
     assert WebsiteEvent.objects.filter(website_id=WEBSITE_ID, is_bot=True).count() == 1
 
 
-def test_imported_per_scope_unique_visitors():
+def test_per_scope_unique_visitors_from_digests():
+    # Within retention the per-page uniques come straight from the (filterable)
+    # event digests — no aggregation needed, the digests are kept.
     when = _days_ago(3)
-    for ip_key, paths in [("sessA", ["/x", "/x"]), ("sessB", ["/x", "/y"])]:
+    for key, paths in [("sessA", ["/x", "/x"]), ("sessB", ["/x", "/y"])]:
         for p in paths:
             ev = WebsiteEvent.objects.create(
-                website_id=WEBSITE_ID, url_path=p, event_type=1, visitor_key=ip_key
+                website_id=WEBSITE_ID, url_path=p, event_type=1, visitor_key=key
             )
             WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
-    aggregate_events_into_daily(WEBSITE_ID)
+    counts = read_scope_visitors(
+        WEBSITE_ID, *_full_range(), scope="page", scope_values=["/x", "/y"]
+    )
+    assert counts["/x"] == 2 and counts["/y"] == 1
+
+
+@override_settings(VISITOR_KEY_RETENTION_DAYS=1)
+def test_per_scope_unique_visitors_beyond_retention():
+    # Past retention the digests are discarded; the per-page uniques fall back to
+    # the permanent ``VisitorPeriod`` scope aggregates (dimensionless).
+    when = _days_ago(3)
+    for key, paths in [("sessA", ["/x", "/x"]), ("sessB", ["/x", "/y"])]:
+        for p in paths:
+            ev = WebsiteEvent.objects.create(
+                website_id=WEBSITE_ID, url_path=p, event_type=1, visitor_key=key
+            )
+            WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+    aggregate_events_into_daily(WEBSITE_ID)  # rolls up + discards the digests
+    assert not WebsiteEvent.objects.filter(visitor_key__isnull=False).exists()
     counts = read_scope_visitors(
         WEBSITE_ID, *_full_range(), scope="page", scope_values=["/x", "/y"]
     )

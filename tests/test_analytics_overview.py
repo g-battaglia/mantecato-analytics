@@ -415,6 +415,7 @@ class TestOverviewViewRendered:
 
         assert "No websites" in content
 
+    @pytest.mark.django_db
     @patch("apps.analytics.services.get_top_pages")
     @patch("apps.analytics.partials.resolve_websites_for_user")
     def test_tab_partial_renders_pages(
@@ -431,8 +432,8 @@ class TestOverviewViewRendered:
             {"urlPath": "/", "views": 42, "visitors": 30},
         ]
 
-        # A content filter suppresses visitor counts, keeping the request off
-        # the visitor-aggregate path (no DB query for visitor tables).
+        # The content filter now slices visitor counts at read time (from the
+        # event digests), so the request reads the DB — and still renders.
         response = client.get(
             "/overview/tab/?tab=pages&f=country:eq:US&website=" + WEBSITE_ID
         )
