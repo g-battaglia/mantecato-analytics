@@ -63,7 +63,7 @@ if TYPE_CHECKING:
 # default to the "last 7 days" view (daily granularity → the Pageviews vs
 # Visitors trend shows both lines), while the JSON API surfaces (CLI, MCP)
 # default to the broader "last 30 days" window used by external tooling.
-DEFAULT_WEB_RANGE_PRESET = "7d"
+DEFAULT_WEB_RANGE_PRESET = "24h"
 DEFAULT_API_RANGE_PRESET = "30d"
 
 # Hard cap on how many whole periods the prev/next controls may step back, so a
