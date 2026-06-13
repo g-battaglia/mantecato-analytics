@@ -151,9 +151,10 @@ class Command(BaseCommand):
             if options["replace"]:
                 self._confirm_replace(console, options, target_website)
                 console.print(
-                    "[yellow]Deleting existing analytics rows for the target website…[/yellow]"
+                    "[yellow]Deleting existing analytics rows in the imported date "
+                    "range for the target website…[/yellow]"
                 )
-                importer.replace_target_data()
+                importer.replace_target_data(src)
 
             with Progress(console=console) as progress:
                 importer.run(src, progress)
@@ -181,8 +182,9 @@ class Command(BaseCommand):
         if options["noinput"]:
             return
         console.print(
-            f"[bold red]--replace will DELETE existing analytics rows for website "
-            f"{target_website}.[/bold red]"
+            f"[bold red]--replace will PERMANENTLY DELETE all existing pageview/event "
+            f"rows for website {target_website} within the imported data's date range — "
+            f"including any collected by the live Mantecato tracker in that range.[/bold red]"
         )
         if input("Type 'REPLACE' to continue: ").strip() != "REPLACE":
             raise CommandError("Confirmation failed. Aborted.")

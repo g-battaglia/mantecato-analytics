@@ -61,9 +61,15 @@ _SALT_LOCK = threading.Lock()
 
 
 def _window() -> str:
-    """Return the configured exactness window, defaulting to ``month``."""
-    w = str(getattr(settings, "VISITOR_EXACT_WINDOW", "month")).strip().lower()
-    return w if w in _VALID_WINDOWS else "month"
+    """Return the configured exactness window, defaulting to ``day``.
+
+    Mirrors the ``VISITOR_EXACT_WINDOW`` default in settings: with ``day``,
+    unique visitors over a multi-day range is the sum of per-day uniques (the
+    conventional, Umami-aligned figure); ``month`` gives true monthly uniques
+    with no cross-day double counting. See ``docs/privacy.md``.
+    """
+    w = str(getattr(settings, "VISITOR_EXACT_WINDOW", "day")).strip().lower()
+    return w if w in _VALID_WINDOWS else "day"
 
 
 def current_window() -> str:
@@ -153,8 +159,11 @@ def get_or_create_salt(period: str) -> bytes:
     )
     salt = bytes(row.salt)
     with _SALT_LOCK:
-        # Keep only the current window to bound memory.
-        _SALT_CACHE.clear()
+        # Bounded cache: read paths and the rollup can touch several windows in
+        # one process (e.g. ranges spanning a month boundary), so keep a few
+        # rather than clearing to one (which thrashed under multi-window access).
+        if len(_SALT_CACHE) >= 8:
+            _SALT_CACHE.clear()
         _SALT_CACHE[period] = salt
     return salt
 
@@ -563,8 +572,17 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     gap) into exact site-level visitors/visits/bounces/duration, plus per-page and
     per-section unique visitors (``VisitorPeriod`` scopes ``page``/``section``),
     upserts ``VisitorDaily``/``VisitorPeriod``, then NULLs the processed digests.
-    Idempotent (nulled rows are skipped on re-run). Pure-Python → works on
-    PostgreSQL and SQLite. Returns ``{"days", "events"}``.
+
+    Double-count safety: a ``(site, day)`` is skipped when it has live
+    ``VisitorDayState`` **or** already has a ``VisitorDaily`` site row. The rollup
+    deletes ``VisitorDayState`` once a window finalises but keeps ``visitor_key``
+    until retention (for read-time exactness), so the ``VisitorDaily`` check is
+    what stops already-rolled-up live days from being re-aggregated here. As a
+    consequence, importing historical data into a day that already has live
+    aggregates is a no-op for that day. The whole pass runs under the rollup's
+    advisory lock so it cannot interleave with a concurrent rollup. Idempotent
+    (nulled rows are skipped on re-run). Pure-Python → works on PostgreSQL and
+    SQLite. Returns ``{"days", "events"}``.
     """
     from collections import defaultdict
     from itertools import groupby
@@ -576,81 +594,103 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     if website_id is not None:
         qs = qs.filter(website_id=website_id)
 
-    live_days = {
-        (str(w), d)
-        for (w, d) in VisitorDayState.objects.values_list("website_id", "day").distinct()
-    }
-
     site_acc: dict[tuple[str, date], dict[str, int]] = {}
     keys_by_site: dict[str, list[str]] = defaultdict(list)
     # Per-(period, scope, scope_value) sets of distinct visitor digests, so the
     # anonymous aggregate also carries exact per-page / per-section unique visitors.
     scope_presence: dict[tuple[str, date, str, str], set[str]] = defaultdict(set)
-
-    rows = (
-        qs.order_by("website_id", "visitor_key", "created_at")
-        .values("website_id", "visitor_key", "created_at", "url_path")
-        .iterator()
-    )
-    for (site, key), grp in groupby(rows, key=lambda r: (str(r["website_id"]), r["visitor_key"])):
-        events = list(grp)
-        times = [r["created_at"] for r in events]
-        day = utc_day(times[0])
-        if (site, day) in live_days:
-            continue
-        keys_by_site[site].append(key)
-
-        # Sessionise (30-min inactivity gap). visit_pv = pageviews in current visit.
-        visits = 1
-        visit_pv = 1
-        total_dur = 0
-        cur_dur = 0
-        last = times[0]
-        visit_pvs: list[int] = []
-        for t in times[1:]:
-            gap = max(0, int((t - last).total_seconds()))
-            if gap > SESSION_TIMEOUT_S:
-                visit_pvs.append(visit_pv)
-                total_dur += cur_dur
-                visits += 1
-                visit_pv = 1
-                cur_dur = 0
-            else:
-                visit_pv += 1
-                cur_dur += gap
-            last = t
-        visit_pvs.append(visit_pv)
-        total_dur += cur_dur
-        bounces = sum(1 for pv in visit_pvs if pv <= 1)
-
-        acc = site_acc.setdefault(
-            (site, day),
-            {
-                "unique_visitors": 0,
-                "visits": 0,
-                "bounces": 0,
-                "total_pageviews": 0,
-                "total_duration_s": 0,
-            },
-        )
-        acc["unique_visitors"] += 1
-        acc["visits"] += visits
-        acc["bounces"] += bounces
-        acc["total_pageviews"] += len(times)
-        acc["total_duration_s"] += total_dur
-
-        p_start, _ = _period_bounds(day, window)
-        pages = {(r["url_path"] or "/")[:500] for r in events}
-        for page in pages:
-            scope_presence[(site, p_start, "page", page)].add(key)
-        for sec in {section_for_path(p) for p in pages}:
-            scope_presence[(site, p_start, "section", sec)].add(key)
-
-    if not site_acc:
-        return {"days": 0, "events": 0}
-
     nulled = 0
+
     with transaction.atomic():
+        # Serialise against the opportunistic/scheduled rollup (same advisory lock
+        # key): both read website_event.visitor_key + VisitorDayState and do
+        # additive upserts into the same VisitorDaily/VisitorPeriod rows, so they
+        # must not interleave. Held across the read scan + writes below.
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_ROLLUP_LOCK_KEY])
+
+        # (site, day) pairs already accounted for: currently-live state
+        # (VisitorDayState) OR days already folded into VisitorDaily by the rollup
+        # or a previous backfill. Skipping the latter is what prevents
+        # re-aggregating (double-counting) already-rolled-up live days, since the
+        # rollup keeps visitor_key on those events until retention.
+        ds_qs = VisitorDayState.objects.all()
+        vd_qs = VisitorDaily.objects.filter(scope="site")
+        if website_id is not None:
+            ds_qs = ds_qs.filter(website_id=website_id)
+            vd_qs = vd_qs.filter(website_id=website_id)
+        accounted_days = {
+            (str(w), d) for (w, d) in ds_qs.values_list("website_id", "day").distinct()
+        }
+        accounted_days |= {
+            (str(w), d) for (w, d) in vd_qs.values_list("website_id", "day").distinct()
+        }
+
+        rows = (
+            qs.order_by("website_id", "visitor_key", "created_at")
+            .values("website_id", "visitor_key", "created_at", "url_path")
+            .iterator()
+        )
+        for (site, key), grp in groupby(
+            rows, key=lambda r: (str(r["website_id"]), r["visitor_key"])
+        ):
+            events = list(grp)
+            times = [r["created_at"] for r in events]
+            day = utc_day(times[0])
+            if (site, day) in accounted_days:
+                continue
+            keys_by_site[site].append(key)
+
+            # Sessionise (30-min inactivity gap). visit_pv = pageviews in current visit.
+            visits = 1
+            visit_pv = 1
+            total_dur = 0
+            cur_dur = 0
+            last = times[0]
+            visit_pvs: list[int] = []
+            for t in times[1:]:
+                gap = max(0, int((t - last).total_seconds()))
+                if gap > SESSION_TIMEOUT_S:
+                    visit_pvs.append(visit_pv)
+                    total_dur += cur_dur
+                    visits += 1
+                    visit_pv = 1
+                    cur_dur = 0
+                else:
+                    visit_pv += 1
+                    cur_dur += gap
+                last = t
+            visit_pvs.append(visit_pv)
+            total_dur += cur_dur
+            bounces = sum(1 for pv in visit_pvs if pv <= 1)
+
+            acc = site_acc.setdefault(
+                (site, day),
+                {
+                    "unique_visitors": 0,
+                    "visits": 0,
+                    "bounces": 0,
+                    "total_pageviews": 0,
+                    "total_duration_s": 0,
+                },
+            )
+            acc["unique_visitors"] += 1
+            acc["visits"] += visits
+            acc["bounces"] += bounces
+            acc["total_pageviews"] += len(times)
+            acc["total_duration_s"] += total_dur
+
+            p_start, _ = _period_bounds(day, window)
+            pages = {(r["url_path"] or "/")[:500] for r in events}
+            for page in pages:
+                scope_presence[(site, p_start, "page", page)].add(key)
+            for sec in {section_for_path(p) for p in pages}:
+                scope_presence[(site, p_start, "section", sec)].add(key)
+
+        if not site_acc:
+            return {"days": 0, "events": 0}
+
         for (site, day), acc in site_acc.items():
             p_start, _ = _period_bounds(day, window)
             _upsert_counts(

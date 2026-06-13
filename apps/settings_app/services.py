@@ -14,15 +14,16 @@ read and the write step rolls back cleanly. Update functions use
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.hashers import check_password
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
-from apps.core.api_keys import generate_key, hash_key
+from apps.core.api_keys import VALID_SCOPES, generate_key, hash_key
 from apps.core.models import (
     ApiKey,
     BotConfig,
@@ -82,13 +83,23 @@ def generate_new_api_key(
     Args:
         user_id: UUID string of the key's owner.
         name: Human-readable label for the key.
-        scopes: Permission scopes (default ``["read", "write"]``).
+        scopes: Permission scopes (default ``["read", "write"]``). Every
+            entry must be one of :data:`~apps.core.api_keys.VALID_SCOPES`;
+            unknown scopes raise ``ValueError`` (mass-assignment guard).
+            Authorization for privileged scopes (e.g. ``admin``) is enforced
+            by the caller, not here.
 
     Returns:
         A dict containing ``id``, ``name``, ``key`` (raw), ``prefix``,
         ``scopes``, and ``createdAt``.
+
+    Raises:
+        ValueError: when *scopes* contains an unrecognised scope string.
     """
     scopes = scopes if scopes is not None else ["read", "write"]
+    unknown = [s for s in scopes if s not in VALID_SCOPES]
+    if unknown:
+        raise ValueError(f"Unknown scope(s): {', '.join(sorted(unknown))}")
     key = generate_key()
     # Store a truncated prefix for display in the key list UI (the full
     # key is never persisted).
@@ -186,6 +197,18 @@ def save_bot_config(
     """
     merged = merge_bot_config(config)
     with transaction.atomic():
+        # Serialise concurrent first-saves for the same website so two requests
+        # can't both miss the existing row and create duplicate BotConfig rows
+        # (there is no unique constraint on the shared report table). On SQLite
+        # the single-writer lock already serialises writes.
+        if connection.vendor == "postgresql":
+            lock_key = int.from_bytes(
+                hashlib.sha256(f"bot_config:{website_id}".encode()).digest()[:8],
+                "big",
+                signed=True,
+            )
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_key])
         existing = BotConfig.objects.filter(website_id=website_id).first()
         if existing is not None:
             existing.parameters = merged

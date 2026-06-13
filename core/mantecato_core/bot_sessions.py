@@ -3,16 +3,20 @@
 The session-based product (Mantecato v2/v3) excludes whole bot **sessions** from
 visitor/visit/bounce counts using behavioural heuristics computed at read time
 (zero-engagement, high-velocity, datacentre clusters) plus cheap signals
-(bot/empty browser, excluded countries). The cookieless rewrite pre-aggregates
-those counts, so the same heuristics must run **at aggregation time** on the
-window digest (``website_event.visitor_key``), which is the cookieless equivalent
-of the session id.
+(bot/empty browser, excluded countries).
 
 :func:`compute_bot_visitor_keys` ports that logic 1:1 onto ``visitor_key`` using
 only the anonymous fields already on ``website_event`` (coarse browser/os/device,
-country, pageview count, and on-page duration). The result is a set of digests to
-exclude from the visitor/visit/bounce/duration aggregates so the cookieless counts
-match the session-based product. Driven by the per-site :class:`BotConfig`.
+country, pageview count, and on-page duration), returning a set of digests to
+exclude. Driven by the per-site :class:`BotConfig`.
+
+STATUS — NOT YET WIRED IN. This is scaffolding for behavioural bot filtering on
+the cookieless counts; it has no production callers today. The shipped v4 bot
+filter is the cheaper read-time event-level exclusion (bot UA / datacentre IP /
+excluded countries via ``filters.build_bot_filter_sql`` and the read paths in
+``core/mantecato_core/queries/visitors.py``); the behavioural heuristics here do
+not run. Before relying on it, wire it into the read/rollup path and cover it
+with tests — turning it on will change visitor/visit/bounce counts.
 """
 
 from __future__ import annotations

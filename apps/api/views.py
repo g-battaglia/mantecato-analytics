@@ -695,11 +695,27 @@ class ApiKeyCreateView(ApiWriteMixin, JSONView):
         name = (body.get("name") or "").strip()
         if not name:
             return json_response({"error": "name is required."}, status=400)
-        result = generate_new_api_key(
-            user_id=request.api_user_id,
-            name=name,
-            scopes=body.get("scopes"),
-        )
+        requested_scopes = body.get("scopes")
+        # Privilege-escalation guard: a key may only mint another key with the
+        # ``admin`` scope when the acting key itself holds ``admin``. Without
+        # this a write-scoped key could self-promote to all-tenant admin.
+        if (
+            requested_scopes
+            and "admin" in requested_scopes
+            and "admin" not in getattr(request, "api_key_scopes", [])
+        ):
+            return json_response(
+                {"error": "Only an admin-scoped key can grant the admin scope."},
+                status=403,
+            )
+        try:
+            result = generate_new_api_key(
+                user_id=request.api_user_id,
+                name=name,
+                scopes=requested_scopes,
+            )
+        except ValueError as exc:
+            return json_response({"error": str(exc)}, status=400)
         # The raw key is included in this response only -- it is hashed before storage
         return json_response(result, status=201)
 

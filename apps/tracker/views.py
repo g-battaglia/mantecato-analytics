@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,7 +27,12 @@ from django.views.decorators.http import require_GET
 
 from apps.tracker.geo import resolve_geo
 from apps.tracker.ip import get_client_ip
-from apps.tracker.services import ingest_custom_event, ingest_engagement, ingest_pageview
+from apps.tracker.services import (
+    ingest_custom_event,
+    ingest_engagement,
+    ingest_pageview,
+    is_trackable_website,
+)
 from apps.tracker.ua import classify_bot_user_agent, parse_user_agent
 from core.mantecato_core.ip_reputation import is_datacenter_ip
 
@@ -36,6 +43,13 @@ logger = logging.getLogger(__name__)
 
 # Headers the tracker JS needs to send cross-origin.
 _CORS_ALLOW_HEADERS = "Content-Type"
+
+# Best-effort per-process per-IP rate-limit state (fixed 60s window). Keyed on
+# the extracted client IP; bounded to avoid unbounded memory under spoofed IPs.
+_RATE_WINDOW_S = 60
+_RATE_STATE_MAX = 10_000
+_rate_state: dict[str, tuple[int, float]] = {}
+_rate_lock = threading.Lock()
 
 
 def _add_cors(response: HttpResponse) -> HttpResponse:
@@ -48,6 +62,51 @@ def _add_cors(response: HttpResponse) -> HttpResponse:
     response["Access-Control-Allow-Origin"] = "*"
     response["Access-Control-Allow-Headers"] = _CORS_ALLOW_HEADERS
     return response
+
+
+def _content_length(request: HttpRequest) -> int:
+    """Return the declared request body size in bytes (0 if absent/invalid)."""
+    try:
+        return int(request.META.get("CONTENT_LENGTH") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _privacy_opt_out(request: HttpRequest) -> bool:
+    """Return ``True`` when the request signals a privacy opt-out to honour.
+
+    Enforced server-side so the guarantee holds even for clients that bypass
+    the browser tracker's own GPC/DNT check (curl, forks, server SDKs).
+    """
+    if getattr(settings, "RESPECT_GPC", True) and request.META.get("HTTP_SEC_GPC") == "1":
+        return True
+    return bool(getattr(settings, "RESPECT_DNT", False) and request.META.get("HTTP_DNT") == "1")
+
+
+def _rate_limited(ip: str) -> bool:
+    """Best-effort per-process, per-IP fixed-window rate check.
+
+    Returns ``True`` when *ip* has exceeded ``INGEST_RATE_LIMIT_PER_MINUTE`` in
+    the current window. Disabled (always ``False``) when the limit is 0. The
+    state is per gunicorn worker, so this only meaningfully throttles once the
+    client IP is extracted correctly (see ``TRUSTED_PROXY_COUNT``).
+    """
+    limit = getattr(settings, "INGEST_RATE_LIMIT_PER_MINUTE", 0)
+    if limit <= 0 or not ip:
+        return False
+    now = time.monotonic()
+    with _rate_lock:
+        count, start = _rate_state.get(ip, (0, now))
+        if now - start >= _RATE_WINDOW_S:
+            count, start = 0, now
+        count += 1
+        _rate_state[ip] = (count, start)
+        if len(_rate_state) > _RATE_STATE_MAX:
+            # Drop entries whose window has fully elapsed to bound memory.
+            stale = [k for k, (_, s) in _rate_state.items() if now - s >= _RATE_WINDOW_S]
+            for k in stale:
+                del _rate_state[k]
+        return count > limit
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -95,8 +154,21 @@ class IngestView(View):
             200 JSON with ``{"ok": true}`` on success.
             400 JSON with ``{"error": "..."}`` for malformed requests.
         """
+        # Reject oversized bodies before materialising request.body — this is an
+        # unauthenticated public endpoint and legitimate payloads are tiny.
+        max_body = getattr(settings, "INGEST_MAX_BODY_BYTES", 16384)
+        if max_body and _content_length(request) > max_body:
+            return _add_cors(JsonResponse({"error": "Payload too large"}, status=413))
+
         try:
-            body = json.loads(request.body)
+            raw = request.body
+        except Exception:  # noqa: BLE001  RequestDataTooBig etc. → treat as too large
+            return _add_cors(JsonResponse({"error": "Payload too large"}, status=413))
+        if max_body and len(raw) > max_body:
+            return _add_cors(JsonResponse({"error": "Payload too large"}, status=413))
+
+        try:
+            body = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
@@ -113,7 +185,22 @@ class IngestView(View):
         if msg_type not in ("event", "engagement"):
             return _add_cors(JsonResponse({"ok": True}))
 
+        # Honour server-side privacy opt-out (GPC/DNT) before doing any work.
+        if _privacy_opt_out(request):
+            return _add_cors(JsonResponse({"ok": True}))
+
+        # Silently drop events for unknown/inactive websites: prevents poisoning
+        # arbitrary site UUIDs and unbounded storage growth. 200 (not 4xx) avoids
+        # leaking which website ids exist.
+        if not is_trackable_website(website_id):
+            return _add_cors(JsonResponse({"ok": True}))
+
         ip = get_client_ip(request)
+
+        # Best-effort per-IP flood protection on the public endpoint.
+        if _rate_limited(ip):
+            return _add_cors(JsonResponse({"error": "Too many requests"}, status=429))
+
         ua_string = request.META.get("HTTP_USER_AGENT", "")
         is_bot, bot_reason = classify_bot_user_agent(ua_string)
         # Flag cloud/datacenter source IPs as bots (IP used transiently, never stored).

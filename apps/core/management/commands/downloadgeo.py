@@ -132,9 +132,10 @@ class Command(BaseCommand):
         except tarfile.TarError:
             pass
 
-        # Heuristic: if the data starts with the MMDB magic bytes or is
-        # large enough to be a raw database file, treat it as-is.
-        if tar_data[:4] == b"\xab\xcd\xefMaxMind"[:4] or len(tar_data) > 1_000_000:
+        # Heuristic: if the MMDB metadata marker is present (it lives near the
+        # END of the file, not the start) or the blob is large enough to be a
+        # raw database file, treat it as-is.
+        if b"\xab\xcd\xefMaxMind.com" in tar_data or len(tar_data) > 1_000_000:
             return tar_data
 
         raise CommandError("Could not find .mmdb file in downloaded archive.")

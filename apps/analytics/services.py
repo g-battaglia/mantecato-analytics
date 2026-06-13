@@ -546,7 +546,9 @@ def get_overview_tab_events(
         value_key="eventName",
         filters=filters,
     )
-    return {"event_metrics": events}
+    # Key must be ``top_events`` to match _tab_events.html when rendered directly
+    # via the HTMX partial path (the full page aliases event_metrics→top_events).
+    return {"top_events": events}
 
 def get_overview_tab_devices(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None

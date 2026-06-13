@@ -341,13 +341,21 @@ def resolve_date_range(preset: DateRangePreset) -> DateRange | None:
     elif preset == "this_year":
         return DateRange(_start_of_year(now), now)
     elif preset == "last_year":
-        ly = now.replace(year=now.year - 1)
+        ly = _shift_year(now, -1)
         return DateRange(_start_of_year(ly), _end_of_year(ly))
     elif preset in ("all", "custom"):
         # "all" = no date filter; "custom" = caller provides explicit dates.
         return None
     # Unknown preset -- treat as unbounded (same as "all").
     return None
+
+
+def _shift_year(value: datetime, years: int) -> datetime:
+    """Shift *value* by whole years, clamping Feb 29 → Feb 28 on non-leap years."""
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        return value.replace(year=value.year + years, day=28)
 
 
 def get_comparison_range(
@@ -361,8 +369,8 @@ def get_comparison_range(
 
     * ``"previous_year"`` -- Shifts both boundaries back by exactly one
       calendar year.  Useful for seasonal comparisons (e.g. this December
-      vs. last December).  Note: this uses ``datetime.replace(year=year-1)``
-      so it will raise ``ValueError`` on Feb 29 in a non-leap year.
+      vs. last December).  Feb 29 is clamped to Feb 28 when the target year is
+      not a leap year (via :func:`_shift_year`).
     * ``"previous_period"`` -- Shifts the window back by its own duration,
       producing a non-overlapping adjacent period of equal length.  The
       behaviour differs by duration:
@@ -385,8 +393,8 @@ def get_comparison_range(
     """
     if mode == "previous_year":
         return DateRange(
-            range_.start_date.replace(year=range_.start_date.year - 1),
-            range_.end_date.replace(year=range_.end_date.year - 1),
+            _shift_year(range_.start_date, -1),
+            _shift_year(range_.end_date, -1),
         )
 
     diff = range_.end_date - range_.start_date

@@ -215,17 +215,30 @@ class UmamiImporter:
         # aggregates and discards the digests only once they age past the retention
         # window (``VISITOR_KEY_RETENTION_DAYS``).
 
-    def replace_target_data(self) -> None:
-        """Delete the destination analytics rows for the target website.
+    def replace_target_data(self, src) -> None:
+        """Delete the destination analytics rows the import will overwrite.
 
-        Only valid in single-site mode; used by the ``--replace`` option so the
-        imported data overwrites (rather than adds to) the existing rows for
-        that website. Configuration tables are never touched.
+        Scoped to the source events' ``created_at`` range (honouring ``--since``
+        and the source-website filter) so first-party pageviews the live
+        Mantecato tracker collected *outside* that range are preserved, rather
+        than wiping the entire site. Used by ``--replace`` so the imported data
+        overwrites (rather than adds to) the rows it covers. Only valid in
+        single-site mode; configuration tables are never touched.
         """
         if not self.target_website:
             raise ValueError("replace_target_data requires target_website.")
+        where = self._where_clause("events")
+        with src.cursor() as cur:
+            cur.execute(f"SELECT MIN(created_at), MAX(created_at) FROM website_event{where}")
+            lo, hi = cur.fetchone()
+        if lo is None or hi is None:
+            return  # No source events in range → nothing to replace.
         with connection.cursor() as cur:
-            cur.execute("DELETE FROM website_event WHERE website_id = %s", [self.target_website])
+            cur.execute(
+                "DELETE FROM website_event WHERE website_id = %s "
+                "AND created_at >= %s AND created_at <= %s",
+                [self.target_website, lo, hi],
+            )
 
     def _copy_table(self, src, src_table, dst_table, is_user, label, progress) -> None:
         """Copy one source table into its destination, atomically.
@@ -266,6 +279,7 @@ class UmamiImporter:
                 dst_columns.append(_USER_COL_MAP.get(c, c))
 
         pw_dst_idx = dst_columns.index("password") if "password" in dst_columns else None
+        role_dst_idx = dst_columns.index("role") if "role" in dst_columns else None
         placeholders = ", ".join(["%s"] * len(dst_columns))
         col_list = ", ".join(dst_columns)
         insert_sql = (
@@ -282,6 +296,15 @@ class UmamiImporter:
                 raw_hash = row[pw_dst_idx]
                 if raw_hash.startswith("$2"):
                     row[pw_dst_idx] = f"bcrypt${raw_hash}"
+            # Normalise Umami's role vocabulary ('admin'/'user'/'view-only') onto
+            # Mantecato's ('admin'/'user'). Only an explicit Umami admin becomes a
+            # Mantecato admin (which implies is_superuser/is_staff); everything
+            # else is a plain user — never grant superuser by importing an
+            # unrecognised role.
+            if role_dst_idx is not None:
+                row[role_dst_idx] = (
+                    "admin" if str(row[role_dst_idx] or "").lower() == "admin" else "user"
+                )
             for j, col in enumerate(dst_columns):
                 if col in ("created_at", "updated_at") and row[j] is None:
                     row[j] = timezone.now()
@@ -518,7 +541,7 @@ def run_umami_import_job(
             # psycopg's message can leak host/credentials — keep it generic.
             raise ConnectionError("Cannot connect to the source database.") from None
         if replace:
-            importer.replace_target_data()
+            importer.replace_target_data(src)
         progress = DBProgress(job_id)
         importer.run(src, progress)
         progress.flush()

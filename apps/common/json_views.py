@@ -141,6 +141,10 @@ class JSONListView(JSONView):
             ),
         )
         total = qs.count() if hasattr(qs, "count") else len(qs)
+        # Clamp to the last populated page so a huge ?page= can't request an
+        # arbitrarily large OFFSET (deep-pagination scan) past the data.
+        last_page = max(1, (total + page_size - 1) // page_size) if total else 1
+        page = min(page, last_page)
         offset = (page - 1) * page_size
         items = list(qs[offset : offset + page_size])
         return json_response(

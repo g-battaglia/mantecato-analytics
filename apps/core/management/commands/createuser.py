@@ -75,8 +75,8 @@ class Command(BaseCommand):
             if password != confirm:
                 raise CommandError("Passwords do not match.")
 
-        if len(password) < 4:
-            raise CommandError("Password must be at least 4 characters.")
+        if len(password) < 8:
+            raise CommandError("Password must be at least 8 characters.")
 
         user = MantecatoUser.objects.create_user(username=username, password=password, role=role)
         if password_is_default:

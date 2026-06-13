@@ -263,6 +263,20 @@ class WebsiteEvent(models.Model):
                 condition=models.Q(event_type=1),
                 name="idx_we_referrer_hot",
             ),
+            # The visitor read path orders/groups by visitor_key (unique visitors,
+            # visits, realtime COUNT(DISTINCT)). Partial on the live (non-NULLed)
+            # rows so the index stays small once the rollup discards keys past
+            # retention. One per scope: pageviews (type 1) and custom events (type 2).
+            models.Index(
+                fields=["website_id", "visitor_key", "created_at"],
+                condition=models.Q(event_type=1, visitor_key__isnull=False),
+                name="idx_we_visitor_key_pv",
+            ),
+            models.Index(
+                fields=["website_id", "visitor_key", "created_at"],
+                condition=models.Q(event_type=2, visitor_key__isnull=False),
+                name="idx_we_visitor_key_evt",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -399,9 +413,12 @@ class VisitorDaily(models.Model):
     bounces = models.IntegerField(default=0)
     total_pageviews = models.IntegerField(default=0)
     total_duration_s = models.IntegerField(default=0)
-    # Bot contribution kept separately so the bot filter is a dynamic toggle:
-    # ``off`` shows human + bot, ``on`` shows human only — without re-deriving from
-    # the discarded digests. Disjoint from the human counts above (bot keys differ).
+    # Reserved for a future bot-filter toggle beyond the retention window: the
+    # intent is to store bot contribution separately so ``off`` shows human + bot
+    # and ``on`` shows human only without re-deriving from the discarded digests.
+    # NOT YET POPULATED — the rollup currently stores humans + bots combined and
+    # the bot filter is applied at read time on the within-retention event rows
+    # (see core/mantecato_core/queries/visitors.py). These stay 0 until wired up.
     bot_unique_visitors = models.IntegerField(default=0)
     bot_visits = models.IntegerField(default=0)
     bot_bounces = models.IntegerField(default=0)
@@ -449,8 +466,8 @@ class VisitorPeriod(models.Model):
     bounces = models.IntegerField(default=0)
     total_pageviews = models.IntegerField(default=0)
     total_duration_s = models.IntegerField(default=0)
-    # Bot contribution kept separately for the dynamic bot-filter toggle (see
-    # :class:`VisitorDaily`). Disjoint from the human counts above.
+    # Reserved for a future bot-filter toggle beyond retention (see
+    # :class:`VisitorDaily`). NOT YET POPULATED — stays 0 until wired into the rollup.
     bot_unique_visitors = models.IntegerField(default=0)
     bot_visits = models.IntegerField(default=0)
     bot_bounces = models.IntegerField(default=0)

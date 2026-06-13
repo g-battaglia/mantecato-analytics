@@ -103,7 +103,15 @@
               weight: 1,
               fillOpacity: 0.7,
             }).addTo(map);
-            circle.bindPopup('<strong>' + g.country + '</strong><br>' + g.pageviews + ' {% trans "pageviews" %}');
+            {# Build the popup via DOM nodes (textContent) so the event-derived #}
+            {# country code can't inject HTML through bindPopup's innerHTML sink. #}
+            var popupEl = document.createElement('div');
+            var popupName = document.createElement('strong');
+            popupName.textContent = g.country;
+            popupEl.appendChild(popupName);
+            popupEl.appendChild(document.createElement('br'));
+            popupEl.appendChild(document.createTextNode(g.pageviews + ' {% trans "pageviews" %}'));
+            circle.bindPopup(popupEl);
           }
         });
       }

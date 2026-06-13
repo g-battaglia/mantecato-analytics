@@ -199,6 +199,12 @@ def paged_raw_query(
 
     Returns ``{"data": [...], "count": int, "page": int, "pageSize": int}``.
     """
+    # Coerce to ints before interpolating into SQL — LIMIT/OFFSET cannot be
+    # bound as %s parameters, so this guards against injection if a caller ever
+    # passes request-derived values here.
+    page = max(1, int(page))
+    page_size = max(1, int(page_size))
+
     count_sql = f"SELECT COUNT(*) AS count FROM ({sql}) AS t"
     count_row = raw_query_one(count_sql, params)
     count = int(count_row["count"]) if count_row else 0

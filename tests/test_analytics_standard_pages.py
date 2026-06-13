@@ -213,7 +213,8 @@ class TestOverviewTabFetchers:
     def test_tab_events_returns_expected_keys(self, mock_fn: MagicMock) -> None:
         from apps.analytics.services import get_overview_tab_events
         result = get_overview_tab_events(WEBSITE_ID, _make_date_range())
-        assert "event_metrics" in result
+        # Key is ``top_events`` so _tab_events.html renders via the HTMX partial path.
+        assert "top_events" in result
         assert mock_fn.call_count == 1
 
     @patch(

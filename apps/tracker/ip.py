@@ -1,14 +1,23 @@
 """Extract the real client IP from HTTP request headers.
 
-Checks headers in priority order matching Umami's behaviour: custom header,
-CDN-specific headers, standard proxy headers, then REMOTE_ADDR fallback.
+The client IP is the primary input to the cookieless visitor digest, so it is
+security-sensitive: a forgeable IP lets callers inflate/deflate visitor counts
+and bypass datacenter-bot detection. Header trust is therefore gated by operator
+configuration (``TRUST_PROXY_HEADERS`` / ``TRUSTED_PROXY_COUNT``):
+
+* Direct exposure (``TRUST_PROXY_HEADERS=False``) → use ``REMOTE_ADDR`` only.
+* Known topology (``TRUSTED_PROXY_COUNT=N>0``) → read the client spoof-resistantly
+  from the right of the X-Forwarded-For chain (honouring trusted CDN/custom headers).
+* Unknown topology (default) → permissive legacy behaviour (leftmost X-Forwarded-For),
+  which is spoofable; a startup warning recommends configuring the hop count.
 """
 
 from __future__ import annotations
 
-import os
 import re
 from typing import TYPE_CHECKING
+
+from django.conf import settings
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -35,23 +44,11 @@ _HEADER_CHAIN = [
 
 
 def get_client_ip(request: HttpRequest) -> str:
-    """Extract the real client IP address from the HTTP request.
+    """Extract the client IP address from the HTTP request.
 
-    Checks headers in a carefully ordered priority chain that matches
-    Umami's behaviour. The priority is:
-
-    1. **Custom header** -- operator-configured via the ``CLIENT_IP_HEADER``
-       environment variable (e.g. for non-standard proxy setups).
-    2. **CDN/proxy-specific headers** -- single-valued headers set by known
-       edge proxies (Cloudflare, Fastly, etc.). These are trusted because
-       they are set by the infrastructure, not by upstream clients.
-    3. **X-Forwarded-For** -- the first (leftmost) IP, which is the
-       original client in a compliant proxy chain.
-    4. **Forwarded** (RFC 7239) -- the ``for=`` directive.
-    5. **X-Forwarded** -- non-standard variant of X-Forwarded-For.
-    6. **X-Client-IP / REMOTE_ADDR** -- final fallback.
-
-    Port suffixes are stripped from all extracted IPs (both IPv4 and IPv6).
+    The extraction strategy depends on operator-configured proxy trust (see the
+    module docstring). Port suffixes are stripped from all extracted IPs (both
+    IPv4 and IPv6).
 
     Args:
         request: The incoming Django HTTP request.
@@ -60,28 +57,77 @@ def get_client_ip(request: HttpRequest) -> str:
         The client IP address as a string. Returns an empty string only if
         no IP could be determined at all (should not happen in practice).
     """
-    # 1. Check operator-configured custom header
-    custom = os.environ.get("CLIENT_IP_HEADER", "").strip()
+    remote_addr = request.META.get("REMOTE_ADDR", "")
+
+    # Direct exposure: forwarding headers are attacker-controlled, so the only
+    # trustworthy source is the socket peer.
+    if not getattr(settings, "TRUST_PROXY_HEADERS", True):
+        return _strip_port(remote_addr)
+
+    proxy_count = int(getattr(settings, "TRUSTED_PROXY_COUNT", 0) or 0)
+    if proxy_count > 0:
+        ip = _client_ip_behind_trusted_proxies(request, proxy_count)
+        return ip or _strip_port(remote_addr)
+
+    # Unknown topology: permissive legacy behaviour (spoofable — see the
+    # TRUSTED_PROXY_COUNT startup warning).
+    return _client_ip_permissive(request) or _strip_port(remote_addr)
+
+
+def _trusted_edge_header(request: HttpRequest) -> str:
+    """Return the client IP from a single-valued edge header, or ``""``.
+
+    Covers the operator-configured ``CLIENT_IP_HEADER`` and the known CDN
+    headers. These are set/overwritten by the edge proxy itself, so they are
+    authoritative only once the operator has asserted a trusted edge exists.
+    """
+    custom = getattr(settings, "CLIENT_IP_HEADER", "")
     if custom:
         meta_key = f"HTTP_{custom.upper().replace('-', '_')}"
         val = request.META.get(meta_key, "").strip()
         if val:
             return _strip_port(val)
-
-    # 2. Check CDN/proxy-specific single-valued headers
     for header in _HEADER_CHAIN:
         val = request.META.get(header, "").strip()
         if val:
             return _strip_port(val)
+    return ""
 
-    # 3. X-Forwarded-For: take the first (leftmost) IP in the chain
+
+def _client_ip_behind_trusted_proxies(request: HttpRequest, proxy_count: int) -> str:
+    """Spoof-resistant client IP for a known ``proxy_count``-hop topology.
+
+    Trusted single-valued edge headers win first. Otherwise the client is read
+    from the right of X-Forwarded-For: each trusted proxy appends the address it
+    *observed*, so the entry ``proxy_count`` positions from the right was written
+    by the outermost trusted hop (the one that saw the real client). Anything an
+    upstream client prepends only lengthens the chain on the left and cannot
+    reach that position.
+    """
+    ip = _trusted_edge_header(request)
+    if ip:
+        return ip
+    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    entries = [p.strip() for p in xff.split(",") if p.strip()]
+    if len(entries) >= proxy_count:
+        return _strip_port(entries[-proxy_count])
+    return ""
+
+
+def _client_ip_permissive(request: HttpRequest) -> str:
+    """Legacy permissive extraction (custom/CDN headers, then leftmost XFF)."""
+    ip = _trusted_edge_header(request)
+    if ip:
+        return ip
+
+    # X-Forwarded-For: take the first (leftmost) IP in the chain.
     xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if xff:
         first = xff.split(",")[0].strip()
         if first:
             return _strip_port(first)
 
-    # 4. RFC 7239 Forwarded header: extract the "for=" directive
+    # RFC 7239 Forwarded header: extract the "for=" directive.
     forwarded = request.META.get("HTTP_FORWARDED", "")
     if forwarded:
         for part in forwarded.split(";"):
@@ -90,14 +136,14 @@ def get_client_ip(request: HttpRequest) -> str:
                 ip = part[4:].strip().strip('"')
                 return _strip_port(ip)
 
-    # 5. Non-standard X-Forwarded header
+    # Non-standard X-Forwarded header.
     x_forwarded = request.META.get("HTTP_X_FORWARDED", "")
     if x_forwarded:
         first = x_forwarded.split(",")[0].strip()
         if first:
             return _strip_port(first)
 
-    # 6. Final fallback: X-Client-IP or the raw socket REMOTE_ADDR
+    # Final fallback: X-Client-IP or the raw socket REMOTE_ADDR.
     return request.META.get("HTTP_X_CLIENT_IP", "") or request.META.get("REMOTE_ADDR", "")
 
 

@@ -17,7 +17,7 @@ a persistent identifier, i.e. consent).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from django.db.models import Count, Sum
@@ -27,6 +27,7 @@ from django.utils import timezone
 from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
     SESSION_TIMEOUT_S,
+    _period_bounds,
     current_window,
     event_landing_stats,
     event_visitor_stats,
@@ -35,6 +36,29 @@ from core.mantecato_core.visitor_counting import (
     section_for_path,
     utc_day,
 )
+
+
+def _retention_split(window: str) -> tuple[date, datetime]:
+    """Window-aligned boundary between the live event path and stored aggregates.
+
+    Events on or before the retention cutoff have digests the rollup is
+    progressively NULLing, yet are already captured exactly by the permanent
+    aggregates. Splitting at the *window* boundary that contains the cutoff
+    avoids both a gap (nulled-key events counted nowhere) and a double count (the
+    straddling window's whole-window aggregate overlapping live events):
+    aggregates cover up to and including that window; the event path starts at
+    the next one. For the default ``window="day"`` the split is exactly the day
+    after the cutoff day. Returns ``(agg_upper_day, event_lower)``.
+    """
+    from django.conf import settings as dj_settings
+
+    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+    boundary_day = utc_day(timezone.now() - timedelta(days=retention))
+    _, agg_upper_day = _period_bounds(boundary_day, window)
+    event_lower = datetime(
+        agg_upper_day.year, agg_upper_day.month, agg_upper_day.day, tzinfo=UTC
+    ) + timedelta(days=1)
+    return agg_upper_day, event_lower
 
 
 def read_visit_stats(
@@ -52,28 +76,27 @@ def read_visit_stats(
     data, whose digests the rollup has discarded, reads the permanent anonymous
     daily aggregates (which cannot be filtered).
     """
-    from django.conf import settings as dj_settings
-
     from apps.core.models import VisitorDaily
     from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
-    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
-    boundary = timezone.now() - timedelta(days=retention)
+    agg_upper_day, event_lower = _retention_split(current_window())
 
     # Within retention: exact and filterable, straight from the event digests.
     ev_qs = pageview_queryset(
-        website_id, max(start_date, boundary), end_date, filters
+        website_id, max(start_date, event_lower), end_date, filters
     ).filter(visitor_key__isnull=False)
     stats = event_visitor_stats(ev_qs)
 
     # Beyond retention: anonymous daily aggregates (cannot be sliced by a filter).
-    if start_date < boundary:
+    # Upper-bounded by the requested end so a fully-historical range isn't summed
+    # all the way to the retention edge.
+    if start_date < event_lower:
         agg = VisitorDaily.objects.filter(
             website_id=website_id,
             scope="site",
             scope_value="",
             day__gte=utc_day(start_date),
-            day__lt=utc_day(boundary),
+            day__lte=min(agg_upper_day, utc_day(end_date)),
         ).aggregate(
             u=Sum("unique_visitors"),
             v=Sum("visits"),
@@ -112,22 +135,20 @@ def read_scope_visitors(
         return {}
     from collections import defaultdict
 
-    from django.conf import settings as dj_settings
-
     from apps.core.models import VisitorPeriod
     from core.mantecato_core.queries.orm_fallbacks import (
         custom_event_queryset,
         pageview_queryset,
     )
 
-    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
-    boundary = timezone.now() - timedelta(days=retention)
+    window = current_window()
+    agg_upper_day, event_lower = _retention_split(window)
     want = set(scope_values)
     out: dict[str, int] = {v: 0 for v in scope_values}
 
     # Within retention: exact and filterable, straight from the event digests.
     qs_factory = custom_event_queryset if scope == "event" else pageview_queryset
-    ev_qs = qs_factory(website_id, max(start_date, boundary), end_date, filters).filter(
+    ev_qs = qs_factory(website_id, max(start_date, event_lower), end_date, filters).filter(
         visitor_key__isnull=False
     )
     if scope == "section":
@@ -151,9 +172,9 @@ def read_scope_visitors(
             out[r[field]] = r["n"] or 0
 
     # Beyond retention: dimensionless aggregates (cannot be sliced by a filter).
-    if start_date < boundary and has_only_bot_filter(filters):
+    if start_date < event_lower and has_only_bot_filter(filters):
         for _pk, p_start, _p_end in periods_in_range(
-            utc_day(start_date), utc_day(boundary), current_window()
+            utc_day(start_date), min(agg_upper_day, utc_day(end_date)), window
         ):
             for r in VisitorPeriod.objects.filter(
                 website_id=website_id,
@@ -182,13 +203,11 @@ def get_landing_metrics(
     population — they can't be sliced). Single-pageview (gap-based) bounce rule,
     consistent with the site-level KPIs.
     """
-    from django.conf import settings as dj_settings
-
     from apps.core.models import VisitorPeriod
     from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
-    retention = int(getattr(dj_settings, "VISITOR_KEY_RETENTION_DAYS", 396))
-    boundary = timezone.now() - timedelta(days=retention)
+    window = current_window()
+    agg_upper_day, event_lower = _retention_split(window)
 
     def _add(acc: dict[str, dict[str, int]], entry: str | None, visits: int, bounces: int) -> None:
         row = acc.setdefault(entry or "/", {"visits": 0, "bounces": 0})
@@ -197,14 +216,14 @@ def get_landing_metrics(
 
     # Within retention: from the (filtered) event digests, sessionised per visit.
     ev_qs = pageview_queryset(
-        website_id, max(start_date, boundary), end_date, filters
+        website_id, max(start_date, event_lower), end_date, filters
     ).filter(visitor_key__isnull=False)
     acc = event_landing_stats(ev_qs)
 
     # Beyond retention: finalised landing aggregates (cannot be sliced by a filter).
-    if start_date < boundary and has_only_bot_filter(filters):
+    if start_date < event_lower and has_only_bot_filter(filters):
         for _pk, p_start, _p_end in periods_in_range(
-            utc_day(start_date), utc_day(boundary), current_window()
+            utc_day(start_date), min(agg_upper_day, utc_day(end_date)), window
         ):
             for r in VisitorPeriod.objects.filter(
                 website_id=website_id, period_start=p_start, scope="landing"

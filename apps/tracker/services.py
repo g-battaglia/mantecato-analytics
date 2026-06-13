@@ -18,6 +18,8 @@ Privacy-first design (per PLAN.md):
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import uuid
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -42,6 +44,45 @@ _MAX_ENGAGEMENT_S = 3600
 # Throttle for the lazy, scheduler-free rollup piggybacked on ingestion.
 _ROLLUP_MIN_INTERVAL_S = 3600
 _last_rollup_attempt = None
+
+# Short-lived process-local cache of active website UUIDs so the unauthenticated
+# ingest endpoint can cheaply reject events for unknown sites — blocking metric
+# poisoning of arbitrary UUIDs and unbounded storage growth for non-existent
+# websites (website_id is a bare UUIDField with no FK).
+_WEBSITE_CACHE_TTL_S = 60
+_website_cache: frozenset[str] = frozenset()
+_website_cache_at: float = 0.0
+_website_cache_lock = threading.Lock()
+
+
+def is_trackable_website(website_id: str) -> bool:
+    """Return ``True`` when *website_id* is a known, active (non-deleted) site.
+
+    Backed by a TTL cache so the check costs at most one query per refresh
+    interval on the hot path; a newly created site becomes trackable within
+    ``_WEBSITE_CACHE_TTL_S`` seconds. Malformed (non-UUID) ids return ``False``,
+    which also keeps junk out of the bare ``website_event.website_id`` column.
+    """
+    if not website_id:
+        return False
+    try:
+        normalized = str(uuid.UUID(str(website_id)))
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+    global _website_cache, _website_cache_at  # noqa: PLW0603  process-local cache
+    now = time.monotonic()
+    if now - _website_cache_at >= _WEBSITE_CACHE_TTL_S:
+        with _website_cache_lock:
+            if now - _website_cache_at >= _WEBSITE_CACHE_TTL_S:
+                from apps.core.models import Website
+
+                _website_cache = frozenset(
+                    str(wid)
+                    for wid in Website.objects.filter(is_deleted=False).values_list("id", flat=True)
+                )
+                _website_cache_at = now
+    return normalized in _website_cache
 
 
 def _maybe_rollup() -> None:

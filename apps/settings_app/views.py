@@ -20,6 +20,7 @@ from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import TemplateView
@@ -69,6 +70,18 @@ def _accessible_sites(request: HttpRequest) -> list[dict]:
     settings templates render a single dropdown source.
     """
     return resolve_websites_for_user(str(request.user.id), request.user.is_staff)
+
+
+def _assert_website_accessible(request: HttpRequest, website_id: str) -> None:
+    """Raise :class:`~django.http.Http404` unless the user owns *website_id*.
+
+    Guards object-level access for views that take a website id straight from
+    the request (``?website=`` / ``website_id``). Returning 404 (rather than
+    403) also avoids disclosing the existence of websites the user can't see.
+    """
+    accessible = {s["id"] for s in _accessible_sites(request)}
+    if website_id not in accessible:
+        raise Http404("Website not found.")
 
 
 class _AdminRequiredMixin(LoginRequiredMixin):
@@ -260,6 +273,7 @@ class BotConfigView(LoginRequiredMixin, View):
                     "country_choices": COUNTRY_CHOICES_SORTED,
                 },
             )
+        _assert_website_accessible(request, website_id)
         config = get_bot_config(website_id)
         return render(
             request,
@@ -287,6 +301,7 @@ class BotConfigView(LoginRequiredMixin, View):
         website_id = self._website_id(request)
         if not website_id:
             return render(request, self.template_name, {"config": None, "website_id": ""})
+        _assert_website_accessible(request, website_id)
         form = BotConfigForm(request.POST)
         if form.is_valid():
             save_bot_config(str(request.user.id), website_id, form.to_config())

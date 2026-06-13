@@ -393,7 +393,10 @@ class TestApiKeyDeleteView:
 
 
 class TestBotConfigView:
-    @patch("apps.settings_app.views.resolve_websites_for_user", return_value=[])
+    @patch(
+        "apps.settings_app.views.resolve_websites_for_user",
+        return_value=[{"id": WEBSITE_ID, "name": "Site", "domain": "x"}],
+    )
     @patch("apps.settings_app.views.get_bot_config")
     def test_get_with_website_renders_form(
         self, mock_get: MagicMock, mock_sites: MagicMock, client: Client
@@ -404,18 +407,34 @@ class TestBotConfigView:
         assert "knownBots" in response.content.decode()
 
     @patch("apps.settings_app.views.resolve_websites_for_user", return_value=[])
+    @patch("apps.settings_app.views.get_bot_config")
+    def test_get_foreign_website_is_blocked(
+        self, mock_get: MagicMock, mock_sites: MagicMock, client: Client
+    ) -> None:
+        # IDOR guard: a website the user can't access returns 404, and the
+        # config is never read.
+        response = _authed_get(client, f"/settings/bot-config/?website={WEBSITE_ID}")
+        assert response.status_code == 404
+        mock_get.assert_not_called()
+
+    @patch("apps.settings_app.views.resolve_websites_for_user", return_value=[])
     def test_get_without_website_shows_placeholder(
         self, mock_sites: MagicMock, client: Client
     ) -> None:
         response = _authed_get(client, "/settings/bot-config/")
         assert response.status_code == 200
 
+    @patch(
+        "apps.settings_app.views.resolve_websites_for_user",
+        return_value=[{"id": WEBSITE_ID, "name": "Site", "domain": "x"}],
+    )
     @patch("apps.settings_app.views.save_bot_config")
     @patch("apps.settings_app.views.get_bot_config")
     def test_post_saves_config(
         self,
         mock_get: MagicMock,
         mock_save: MagicMock,
+        mock_sites: MagicMock,
         client: Client,
     ) -> None:
         mock_save.return_value = {"config": {}}

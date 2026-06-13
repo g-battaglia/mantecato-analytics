@@ -24,19 +24,30 @@ def resolve_site_id(site: str) -> str:
     """Resolve a site name, domain, or UUID to a website UUID string."""
     sites = list_sites()
 
+    needle = site.lower()
     for s in sites:
-        if site.lower() in (
+        if needle in (
             s["website_id"].lower(),
-            s["name"].lower(),
-            s["domain"].lower(),
+            (s["name"] or "").lower(),
+            (s["domain"] or "").lower(),
         ):
             return s["website_id"]
 
-    for s in sites:
-        if site.lower() in s["name"].lower() or site.lower() in s["domain"].lower():
-            return s["website_id"]
+    # Substring fallback: only resolve when it is unambiguous. Matching the first
+    # of several candidates would silently pick the wrong site (e.g. "shop"
+    # matching both "shop.example.com" and "oldshop.example.com").
+    matches = [
+        s
+        for s in sites
+        if needle in (s["name"] or "").lower() or needle in (s["domain"] or "").lower()
+    ]
+    if len(matches) == 1:
+        return matches[0]["website_id"]
 
     available = ", ".join(f"{s['name']} ({s['domain']})" for s in sites)
+    if len(matches) > 1:
+        ambiguous = ", ".join(f"{s['name']} ({s['domain']})" for s in matches)
+        raise SystemExit(f"Ambiguous site '{site}' matches: {ambiguous}")
     raise SystemExit(f"Site not found: {site}\nAvailable sites: {available}")
 
 

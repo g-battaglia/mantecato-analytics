@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 
 import dj_database_url
 from dotenv import load_dotenv
@@ -121,6 +122,14 @@ def _env_list(name: str, *, default: list[str] | None = None) -> list[str]:
 # ============================================================================
 
 DEBUG = _env_bool("DEBUG", default=True)
+# Warn (once, at startup) when DEBUG is on. It defaults to True for a friction-free
+# local setup, but DEBUG in production leaks tracebacks/settings on errors — the
+# deploy configs set DEBUG=False explicitly, so this surfaces a forgotten override.
+if DEBUG:
+    logging.getLogger("mantecato.security").warning(
+        "DEBUG is enabled — do not run with DEBUG=True in production (it exposes "
+        "tracebacks and settings on errors). Set DEBUG=0 for any public deployment."
+    )
 
 SECRET_KEY = get_secret_key()
 
@@ -215,6 +224,54 @@ BOUNCE_ENGAGEMENT_THRESHOLD_S = _env_int("BOUNCE_ENGAGEMENT_THRESHOLD_S", defaul
 DETECT_DATACENTER_IPS = _env_bool("DETECT_DATACENTER_IPS", default=True)
 DATACENTER_CIDRS = _env_list("DATACENTER_CIDRS", default=[])
 
+# Trusted reverse-proxy configuration for client-IP extraction. The client IP
+# is the input to the cookieless visitor digest, so a spoofable IP lets callers
+# poison visitor counts and bypass datacenter-bot detection (see apps/tracker/ip.py).
+#
+#   TRUST_PROXY_HEADERS=False → ignore all forwarding headers and use the raw
+#       socket peer (REMOTE_ADDR). Correct when the app is exposed directly.
+#   TRUSTED_PROXY_COUNT=N (>0) → the app sits behind exactly N trusted proxies;
+#       the real client is read spoof-resistantly from the right of the
+#       X-Forwarded-For chain (and trusted CDN/custom headers are honoured).
+#
+# The default (headers trusted, count 0) preserves zero-config accuracy on PaaS
+# like Railway, but X-Forwarded-For is then spoofable — the startup warning below
+# recommends setting TRUSTED_PROXY_COUNT to harden visitor-IP handling.
+TRUST_PROXY_HEADERS = _env_bool("TRUST_PROXY_HEADERS", default=True)
+TRUSTED_PROXY_COUNT = _env_int("TRUSTED_PROXY_COUNT", default=0)
+# Operator-configured single-valued client-IP header (e.g. for non-standard
+# proxies). Read once here rather than per-request from os.environ.
+CLIENT_IP_HEADER = _env_str("CLIENT_IP_HEADER", "").strip()
+if TRUST_PROXY_HEADERS and TRUSTED_PROXY_COUNT <= 0:
+    logging.getLogger("mantecato.security").warning(
+        "Client-IP extraction trusts forwarding headers but TRUSTED_PROXY_COUNT is 0 "
+        "— X-Forwarded-For is spoofable. Set TRUSTED_PROXY_COUNT to the number of "
+        "reverse proxies in front of Mantecato (or TRUST_PROXY_HEADERS=0 if exposed "
+        "directly) to harden visitor-IP handling."
+    )
+
+# Server-side privacy opt-out enforcement on the ingest endpoint. The browser
+# tracker also checks these, but a non-cooperative client (curl, a forked
+# script, the server SDK) can bypass that — so the guarantee is enforced here too.
+#   RESPECT_GPC: honour the Global Privacy Control signal (``Sec-GPC: 1``). On by
+#     default — GPC is a legally recognised opt-out and a core product promise.
+#   RESPECT_DNT: honour the legacy Do-Not-Track header (``DNT: 1``). Opt-in, since
+#     some browsers send DNT=1 by default which would drop most legitimate traffic.
+RESPECT_GPC = _env_bool("RESPECT_GPC", default=True)
+RESPECT_DNT = _env_bool("RESPECT_DNT", default=False)
+
+# Reject ingest requests whose body exceeds this many bytes before parsing.
+# Legitimate tracker payloads are well under 16 KB; the cap blocks memory-DoS
+# via huge bodies on the unauthenticated /api/send endpoint.
+INGEST_MAX_BODY_BYTES = _env_int("INGEST_MAX_BODY_BYTES", default=16384)
+
+# Best-effort, per-process, per-client-IP rate limit (requests/minute) on the
+# ingest endpoint. 0 disables it (default). NOTE: the limit is per gunicorn
+# worker and keyed on the extracted client IP, so it is only meaningful once
+# TRUSTED_PROXY_COUNT is set correctly (otherwise all traffic may share one IP);
+# prefer a proxy/CDN-level limiter in production.
+INGEST_RATE_LIMIT_PER_MINUTE = _env_int("INGEST_RATE_LIMIT_PER_MINUTE", default=0)
+
 # ============================================================================
 # 4. URL and template configuration
 # ============================================================================
@@ -247,7 +304,7 @@ WSGI_APPLICATION = "mantecato.wsgi.application"
 DATABASE_URL = get_database_url(debug=DEBUG)
 # Refuse the silent SQLite fallback in production: Mantecato is PostgreSQL-only.
 # Skip during build-time commands (collectstatic) that don't need a database.
-_is_build_command = len(os.sys.argv) > 1 and os.sys.argv[1] in ("collectstatic", "help", "version")
+_is_build_command = len(sys.argv) > 1 and sys.argv[1] in ("collectstatic", "help", "version")
 if not _is_build_command:
     require_database_url(DATABASE_URL, debug=DEBUG)
 if DATABASE_URL:

@@ -24,9 +24,9 @@ class TestCreateUserCommand:
     def test_creates_user(self, mock_model: MagicMock) -> None:
         mock_model.objects.filter.return_value.exists.return_value = False
         out = io.StringIO()
-        call_command("createuser", "newuser", "--password", "secret", stdout=out)
+        call_command("createuser", "newuser", "--password", "secret12", stdout=out)
         mock_model.objects.create_user.assert_called_once_with(
-            username="newuser", password="secret", role="user"
+            username="newuser", password="secret12", role="user"
         )
         assert "newuser" in out.getvalue()
 
@@ -34,10 +34,10 @@ class TestCreateUserCommand:
     def test_admin_role(self, mock_model: MagicMock) -> None:
         mock_model.objects.filter.return_value.exists.return_value = False
         call_command(
-            "createuser", "newadmin", "--password", "secret", "--role", "admin"
+            "createuser", "newadmin", "--password", "secret12", "--role", "admin"
         )
         mock_model.objects.create_user.assert_called_once_with(
-            username="newadmin", password="secret", role="admin"
+            username="newadmin", password="secret12", role="admin"
         )
 
     @patch("apps.core.management.commands.createuser.MantecatoUser")
@@ -56,7 +56,7 @@ class TestCreateUserCommand:
     @patch("apps.core.management.commands.createuser.MantecatoUser")
     def test_short_password_raises(self, mock_model: MagicMock) -> None:
         mock_model.objects.filter.return_value.exists.return_value = False
-        with pytest.raises(CommandError, match="at least 4 characters"):
+        with pytest.raises(CommandError, match="at least 8 characters"):
             call_command("createuser", "newuser", "--password", "x")
         mock_model.objects.create_user.assert_not_called()
 
