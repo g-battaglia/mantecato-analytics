@@ -372,6 +372,25 @@ class TestApiKeyCreateView:
         assert response.status_code == 302
         mock_create.assert_not_called()
 
+    @patch("apps.settings_app.views.get_api_keys_for_user")
+    @patch("apps.settings_app.views.generate_new_api_key")
+    def test_post_invalid_scope_shows_error_not_500(
+        self,
+        mock_create: MagicMock,
+        mock_list: MagicMock,
+        client: Client,
+    ) -> None:
+        # A typo'd scope must surface a form error (redirect), never a 500, and
+        # the key must not be created.
+        mock_list.return_value = []
+        response = _authed_post(
+            client,
+            "/settings/api-keys/create/",
+            {"name": "New", "scopes": "read,wrte"},
+        )
+        assert response.status_code == 302
+        mock_create.assert_not_called()
+
 
 class TestApiKeyDeleteView:
     @patch("apps.settings_app.views.remove_api_key")

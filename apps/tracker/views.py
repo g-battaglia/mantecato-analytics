@@ -102,10 +102,15 @@ def _rate_limited(ip: str) -> bool:
         count += 1
         _rate_state[ip] = (count, start)
         if len(_rate_state) > _RATE_STATE_MAX:
-            # Drop entries whose window has fully elapsed to bound memory.
+            # First drop entries whose window has fully elapsed.
             stale = [k for k, (_, s) in _rate_state.items() if now - s >= _RATE_WINDOW_S]
             for k in stale:
                 del _rate_state[k]
+            # If still over the cap (high-cardinality flood of still-active IPs),
+            # hard-reset to bound memory — acceptable for a best-effort limiter.
+            if len(_rate_state) > _RATE_STATE_MAX:
+                _rate_state.clear()
+                _rate_state[ip] = (count, start)
         return count > limit
 
 

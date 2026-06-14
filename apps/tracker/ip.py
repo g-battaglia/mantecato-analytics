@@ -74,12 +74,12 @@ def get_client_ip(request: HttpRequest) -> str:
     return _client_ip_permissive(request) or _strip_port(remote_addr)
 
 
-def _trusted_edge_header(request: HttpRequest) -> str:
-    """Return the client IP from a single-valued edge header, or ``""``.
+def _custom_header_ip(request: HttpRequest) -> str:
+    """Return the IP from the operator-configured ``CLIENT_IP_HEADER``, or ``""``.
 
-    Covers the operator-configured ``CLIENT_IP_HEADER`` and the known CDN
-    headers. These are set/overwritten by the edge proxy itself, so they are
-    authoritative only once the operator has asserted a trusted edge exists.
+    Honouring this is safe even in hardened mode: the operator has *explicitly*
+    named the header their edge sets, asserting it is trustworthy. A generic
+    proxy would not populate an arbitrary named header.
     """
     custom = getattr(settings, "CLIENT_IP_HEADER", "")
     if custom:
@@ -87,6 +87,17 @@ def _trusted_edge_header(request: HttpRequest) -> str:
         val = request.META.get(meta_key, "").strip()
         if val:
             return _strip_port(val)
+    return ""
+
+
+def _cdn_header_ip(request: HttpRequest) -> str:
+    """Return the IP from a known CDN single-valued header, or ``""``.
+
+    These are *guessed* (not operator-asserted): a real CDN overwrites them, but
+    a generic reverse proxy forwards a client-supplied value unchanged. They are
+    therefore only used in the permissive (best-effort) path, never in hardened
+    proxy-count mode where they would reintroduce spoofing.
+    """
     for header in _HEADER_CHAIN:
         val = request.META.get(header, "").strip()
         if val:
@@ -97,14 +108,17 @@ def _trusted_edge_header(request: HttpRequest) -> str:
 def _client_ip_behind_trusted_proxies(request: HttpRequest, proxy_count: int) -> str:
     """Spoof-resistant client IP for a known ``proxy_count``-hop topology.
 
-    Trusted single-valued edge headers win first. Otherwise the client is read
+    Only an *explicitly-configured* edge header (``CLIENT_IP_HEADER``) is honoured
+    first — the generic CDN-header guesses are deliberately NOT trusted here,
+    since a generic forwarding proxy would relay a client-supplied
+    ``CF-Connecting-IP``/``X-Real-IP`` unchanged. Otherwise the client is read
     from the right of X-Forwarded-For: each trusted proxy appends the address it
     *observed*, so the entry ``proxy_count`` positions from the right was written
     by the outermost trusted hop (the one that saw the real client). Anything an
     upstream client prepends only lengthens the chain on the left and cannot
     reach that position.
     """
-    ip = _trusted_edge_header(request)
+    ip = _custom_header_ip(request)
     if ip:
         return ip
     xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
@@ -116,7 +130,7 @@ def _client_ip_behind_trusted_proxies(request: HttpRequest, proxy_count: int) ->
 
 def _client_ip_permissive(request: HttpRequest) -> str:
     """Legacy permissive extraction (custom/CDN headers, then leftmost XFF)."""
-    ip = _trusted_edge_header(request)
+    ip = _custom_header_ip(request) or _cdn_header_ip(request)
     if ip:
         return ip
 

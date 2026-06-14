@@ -31,6 +31,7 @@ from django import forms
 
 from apps.common.constants import COUNTRY_CHOICES_SORTED
 from apps.common.constants import DASHBOARD_DEFAULT_CONFIG as _DASHBOARD_DEFAULT_CONFIG
+from apps.core.api_keys import VALID_SCOPES
 from apps.core.models import (
     BOT_CONFIG_DEFAULTS,
     Dashboard,
@@ -219,6 +220,23 @@ class ApiKeyForm(forms.Form):
 
     name = forms.CharField(max_length=200)
     scopes = forms.CharField(required=False)
+
+    def clean_scopes(self) -> str:
+        """Reject unknown scopes so the form shows an error instead of 500ing.
+
+        ``generate_new_api_key`` also validates (raising ``ValueError``) as a
+        backstop for non-form callers, but the web form must surface a clean
+        field error for typos like ``read,wrte`` or uppercase input.
+        """
+        raw = self.cleaned_data.get("scopes", "") or ""
+        scopes = [s.strip() for s in raw.split(",") if s.strip()]
+        unknown = [s for s in scopes if s not in VALID_SCOPES]
+        if unknown:
+            raise forms.ValidationError(
+                f"Unknown scope(s): {', '.join(sorted(unknown))}. "
+                f"Valid scopes: {', '.join(VALID_SCOPES)}."
+            )
+        return raw
 
     def scope_list(self) -> list[str]:
         """Parse the comma-separated ``scopes`` field.
