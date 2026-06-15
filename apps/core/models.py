@@ -223,7 +223,7 @@ class WebsiteEvent(models.Model):
     # Geo: country-only (ISO 3166-1 alpha-2) to prevent re-identification
     country = models.CharField(max_length=2, null=True, blank=True)
     # Aggregate bot classification. The raw User-Agent is never stored.
-    is_bot = models.BooleanField(default=False)
+    is_bot = models.BooleanField(default=False, db_default=False)
     bot_reason = models.CharField(max_length=80, null=True, blank=True)
     # Ephemeral, window-salted dedup digest (NOT an IP/UA). Enables exact unique
     # visitors at ANY granularity (e.g. per hour) and realtime visitors-online.

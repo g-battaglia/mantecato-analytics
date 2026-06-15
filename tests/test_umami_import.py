@@ -9,7 +9,9 @@ background job target, and the no-DSN-persistence guarantee.
 
 from __future__ import annotations
 
+import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -390,3 +392,55 @@ class TestStartUmamiImportJob:
         mock_thread.assert_called_once()
         mock_thread.return_value.start.assert_called_once()
         assert VALID_DSN in mock_thread.call_args.kwargs["args"]
+
+
+# ---------------------------------------------------------------------------
+# Generic copier: events land with is_bot=False (Postgres-backed regression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestImportGenericIsBotDefault:
+    """Umami's ``website_event`` has no ``is_bot`` column, so the importer omits
+    it from the INSERT. The destination column must supply ``false`` via its
+    database default — otherwise the NOT NULL constraint aborts the whole import.
+
+    This drives :meth:`UmamiImporter._import_generic` against the real test
+    database (its INSERT and ``information_schema`` lookup both hit Postgres),
+    feeding a synthetic, Umami-shaped source cursor.
+    """
+
+    def test_omitted_is_bot_defaults_to_false(self) -> None:
+        from apps.core.models import WebsiteEvent
+        from apps.core.services import UmamiImporter
+
+        target_website = str(uuid.uuid4())
+        event_id = str(uuid.uuid4())
+        importer = UmamiImporter(
+            VALID_DSN,
+            source_website=SOURCE_WEBSITE_ID,
+            target_website=target_website,
+        )
+
+        # Umami column shape: no is_bot/bot_reason; session_id drives visitor_key.
+        columns = ["event_id", "website_id", "session_id", "created_at", "url_path", "event_type"]
+        rows = [
+            (
+                event_id,
+                SOURCE_WEBSITE_ID,
+                str(uuid.uuid4()),
+                datetime(2026, 5, 22, 3, 2, 52, tzinfo=timezone.utc),
+                "/content/learn-astrology/category/birth-chart/angles/descendant",
+                1,
+            )
+        ]
+
+        # _import_generic only iterates the cursor; a plain list suffices.
+        importer._import_generic(iter(rows), columns, "website_event", MagicMock(), MagicMock())
+
+        event = WebsiteEvent.objects.get(event_id=event_id)
+        assert event.is_bot is False
+        assert event.bot_reason is None
+        # website_id is remapped onto the target, visitor_key derived from session.
+        assert str(event.website_id) == target_website
+        assert event.visitor_key
