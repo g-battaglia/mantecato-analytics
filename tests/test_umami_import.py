@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -429,7 +429,7 @@ class TestImportGenericIsBotDefault:
                 event_id,
                 SOURCE_WEBSITE_ID,
                 str(uuid.uuid4()),
-                datetime(2026, 5, 22, 3, 2, 52, tzinfo=timezone.utc),
+                datetime(2026, 5, 22, 3, 2, 52, tzinfo=UTC),
                 "/content/learn-astrology/category/birth-chart/angles/descendant",
                 1,
             )
@@ -444,3 +444,135 @@ class TestImportGenericIsBotDefault:
         # website_id is remapped onto the target, visitor_key derived from session.
         assert str(event.website_id) == target_website
         assert event.visitor_key
+
+    def test_session_geo_device_normalized(self) -> None:
+        """Geo/device columns (joined from `session`) are normalised to the live
+        tracker's vocabulary as they're inserted."""
+        from apps.core.models import WebsiteEvent
+        from apps.core.services import UmamiImporter
+
+        target_website = str(uuid.uuid4())
+        event_id = str(uuid.uuid4())
+        importer = UmamiImporter(
+            VALID_DSN,
+            source_website=SOURCE_WEBSITE_ID,
+            target_website=target_website,
+        )
+
+        # Shape after the session LEFT JOIN: country/browser/os/device present.
+        columns = [
+            "event_id", "website_id", "session_id", "created_at", "url_path",
+            "event_type", "country", "browser", "os", "device",
+        ]
+        rows = [
+            (
+                event_id,
+                SOURCE_WEBSITE_ID,
+                str(uuid.uuid4()),
+                datetime(2026, 5, 22, 3, 2, 52, tzinfo=UTC),
+                "/x",
+                1,
+                "us",       # → "US"
+                "Chrome",   # pass-through
+                "macOS",    # → "Mac OS X"
+                "laptop",   # → "desktop"
+            )
+        ]
+
+        importer._import_generic(iter(rows), columns, "website_event", MagicMock(), MagicMock())
+
+        event = WebsiteEvent.objects.get(event_id=event_id)
+        assert event.country == "US"
+        assert event.browser == "Chrome"
+        assert event.os == "Mac OS X"
+        assert event.device == "desktop"
+
+
+# ---------------------------------------------------------------------------
+# Query builder: enrich events with session geo/device (unit, no DB)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildDataQuery:
+    """`_build_data_query` LEFT JOINs `session` only for geo/device columns
+    missing from the source `website_event` — so a denormalized source keeps the
+    plain `SELECT *` (no regression, no duplicate-column hazard)."""
+
+    @staticmethod
+    def _importer():
+        from apps.core.services import UmamiImporter
+
+        return UmamiImporter(
+            VALID_DSN, source_website=SOURCE_WEBSITE_ID, target_website=TARGET_WEBSITE_ID
+        )
+
+    def test_normalized_source_joins_session(self) -> None:
+        importer = self._importer()
+        cols = {
+            "website_event": {"event_id", "website_id", "session_id", "created_at", "url_path"},
+            "session": {"session_id", "country", "browser", "os", "device", "region", "city"},
+        }
+        with patch.object(type(importer), "_source_columns", side_effect=lambda _src, t: cols[t]):
+            sql = importer._build_data_query(MagicMock(), "website_event", "events")
+        assert "LEFT JOIN session s ON we.session_id = s.session_id" in sql
+        assert "we.*, s.country, s.browser, s.os, s.device" in sql
+        # WHERE is qualified with the `we.` alias to avoid ambiguity.
+        assert f"we.website_id = '{SOURCE_WEBSITE_ID}'" in sql
+
+    def test_denormalized_source_no_join(self) -> None:
+        importer = self._importer()
+        cols = {
+            "website_event": {
+                "event_id", "website_id", "session_id", "country", "browser", "os", "device",
+            },
+            "session": {"session_id", "country", "browser", "os", "device"},
+        }
+        with patch.object(type(importer), "_source_columns", side_effect=lambda _src, t: cols[t]):
+            sql = importer._build_data_query(MagicMock(), "website_event", "events")
+        assert sql.startswith("SELECT * FROM website_event")
+        assert "JOIN" not in sql
+        assert f"website_id = '{SOURCE_WEBSITE_ID}'" in sql
+
+    def test_missing_session_table_no_join(self) -> None:
+        importer = self._importer()
+        cols = {
+            "website_event": {"event_id", "website_id", "session_id", "url_path"},
+            "session": set(),
+        }
+        with patch.object(type(importer), "_source_columns", side_effect=lambda _src, t: cols[t]):
+            sql = importer._build_data_query(MagicMock(), "website_event", "events")
+        assert sql.startswith("SELECT * FROM website_event")
+        assert "JOIN" not in sql
+
+    def test_non_events_table_unchanged(self) -> None:
+        importer = self._importer()
+        sql = importer._build_data_query(MagicMock(), "team", "teams")
+        assert sql == "SELECT * FROM team"
+
+
+class TestNormalizeGeoDevice:
+    """Value normalization onto Mantecato's live (ua-parser) vocabulary."""
+
+    @pytest.mark.parametrize(
+        ("col", "value", "expected"),
+        [
+            ("country", "us", "US"),
+            ("country", "IT", "IT"),
+            ("device", "Laptop", "desktop"),
+            ("device", "Mobile", "mobile"),
+            ("device", "desktop", "desktop"),
+            ("os", "macOS", "Mac OS X"),
+            ("os", "Windows 10/11", "Windows"),
+            ("os", "Windows 7", "Windows"),
+            ("os", "ChromeOS", "Chrome OS"),
+            ("os", "Android", "Android"),
+            ("os", "Linux", "Linux"),
+            ("browser", "Chrome", "Chrome"),
+            ("browser", "Mobile Safari", "Mobile Safari"),
+            ("country", None, None),
+        ],
+    )
+    def test_normalize(self, col: str, value: str | None, expected: str | None) -> None:
+        from apps.core.services import UmamiImporter
+
+        assert UmamiImporter._normalize_geo_device(col, value) == expected

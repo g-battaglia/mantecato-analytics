@@ -87,11 +87,16 @@ SELECT
         WHEN random() < 0.85 THEN 2
         ELSE 3
     END],
+    -- Real Umami stores geo/device on `session` only (not website_event), with
+    -- detect-browser / ua-parser-js vocabulary: os like 'macOS'/'Windows 10/11',
+    -- device lowercase incl. 'laptop'. The importer normalises these onto
+    -- Mantecato's live tracker vocabulary.
     (ARRAY['Chrome','Chrome','Chrome','Firefox','Safari','Edge'])[floor(random()*6+1)::int],
-    (ARRAY['Windows','Mac','Mac','Linux','Android','iOS'])[floor(random()*6+1)::int],
-    CASE WHEN random() < 0.55 THEN 'Desktop'
-         WHEN random() < 0.85 THEN 'Mobile'
-         ELSE 'Tablet' END,
+    (ARRAY['Windows 10/11','macOS','macOS','Linux','Android','iOS'])[floor(random()*6+1)::int],
+    CASE WHEN random() < 0.45 THEN 'desktop'
+         WHEN random() < 0.60 THEN 'laptop'
+         WHEN random() < 0.85 THEN 'mobile'
+         ELSE 'tablet' END,
     (ARRAY['1920x1080','1440x900','2560x1440','1366x768','390x844','768x1024'])
         [floor(random()*6+1)::int],
     (ARRAY['en-US','en-GB','it-IT','de-DE','fr-FR','es-ES','ja','pt-BR'])
@@ -115,11 +120,12 @@ FROM generate_series(1, 600) AS s(i);
 -- Step 4: Pageviews (event_type=1) — 5 per session on average = 3000
 --   Each session gets 2-8 pageviews, spaced 10s-5min apart
 -- ---------------------------------------------------------------------------
+-- NB: real Umami `website_event` has NO geo/device columns — they live on
+-- `session` and the importer LEFT JOINs to pull them.
 INSERT INTO website_event (
     event_id, website_id, session_id, visit_id, created_at,
     url_path, url_query, referrer_path, referrer_query, referrer_domain,
     page_title, event_type, event_name, tag, hostname,
-    browser, os, device, screen, language, country, region, city,
     utm_source, utm_medium, utm_campaign, utm_content, utm_term
 )
 SELECT
@@ -160,8 +166,6 @@ SELECT
         WHEN 'd0000000-0000-0000-0000-000000000001'::uuid THEN 'docs.mantecato.io'
         WHEN 'd0000000-0000-0000-0000-000000000002'::uuid THEN 'blog.mantecato.io'
         ELSE 'app.example.com' END,
-    s.browser, s.os, s.device, s.screen, s.language,
-    s.country, s.region, s.city,
     CASE WHEN random() < 0.12 THEN 'google' ELSE NULL END,
     CASE WHEN random() < 0.12 THEN 'cpc'
          WHEN random() < 0.06 THEN 'social' ELSE NULL END,
@@ -180,7 +184,6 @@ INSERT INTO website_event (
     event_id, website_id, session_id, visit_id, created_at,
     url_path, url_query, referrer_path, referrer_query, referrer_domain,
     page_title, event_type, event_name, tag, hostname,
-    browser, os, device, screen, language, country, region, city,
     utm_source, utm_medium, utm_campaign, utm_content, utm_term
 )
 SELECT
@@ -201,8 +204,6 @@ SELECT
         WHEN 'd0000000-0000-0000-0000-000000000001'::uuid THEN 'docs.mantecato.io'
         WHEN 'd0000000-0000-0000-0000-000000000002'::uuid THEN 'blog.mantecato.io'
         ELSE 'app.example.com' END,
-    s.browser, s.os, s.device, s.screen, s.language,
-    s.country, s.region, s.city,
     NULL, NULL, NULL, NULL, NULL
 FROM session s
 WHERE random() < 0.50
@@ -319,7 +320,7 @@ INSERT INTO segment (id, website_id, name, type, name_filters, modifier, created
     ('f0000000-0000-0000-0000-000000000001',
      'd0000000-0000-0000-0000-000000000001',
      'Mobile users', 'session',
-     '{"filters": [{"column": "device", "operator": "eq", "value": "Mobile"}]}'::jsonb,
+     '{"filters": [{"column": "device", "operator": "eq", "value": "mobile"}]}'::jsonb,
      'include',
      now() - interval '20 days', now()),
     ('f0000000-0000-0000-0000-000000000002',

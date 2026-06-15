@@ -83,6 +83,20 @@ _USER_VALID_COLS = {
     "deleted_at",
 }
 
+# Geo/device columns Mantecato stores on ``website_event``. In real Umami
+# PostgreSQL these live on the ``session`` table (joined via ``session_id``), not
+# on ``website_event`` — so the events copy enriches them with a LEFT JOIN. Only
+# these four are pulled; ``region``/``city``/``screen``/``language`` are
+# deliberately not stored (privacy — see migration ``0011_remove_region_city``).
+_SESSION_ENRICH_COLS = ("country", "browser", "os", "device")
+
+# Umami → Mantecato vocabulary maps, so imported values match what the live
+# tracker (ua-parser) writes. Exact browser parity is impossible (different
+# parsers), so browsers pass through; only os/device need normalising. Keys are
+# lower-cased before lookup.
+_UMAMI_OS_MAP = {"macos": "Mac OS X", "chromeos": "Chrome OS"}
+_UMAMI_DEVICE_MAP = {"laptop": "desktop"}
+
 
 class UmamiImporter:
     """Copy rows from an Umami database into the Mantecato schema.
@@ -155,7 +169,7 @@ class UmamiImporter:
         """
         return [t for t in _TABLES_ORDER if not self.data_only or t[0] in _DATA_TABLES]
 
-    def _where_clause(self, label: str) -> str:
+    def _where_clause(self, label: str, alias: str | None = None) -> str:
         """Build the ``WHERE`` clause for a table from the since/website filters.
 
         Both filters only apply to analytics tables (:data:`_DATA_TABLES`); the
@@ -163,16 +177,20 @@ class UmamiImporter:
 
         Args:
             label: The logical table label (e.g. ``"events"``).
+            alias: Optional table alias to qualify the column names with (e.g.
+                ``"we"`` for the JOINed events SELECT, where ``created_at`` and
+                ``website_id`` are otherwise ambiguous against ``session``).
 
         Returns:
             A SQL ``WHERE`` fragment (with leading space) or ``""``.
         """
+        prefix = f"{alias}." if alias else ""
         clauses = []
         if label in _DATA_TABLES:
             if self.since_date:
-                clauses.append(f"created_at >= '{self.since_date.isoformat()}'")
+                clauses.append(f"{prefix}created_at >= '{self.since_date.isoformat()}'")
             if self.source_website:
-                clauses.append(f"website_id = '{self.source_website}'")
+                clauses.append(f"{prefix}website_id = '{self.source_website}'")
         return (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
     def source_counts(self, src: psycopg.Connection) -> dict[str, Any]:
@@ -246,6 +264,9 @@ class UmamiImporter:
         ``transaction.atomic`` bounds a mid-table failure to this table only;
         earlier tables (already committed) stay intact.
         """
+        # COUNT is always on the base table alone — the events enrichment LEFT
+        # JOINs ``session`` on its primary key (1:1), so it never changes the
+        # count and the join is not needed here.
         where = self._where_clause(label)
         with src.cursor() as cur:
             cur.execute(f"SELECT COUNT(*) FROM {src_table}{where}")
@@ -254,16 +275,61 @@ class UmamiImporter:
         if total == 0:
             return
 
+        data_sql = self._build_data_query(src, src_table, label)
         task = progress.add_task(f"Importing {label}", total=total)
 
         with src.cursor() as cur, transaction.atomic():
-            cur.execute(f"SELECT * FROM {src_table}{where}")
+            cur.execute(data_sql)
             columns = [desc[0] for desc in cur.description]
 
             if is_user:
                 self._import_users(cur, columns, task, progress)
             else:
                 self._import_generic(cur, columns, dst_table, task, progress)
+
+    def _build_data_query(self, src, src_table, label) -> str:
+        """Build the row-fetch SELECT, enriching events with session geo/device.
+
+        Real Umami PostgreSQL keeps ``country``/``browser``/``os``/``device`` on
+        the ``session`` table, not on ``website_event``. For the events table we
+        LEFT JOIN ``session`` to pull **only** the enrichment columns that are
+        missing from the source ``website_event`` — so a denormalized source (the
+        dev seed, or Umami's ClickHouse layout) where those columns already exist
+        falls back to the plain ``SELECT *`` with no join and no duplicate-column
+        hazard. ``we.*`` keeps ``session_id`` for the visitor-key derivation.
+        """
+        if src_table != "website_event":
+            return f"SELECT * FROM {src_table}{self._where_clause(label)}"
+
+        we_cols = self._source_columns(src, "website_event")
+        session_cols = self._source_columns(src, "session")
+        missing = [c for c in _SESSION_ENRICH_COLS if c not in we_cols and c in session_cols]
+        if not missing:
+            # Denormalized source (geo already on the event) or no session table.
+            return f"SELECT * FROM website_event{self._where_clause(label)}"
+
+        extra = ", ".join(f"s.{c}" for c in missing)
+        return (
+            f"SELECT we.*, {extra} FROM website_event we "
+            "LEFT JOIN session s ON we.session_id = s.session_id"
+            f"{self._where_clause(label, alias='we')}"
+        )
+
+    @staticmethod
+    def _source_columns(src, table: str) -> set[str]:
+        """Return the source table's column names, or ``set()`` if absent.
+
+        ``LIMIT 0`` is a cheap way to read the column list off the cursor
+        description without scanning rows; a missing table (e.g. no ``session``
+        in some Umami variants) or a permission error yields an empty set, which
+        the caller treats as "nothing to enrich".
+        """
+        try:
+            with src.cursor() as cur:
+                cur.execute(f"SELECT * FROM {table} LIMIT 0")
+                return {desc[0] for desc in cur.description}
+        except Exception:  # noqa: BLE001 — missing table/permission → no enrichment
+            return set()
 
     def _import_users(self, cur, columns, task, progress) -> None:
         """Import user rows, converting Umami's bare bcrypt hashes for Django.
@@ -400,6 +466,8 @@ class UmamiImporter:
             - ``is_deleted`` → ``deleted_at`` timestamp converted to boolean.
             - dict/list → :class:`~psycopg.types.json.Jsonb`.
             - NULL ``created_at``/``updated_at`` → ``timezone.now()``.
+            - ``country``/``browser``/``os``/``device`` → normalised to the live
+              tracker's vocabulary (see :meth:`_normalize_geo_device`).
             - over-long strings → truncated to the destination column width.
         """
         from django.utils import timezone
@@ -415,11 +483,39 @@ class UmamiImporter:
                 result.append(Jsonb(value))
             elif value is None and col in ("created_at", "updated_at"):
                 result.append(now)
+            elif col in _SESSION_ENRICH_COLS:
+                result.append(self._normalize_geo_device(col, value))
             elif isinstance(value, str) and max_len is not None and len(value) > max_len:
                 result.append(value[:max_len])
             else:
                 result.append(value)
         return tuple(result)
+
+    @staticmethod
+    def _normalize_geo_device(col: str, value):
+        """Map a geo/device value onto Mantecato's live-ingest vocabulary.
+
+        Keeps imported analytics consistent with what the tracker writes:
+        ``country`` upper-cased (already alpha-2), ``device`` lower-cased with
+        ``laptop`` folded to ``desktop``, ``os`` mapped to ua-parser family names
+        (``macOS``→``Mac OS X``, any ``Windows …``→``Windows``, ``ChromeOS``→
+        ``Chrome OS``), and ``browser`` passed through (exact parity is
+        impossible — Umami and Mantecato use different UA parsers). Idempotent on
+        values that are already correct.
+        """
+        if value is None or not isinstance(value, str):
+            return value
+        if col == "country":
+            return value.upper()
+        if col == "device":
+            low = value.lower()
+            return _UMAMI_DEVICE_MAP.get(low, low)
+        if col == "os":
+            low = value.lower()
+            if low.startswith("windows"):
+                return "Windows"
+            return _UMAMI_OS_MAP.get(low, value)
+        return value  # browser: pass through
 
     @staticmethod
     def _execute_batch(sql: str, batch: list[tuple]) -> None:
