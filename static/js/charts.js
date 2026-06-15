@@ -182,6 +182,17 @@ function initBarChart(canvasId, data) {
           borderWidth: 1,
           padding: 10,
           cornerRadius: 8,
+          callbacks: {
+            label: function (ctx) {
+              var values = (ctx.dataset && ctx.dataset.data) || [];
+              var total = values.reduce(function (a, b) { return a + (Number(b) || 0); }, 0);
+              var raw = ctx.parsed;
+              var v = Number(raw && typeof raw === "object" ? raw.y : raw) || 0;
+              var pct = total ? ((v / total) * 100).toFixed(1) : "0.0";
+              var name = (ctx.dataset && ctx.dataset.label) || "";
+              return (name ? name + ": " : "") + v.toLocaleString() + " (" + pct + "%)";
+            },
+          },
         },
       },
       scales: {
@@ -231,7 +242,33 @@ function initPieChart(canvasId, data) {
         legend: {
           display: true,
           position: "right",
-          labels: { boxWidth: 8, boxHeight: 8, usePointStyle: true, padding: 12, font: { size: 11 } },
+          labels: {
+            boxWidth: 8,
+            boxHeight: 8,
+            usePointStyle: true,
+            pointStyle: "circle",
+            padding: 12,
+            font: { size: 11 },
+            // Append each slice's share to its legend entry (e.g. "US  45.2%").
+            generateLabels: function (chart) {
+              var ds = (chart.data.datasets || [])[0] || {};
+              var values = ds.data || [];
+              var total = values.reduce(function (a, b) { return a + (Number(b) || 0); }, 0);
+              return (chart.data.labels || []).map(function (label, i) {
+                var v = Number(values[i]) || 0;
+                var pct = total ? (v / total) * 100 : 0;
+                var bg = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[i] : ds.backgroundColor;
+                return {
+                  text: label + "  " + pct.toFixed(1) + "%",
+                  fillStyle: bg,
+                  strokeStyle: bg,
+                  lineWidth: 0,
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                };
+              });
+            },
+          },
         },
         tooltip: {
           backgroundColor: t.tooltipBg,
@@ -241,6 +278,15 @@ function initPieChart(canvasId, data) {
           borderWidth: 1,
           padding: 10,
           cornerRadius: 8,
+          callbacks: {
+            label: function (ctx) {
+              var values = (ctx.dataset && ctx.dataset.data) || [];
+              var total = values.reduce(function (a, b) { return a + (Number(b) || 0); }, 0);
+              var v = Number(ctx.parsed) || 0;
+              var pct = total ? ((v / total) * 100).toFixed(1) : "0.0";
+              return (ctx.label || "") + ": " + v.toLocaleString() + " (" + pct + "%)";
+            },
+          },
         },
       },
     },
