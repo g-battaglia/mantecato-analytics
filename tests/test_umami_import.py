@@ -473,7 +473,7 @@ class TestImportGenericIsBotDefault:
                 "/x",
                 1,
                 "us",       # → "US"
-                "Chrome",   # pass-through
+                "Chrome",   # → "Chrome" (already canonical)
                 "macOS",    # → "Mac OS X"
                 "laptop",   # → "desktop"
             )
@@ -569,6 +569,15 @@ class TestNormalizeGeoDevice:
             ("os", "Linux", "Linux"),
             ("browser", "Chrome", "Chrome"),
             ("browser", "Mobile Safari", "Mobile Safari"),
+            # Umami's lower-case detect-browser codes fold onto ua-parser names so
+            # imported rows merge with native ones in the breakdown.
+            ("browser", "chrome", "Chrome"),
+            ("browser", "ios", "Mobile Safari"),
+            ("browser", "crios", "Chrome Mobile iOS"),
+            ("browser", "edge-chromium", "Edge"),
+            ("browser", "samsung", "Samsung Internet"),
+            # Unmapped codes (e.g. bot UAs) pass through untouched.
+            ("browser", "searchbot", "searchbot"),
             ("country", None, None),
         ],
     )

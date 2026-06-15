@@ -91,11 +91,38 @@ _USER_VALID_COLS = {
 _SESSION_ENRICH_COLS = ("country", "browser", "os", "device")
 
 # Umami → Mantecato vocabulary maps, so imported values match what the live
-# tracker (ua-parser) writes. Exact browser parity is impossible (different
-# parsers), so browsers pass through; only os/device need normalising. Keys are
-# lower-cased before lookup.
+# tracker (ua-parser) writes and merge into the same breakdown buckets. Keys are
+# lower-cased before lookup, so the maps also fold case (Umami emits lower-case
+# codes like ``chrome``; ua-parser writes ``Chrome``). Exact parity is impossible
+# across the two parsers, so the long tail of unmapped codes passes through.
 _UMAMI_OS_MAP = {"macos": "Mac OS X", "chromeos": "Chrome OS"}
 _UMAMI_DEVICE_MAP = {"laptop": "desktop"}
+# Umami uses the ``detect-browser`` vocabulary (lower-case, e.g. ``crios``,
+# ``edge-chromium``); map it onto the ua-parser family names the live tracker
+# writes so imported and native rows count together.
+_UMAMI_BROWSER_MAP = {
+    "chrome": "Chrome",
+    "crios": "Chrome Mobile iOS",
+    "chromium-webview": "Chrome Mobile WebVie",  # 20-char column cap (ua-parser truncates too)
+    "firefox": "Firefox",
+    "fxios": "Firefox iOS",
+    "safari": "Safari",
+    "ios": "Mobile Safari",
+    "ios-webview": "Mobile Safari",
+    "edge": "Edge",
+    "edge-chromium": "Edge",
+    "edge-ios": "Edge Mobile",
+    "opera": "Opera",
+    "opera-mini": "Opera Mini",
+    "samsung": "Samsung Internet",
+    "yandexbrowser": "Yandex Browser",
+    "ie": "IE",
+    "miui": "MiuiBrowser",
+    "silk": "Amazon Silk",
+    "android": "Android",
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+}
 
 
 class UmamiImporter:
@@ -499,9 +526,11 @@ class UmamiImporter:
         ``country`` upper-cased (already alpha-2), ``device`` lower-cased with
         ``laptop`` folded to ``desktop``, ``os`` mapped to ua-parser family names
         (``macOS``→``Mac OS X``, any ``Windows …``→``Windows``, ``ChromeOS``→
-        ``Chrome OS``), and ``browser`` passed through (exact parity is
-        impossible — Umami and Mantecato use different UA parsers). Idempotent on
-        values that are already correct.
+        ``Chrome OS``), and ``browser`` mapped from Umami's ``detect-browser``
+        vocabulary onto ua-parser family names (``chrome``→``Chrome``,
+        ``ios``→``Mobile Safari``, ``crios``→``Chrome Mobile iOS``…) so imported
+        and native rows merge into one bucket; unmapped codes pass through.
+        Idempotent on values that are already correct.
         """
         if value is None or not isinstance(value, str):
             return value
@@ -515,7 +544,9 @@ class UmamiImporter:
             if low.startswith("windows"):
                 return "Windows"
             return _UMAMI_OS_MAP.get(low, value)
-        return value  # browser: pass through
+        if col == "browser":
+            return _UMAMI_BROWSER_MAP.get(value.lower(), value)
+        return value
 
     @staticmethod
     def _execute_batch(sql: str, batch: list[tuple]) -> None:
