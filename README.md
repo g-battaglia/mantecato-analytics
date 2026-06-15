@@ -10,9 +10,13 @@
 <h1 align="center">📊 Mantecato</h1>
 
 <p align="center">
-  <strong>Web analytics for agents and humans.</strong><br>
+  <strong>The ethical web analytics platform — for agents and humans.</strong><br>
   Cookieless aggregate analytics. No analytics consent banners. No third-party tracking.<br>
   Self-hosted, privacy-first, AI-native — built with Django + HTMX.
+</p>
+
+<p align="center">
+  <em>On a mission to become the best self-hosted analytics — privacy by design, not by checkbox.</em>
 </p>
 
 <p align="center">
@@ -629,6 +633,8 @@ python manage.py importumamidata --noinput
 ```
 
 Your existing `data-umami-event` HTML attributes keep working — the tracker is wire-compatible. Just swap the script URL and you're done.
+
+> **Mantecato is an independent project — not affiliated with or endorsed by Umami.** It is a from-scratch Django implementation that speaks Umami's tracker wire protocol and can import an Umami database, so you can migrate without re-instrumenting your sites. Umami is [MIT-licensed](https://github.com/umami-software/umami) and a trademark of its respective owners.
 
 ---
 
