@@ -39,7 +39,7 @@ from core.mantecato_core.queries.realtime import (
     get_current_pages,
     get_recent_pageviews,
 )
-from core.mantecato_core.queries.sources import get_referrer_metrics
+from core.mantecato_core.queries.sources import get_channel_metrics, get_referrer_metrics
 from core.mantecato_core.queries.stats import (
     get_country_breakdown,
     get_pageview_time_series,
@@ -239,6 +239,8 @@ def get_overview_data(
         "device_data": device_breakdown["device"],
         "country": country_data,
         "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
+        "top_referrers": get_referrer_metrics(website_id, start, end, limit=10, filters=filters),
+        "channels": get_channel_metrics(website_id, start, end, filters=filters),
         "realtime": get_active_pageviews(website_id, filters=filters),
         "recent_events": get_recent_pageviews(website_id, filters=filters),
         "current_pages": get_current_pages(website_id, filters=filters),
@@ -574,6 +576,26 @@ def get_overview_tab_geo(
     return {
         "country": country,
         "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
+    }
+
+def get_overview_tab_referrers(
+    website_id: str, date_range: DateRange, filters: list[Filter] | None = None
+) -> dict[str, Any]:
+    """Fetch top referrer domains for the overview tab (domain only — no UTM)."""
+    filters = filters or []
+    start, end = date_range.start_date, date_range.end_date
+    return {
+        "top_referrers": get_referrer_metrics(website_id, start, end, limit=10, filters=filters),
+    }
+
+def get_overview_tab_sources(
+    website_id: str, date_range: DateRange, filters: list[Filter] | None = None
+) -> dict[str, Any]:
+    """Fetch marketing-channel breakdown for the overview tab (referrer-derived)."""
+    filters = filters or []
+    start, end = date_range.start_date, date_range.end_date
+    return {
+        "channels": get_channel_metrics(website_id, start, end, filters=filters),
     }
 
 def get_realtime_data(website_id: str) -> dict[str, Any]:

@@ -4,12 +4,37 @@
 {% block title %}{% trans "Geo" %}{% endblock %}
 {% block page_title %}{% trans "Geo" %}{% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css" />
+{% endblock %}
+
 {% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
 
 {% block content %}
 
-{# ── Detail table (country-level only) ─────────────────────── #}
 {% if geo %}
+
+{# ── World map + Top Countries chart (country-level only) ───── #}
+<div class="mb-4 grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+
+  {% if geo_bubble_data %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{% trans "Pageviews by Country" %}</h2>
+    <div id="geo-map" class="h-48 sm:h-64 lg:h-80 rounded-md"></div>
+    {{ geo_bubble_data|json_script:"geo-bubble-data" }}
+  </div>
+  {% endif %}
+
+  {% if country_pie_data.labels %}
+  {% trans "Top Countries" as t_top_countries %}
+  <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+    {% include "components/_chart_card.html" with key="geo-countries" title=t_top_countries chart_data=country_pie_data default="pie" %}
+  </div>
+  {% endif %}
+
+</div>
+
+{# ── Detail table (country-level only) ─────────────────────── #}
 <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
   <div class="overflow-x-auto">
   <table class="min-w-full divide-y divide-border">
@@ -38,4 +63,39 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>
+<script>
+  (function () {
+    var el = document.getElementById('geo-bubble-data');
+    var container = document.getElementById('geo-map');
+    if (!el || !container) return;
+    var data = JSON.parse(el.textContent);
+    if (!data || !data.length) return;
+
+    var map = L.map('geo-map').setView([20, 0], 2);
+    var isDark = document.documentElement.classList.contains('dark');
+    L.tileLayer(isDark
+      ? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 6,
+    }).addTo(map);
+
+    var maxV = Math.max.apply(null, data.map(function (g) { return g.pageviews || 0; }));
+    data.forEach(function (g) {
+      var radius = maxV > 0 ? Math.max(4, (g.pageviews / maxV) * 20) : 4;
+      L.circleMarker([g.lat, g.lng], {
+        radius: radius,
+        fillColor: '#6366f1',
+        color: '#4f46e5',
+        weight: 1,
+        fillOpacity: 0.7,
+      }).addTo(map).bindPopup('<strong>' + g.country + '</strong><br>' + g.pageviews + ' {% trans "pageviews" %}');
+    });
+  })();
+</script>
 {% endblock %}

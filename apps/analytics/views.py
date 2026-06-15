@@ -23,8 +23,9 @@ from django.views.generic import TemplateView
 from apps.analytics.chart_data import (
     build_dimension_chart_data,
     build_events_bar_chart_data,
-    build_events_pie_chart_data,
     build_events_timeline_data,
+    build_generic_pie_data,
+    build_geo_bubble_data,
     build_pages_bar_chart_data,
     build_sections_bar_chart_data,
     build_timeseries_chart_data,
@@ -81,6 +82,9 @@ class OverviewView(AnalyticsBase):
             "current_pages": data["current_pages"],
             "heatmap": data["heatmap"],
             "active_tab": self.request.GET.get("tab", "pages"),
+            # Referrers/Channels panel (referrer-domain only — no UTM).
+            "top_referrers": data.get("top_referrers", []),
+            "channels": data.get("channels", []),
         }
 
 
@@ -121,12 +125,21 @@ class DevicesView(AnalyticsBase):
 
 
 class GeoView(AnalyticsBase):
-    """Geographic pageview distribution (country-level only)."""
+    """Geographic pageview distribution (country-level only).
+
+    Country-level pageview data drives a Leaflet bubble world map and a
+    Top-Countries chart. Region/city drill-down and bounce/duration metrics
+    are intentionally absent (no region/city columns, no session storage).
+    """
 
     template_name = "analytics/geo.html"
 
     def get_service_data(self) -> dict:
-        return get_geo_data(self.website_id, self.date_range, self.filters)
+        data = get_geo_data(self.website_id, self.date_range, self.filters)
+        geo = data.get("geo", [])
+        data["geo_bubble_data"] = build_geo_bubble_data(geo)
+        data["country_pie_data"] = build_generic_pie_data(geo, "country", "pageviews")
+        return data
 
 
 class SourcesView(AnalyticsBase):
@@ -135,7 +148,11 @@ class SourcesView(AnalyticsBase):
     template_name = "analytics/sources.html"
 
     def get_service_data(self) -> dict:
-        return get_sources_data(self.website_id, self.date_range, self.filters)
+        data = get_sources_data(self.website_id, self.date_range, self.filters)
+        data["sources_chart_data"] = build_generic_pie_data(
+            data.get("sources", []), "referrer", "pageviews"
+        )
+        return data
 
 
 class EntryPagesView(AnalyticsBase):
@@ -144,7 +161,11 @@ class EntryPagesView(AnalyticsBase):
     template_name = "analytics/entry_pages.html"
 
     def get_service_data(self) -> dict:
-        return get_landing_data(self.website_id, self.date_range, self.filters)
+        data = get_landing_data(self.website_id, self.date_range, self.filters)
+        data["entry_chart_data"] = build_generic_pie_data(
+            data.get("landing", []), "entry_path", "visits"
+        )
+        return data
 
 
 class CompareView(AnalyticsBase):
@@ -223,7 +244,7 @@ class EventsView(AnalyticsBase):
         )
         return {
             **data,
+            # Bar and pie share one payload — the chart card toggles between them.
             "events_chart_data": build_events_bar_chart_data(data["events"]),
-            "events_pie_data": build_events_pie_chart_data(data["events"]),
             "events_timeline_data": build_events_timeline_data(data["event_timeseries"]),
         }

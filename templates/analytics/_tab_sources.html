@@ -1,0 +1,19 @@
+{% load i18n fmt %}
+{% spaceless %}
+<div class="space-y-0">
+  {% for ch in channels %}
+  <div class="relative flex items-center rounded px-2.5 py-[6px] text-[12.5px]">
+    {% if channels.0.pageviews %}
+    <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {% widthratio ch.pageviews channels.0.pageviews 100 %}%"></div>
+    {% endif %}
+    <span class="relative flex-1 truncate text-foreground">{{ ch.channel }}</span>
+    <div class="relative flex gap-3 font-mono text-[12px]">
+      <span class="text-muted-foreground">{{ ch.percentage|floatformat:1 }}%</span>
+      <span class="min-w-[50px] text-right text-foreground">{{ ch.pageviews|intcomma }}</span>
+    </div>
+  </div>
+  {% empty %}
+  <p class="py-4 text-center text-xs text-muted-foreground">{% trans "No channel data" %}</p>
+  {% endfor %}
+</div>
+{% endspaceless %}

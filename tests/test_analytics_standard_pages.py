@@ -445,10 +445,15 @@ class TestTemplateContent:
         assert "<table" in content
 
     def test_devices_has_charts(self) -> None:
+        # Charts are rendered through the shared chart-card component, defaulting
+        # to pie for device dimensions.
         content = (ANALYTICS_DIR / "devices.html").read_text()
-        assert "canvas" in content.lower()
-        assert "json_script" in content
-        assert "initPieChart" in content
+        assert "components/_chart_card.html" in content
+        assert 'default="pie"' in content
+        # The component itself emits the canvas + json_script payload.
+        component = (TEMPLATES_DIR / "components" / "_chart_card.html").read_text()
+        assert "canvas" in component.lower()
+        assert "json_script" in component
 
     def test_compare_has_mode_selector(self) -> None:
         content = (ANALYTICS_DIR / "compare.html").read_text()

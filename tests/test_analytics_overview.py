@@ -143,6 +143,8 @@ class TestServiceOrchestration:
         "get_top_pages": [],
         "get_country_breakdown": [],
         "get_geo_metrics": [],
+        "get_referrer_metrics": [],
+        "get_channel_metrics": [],
         "get_active_pageviews": {"count": 0},
         "get_recent_pageviews": [],
         "get_current_pages": [],

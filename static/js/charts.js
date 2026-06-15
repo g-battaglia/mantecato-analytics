@@ -282,7 +282,147 @@ function initSparkline(canvasId, data) {
   });
 }
 
+/* ── Toggleable categorical charts (bar ⇄ pie) + chart cards ─ */
+/*
+ * A "chart card" is any element carrying ``data-chart-card="<key>"``.  It holds
+ * one categorical canvas (``data-chart-role="categorical"``) that can render as
+ * a bar OR a pie from the *same* payload, plus optional extra views (e.g. a
+ * time-series ``data-chart-role="timeline"`` canvas, used by the Events page).
+ * Toggle buttons (``data-chart-toggle-btn`` with ``data-type``) switch the view;
+ * the choice is remembered per key in localStorage.
+ *
+ * Both bar and pie consume the shape ``{labels, datasets:[{data}]}`` — we strip
+ * any per-series colors so each renderer applies its own theme palette (single
+ * accent for bars, multi-color slices for pies).
+ */
+
+var CHART_TYPE_PREFIX = "mantecato:charttype:";
+
+function _savedChartType(key) {
+  if (!key) return null;
+  try {
+    var v = localStorage.getItem(CHART_TYPE_PREFIX + key);
+    return v === "bar" || v === "pie" || v === "timeline" ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function _stripSeriesColors(data) {
+  return {
+    labels: (data && data.labels) || [],
+    datasets: ((data && data.datasets) || []).map(function (ds) {
+      var copy = Object.assign({}, ds);
+      delete copy.backgroundColor;
+      delete copy.borderColor;
+      return copy;
+    }),
+  };
+}
+
+// Render `data` as a bar or pie chart from a single shared payload.
+function initToggleableChart(canvasId, data, type) {
+  var normalized = _stripSeriesColors(data || {});
+  return type === "pie"
+    ? initPieChart(canvasId, normalized)
+    : initBarChart(canvasId, normalized);
+}
+
+function _readJSON(elId) {
+  var el = elId ? document.getElementById(elId) : null;
+  if (!el) return null;
+  try {
+    return JSON.parse(el.textContent);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Initialize standalone charts (time-series, sparkline) that live outside a card.
+function autoInitCharts(scope) {
+  var root = scope && scope.querySelectorAll ? scope : document;
+  root.querySelectorAll("canvas[data-chart-src]").forEach(function (canvas) {
+    if (canvas.closest("[data-chart-card]")) return; // handled by initChartCards
+    var data = _readJSON(canvas.getAttribute("data-chart-src"));
+    if (!data) return;
+    var kind = canvas.getAttribute("data-chart-kind") || "categorical";
+    if (kind === "timeseries") initTimeSeriesChart(canvas.id, data);
+    else if (kind === "sparkline") initSparkline(canvas.id, data);
+    else initToggleableChart(canvas.id, data, canvas.getAttribute("data-chart-default") || "bar");
+  });
+}
+
+// Switch a card to a view (bar/pie/timeline): show the right wrapper, re-render
+// the categorical canvas, sync button styles, and optionally persist the choice.
+function _selectChartView(card, key, type, persist) {
+  var view = type === "timeline" ? "timeline" : "categorical";
+
+  card.querySelectorAll("[data-chart-view]").forEach(function (wrap) {
+    wrap.classList.toggle("hidden", wrap.getAttribute("data-chart-view") !== view);
+  });
+
+  if (view === "categorical") {
+    var canvas = card.querySelector('canvas[data-chart-role="categorical"]');
+    if (canvas) {
+      var data = canvas._chartData || _readJSON(canvas.getAttribute("data-chart-src"));
+      if (data) initToggleableChart(canvas.id, data, type);
+    }
+  }
+
+  card.querySelectorAll("[data-chart-toggle-btn]").forEach(function (btn) {
+    var active = btn.getAttribute("data-type") === type;
+    btn.classList.toggle("bg-primary", active);
+    btn.classList.toggle("text-primary-foreground", active);
+    btn.classList.toggle("bg-muted", !active);
+    btn.classList.toggle("text-muted-foreground", !active);
+    btn.classList.toggle("hover:text-foreground", !active);
+  });
+
+  if (persist && key) {
+    try {
+      localStorage.setItem(CHART_TYPE_PREFIX + key, type);
+    } catch (e) {
+      /* storage unavailable — choice just won't persist */
+    }
+  }
+}
+
+// Initialize every chart card within `scope`.
+function initChartCards(scope) {
+  var root = scope && scope.querySelectorAll ? scope : document;
+  root.querySelectorAll("[data-chart-card]").forEach(function (card) {
+    if (card._chartCardReady) return;
+    card._chartCardReady = true;
+
+    var key = card.getAttribute("data-chart-card");
+    var def = card.getAttribute("data-chart-default") || "bar";
+
+    // Render extra (timeline) views up front so switching is instant; hidden
+    // canvases size correctly on show via Chart.js's ResizeObserver.
+    card.querySelectorAll('canvas[data-chart-role="timeline"][data-chart-src]').forEach(function (canvas) {
+      var data = _readJSON(canvas.getAttribute("data-chart-src"));
+      if (data) initTimeSeriesChart(canvas.id, data);
+    });
+
+    _selectChartView(card, key, _savedChartType(key) || def, false);
+  });
+}
+
+// Delegated toggle-button handler.
+document.addEventListener("click", function (e) {
+  var btn = e.target.closest("[data-chart-toggle-btn]");
+  if (!btn) return;
+  var card = btn.closest("[data-chart-card]");
+  if (!card) return;
+  _selectChartView(card, card.getAttribute("data-chart-card"), btn.getAttribute("data-type"), true);
+});
+
 /* ── Re-render charts after HTMX swaps and theme changes ──── */
+
+function _initAllCharts(scope) {
+  autoInitCharts(scope);
+  initChartCards(scope);
+}
 
 function _reinitAllCharts() {
   document.querySelectorAll("canvas").forEach(function (canvas) {
@@ -296,4 +436,10 @@ function _reinitAllCharts() {
   });
 }
 
+document.addEventListener("DOMContentLoaded", function () {
+  _initAllCharts(document);
+});
+document.addEventListener("htmx:afterSwap", function (e) {
+  _initAllCharts((e.detail && e.detail.target) || e.target || document);
+});
 window.addEventListener("mantecato:themechange", _reinitAllCharts);

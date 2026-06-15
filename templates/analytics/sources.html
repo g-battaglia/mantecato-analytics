@@ -10,6 +10,12 @@
 
 {# ── Top referrer domains (domain only — no full URL/UTM) ──── #}
 {% if sources %}
+{% if sources_chart_data.labels %}
+{% trans "Top Referrers" as t_top_referrers %}
+<div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+  {% include "components/_chart_card.html" with key="sources" title=t_top_referrers chart_data=sources_chart_data default="bar" %}
+</div>
+{% endif %}
 <div class="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
   <div class="overflow-x-auto">
   <table class="min-w-full divide-y divide-border">

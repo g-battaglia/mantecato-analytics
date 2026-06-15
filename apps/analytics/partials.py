@@ -19,6 +19,8 @@ from apps.analytics.services import (
     get_overview_tab_events,
     get_overview_tab_geo,
     get_overview_tab_pages,
+    get_overview_tab_referrers,
+    get_overview_tab_sources,
     resolve_websites_for_user,  # noqa: F401  — imported so tests can patch it here
 )
 from apps.common.mixins import (
@@ -51,6 +53,8 @@ _OVERVIEW_TABS: dict[str, _TabConfig] = {
     "events": _TabConfig("analytics/_tab_events.html", get_overview_tab_events),
     "devices": _TabConfig("analytics/_tab_devices.html", get_overview_tab_devices),
     "geo": _TabConfig("analytics/_tab_geo.html", get_overview_tab_geo),
+    "referrers": _TabConfig("analytics/_tab_referrers.html", get_overview_tab_referrers),
+    "sources": _TabConfig("analytics/_tab_sources.html", get_overview_tab_sources),
 }
 
 

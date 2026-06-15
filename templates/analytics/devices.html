@@ -8,12 +8,15 @@
 
 {% block content %}
 
+{% trans "Browser" as t_browser %}
+{% trans "Operating System" as t_os %}
+{% trans "Device Type" as t_device %}
+
 <div class="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
 
   <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
     <div class="px-4">
-      <h2 class="mb-3 text-sm font-medium">{% trans "Browser" %}</h2>
-      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-browser"></canvas></div>
+      {% include "components/_chart_card.html" with key="devices-browser" title=t_browser chart_data=browser_chart_data default="pie" %}
       {% if browser %}
       <div class="mt-3 space-y-0">
         {% for b in browser %}
@@ -28,13 +31,11 @@
       </div>
       {% endif %}
     </div>
-    {{ browser_chart_data|json_script:"browser-chart-data" }}
   </div>
 
   <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
     <div class="px-4">
-      <h2 class="mb-3 text-sm font-medium">{% trans "Operating System" %}</h2>
-      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-os"></canvas></div>
+      {% include "components/_chart_card.html" with key="devices-os" title=t_os chart_data=os_chart_data default="pie" %}
       {% if os %}
       <div class="mt-3 space-y-0">
         {% for o in os %}
@@ -49,13 +50,11 @@
       </div>
       {% endif %}
     </div>
-    {{ os_chart_data|json_script:"os-chart-data" }}
   </div>
 
   <div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
     <div class="px-4">
-      <h2 class="mb-3 text-sm font-medium">{% trans "Device Type" %}</h2>
-      <div class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-device"></canvas></div>
+      {% include "components/_chart_card.html" with key="devices-device" title=t_device chart_data=device_chart_data default="pie" %}
       {% if device %}
       <div class="mt-3 space-y-0">
         {% for d in device %}
@@ -70,25 +69,8 @@
       </div>
       {% endif %}
     </div>
-    {{ device_chart_data|json_script:"device-chart-data" }}
   </div>
 
 </div>
 
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  (function () {
-    var bEl = document.getElementById('browser-chart-data');
-    if (bEl) initPieChart('chart-browser', JSON.parse(bEl.textContent));
-
-    var oEl = document.getElementById('os-chart-data');
-    if (oEl) initPieChart('chart-os', JSON.parse(oEl.textContent));
-
-    var dEl = document.getElementById('device-chart-data');
-    if (dEl) initPieChart('chart-device', JSON.parse(dEl.textContent));
-
-  })();
-</script>
 {% endblock %}

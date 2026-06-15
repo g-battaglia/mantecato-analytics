@@ -27,21 +27,9 @@
 </div>
 
 {# ── Chart toggle + charts ─────────────────────────────────── #}
+{% trans "Events Overview" as t_events_overview %}
 <div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
-  <div class="mb-3 flex items-center justify-between">
-    <h2 class="text-sm font-semibold text-foreground">{% trans "Events Overview" %}</h2>
-    <div class="flex gap-1" id="chart-toggle">
-      <button class="chart-toggle-btn rounded-md px-2.5 py-1 text-xs font-medium bg-primary text-primary-foreground" data-chart="bar">{% trans "Bar" %}</button>
-      <button class="chart-toggle-btn rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground" data-chart="pie">{% trans "Pie" %}</button>
-      <button class="chart-toggle-btn rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground" data-chart="timeline">{% trans "Timeline" %}</button>
-    </div>
-  </div>
-  <div id="chart-bar-wrap" class="relative h-48 sm:h-64 lg:h-80"><canvas id="chart-events-bar"></canvas></div>
-  <div id="chart-pie-wrap" class="relative h-48 sm:h-64 lg:h-80 hidden"><canvas id="chart-events-pie"></canvas></div>
-  <div id="chart-timeline-wrap" class="relative h-48 sm:h-64 lg:h-80 hidden"><canvas id="chart-events-timeline"></canvas></div>
-  {{ events_chart_data|json_script:"events-bar-data" }}
-  {{ events_pie_data|json_script:"events-pie-data" }}
-  {{ events_timeline_data|json_script:"events-timeline-data" }}
+  {% include "components/_chart_card.html" with key="events" title=t_events_overview chart_data=events_chart_data timeline_data=events_timeline_data default="bar" %}
 </div>
 
 {# ── Events table ──────────────────────────────────────────── #}
@@ -77,37 +65,4 @@
 </div>
 {% endif %}
 
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  (function () {
-    var barEl = document.getElementById('events-bar-data');
-    var pieEl = document.getElementById('events-pie-data');
-    var tlEl = document.getElementById('events-timeline-data');
-
-    if (barEl) initBarChart('chart-events-bar', JSON.parse(barEl.textContent));
-    if (pieEl) initPieChart('chart-events-pie', JSON.parse(pieEl.textContent));
-    if (tlEl) initTimeSeriesChart('chart-events-timeline', JSON.parse(tlEl.textContent));
-
-    var wraps = {
-      bar: document.getElementById('chart-bar-wrap'),
-      pie: document.getElementById('chart-pie-wrap'),
-      timeline: document.getElementById('chart-timeline-wrap'),
-    };
-    var btns = document.querySelectorAll('.chart-toggle-btn');
-    btns.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var target = btn.getAttribute('data-chart');
-        btns.forEach(function (b) {
-          b.className = b.className.replace('bg-primary text-primary-foreground', 'bg-muted text-muted-foreground hover:text-foreground');
-        });
-        btn.className = btn.className.replace('bg-muted text-muted-foreground hover:text-foreground', 'bg-primary text-primary-foreground');
-        for (var k in wraps) {
-          if (wraps[k]) wraps[k].classList.toggle('hidden', k !== target);
-        }
-      });
-    });
-  })();
-</script>
 {% endblock %}

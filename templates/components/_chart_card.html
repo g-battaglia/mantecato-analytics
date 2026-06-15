@@ -1,0 +1,53 @@
+{% load i18n %}
+{% comment %}
+Reusable categorical chart with a Column / Pie toggle.
+
+Renders a chart header + a canvas that can switch between bar and pie from a
+single payload, remembering the choice per `key` (localStorage). Composable:
+drop it inside any card alongside a breakdown list/table.
+
+Params (via the include's "with" keywords):
+  key          required, stable id used for the canvas, json_script id, and
+               the localStorage persistence key (keep it unique per chart).
+  title        heading text shown above the chart.
+  chart_data   the categorical Chart.js payload ({labels, datasets:[{data}]}).
+  default      initial type, "bar" (default) or "pie".
+  hide_toggle  pass True to render the chart with no toggle buttons.
+  timeline_data  optional time-series payload; when given, a third "Timeline"
+                 toggle appears (used by the Events page).
+  height       optional Tailwind height classes for the canvas wrapper.
+{% endcomment %}
+{% with cat_canvas=key|add:"-canvas" cat_id=key|add:"-data" tl_canvas=key|add:"-timeline-canvas" tl_id=key|add:"-timeline-data" box_h=height|default:"h-48 sm:h-64 lg:h-80" %}
+<div data-chart-card="{{ key }}" data-chart-default="{{ default|default:'bar' }}">
+  <div class="mb-3 flex items-center justify-between gap-2">
+    <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
+    {% if not hide_toggle %}
+    <div class="flex gap-1">
+      <button type="button" data-chart-toggle-btn data-type="bar"
+              class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="{% trans 'Column chart' %}">{% trans "Column" %}</button>
+      <button type="button" data-chart-toggle-btn data-type="pie"
+              class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="{% trans 'Pie chart' %}">{% trans "Pie" %}</button>
+      {% if timeline_data is not None %}
+      <button type="button" data-chart-toggle-btn data-type="timeline"
+              class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="{% trans 'Timeline chart' %}">{% trans "Timeline" %}</button>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div data-chart-view="categorical" class="relative {{ box_h }}">
+    <canvas id="{{ cat_canvas }}" data-chart-src="{{ cat_id }}" data-chart-role="categorical"></canvas>
+  </div>
+  {{ chart_data|json_script:cat_id }}
+
+  {% if timeline_data is not None %}
+  <div data-chart-view="timeline" class="relative {{ box_h }} hidden">
+    <canvas id="{{ tl_canvas }}" data-chart-src="{{ tl_id }}" data-chart-role="timeline"></canvas>
+  </div>
+  {{ timeline_data|json_script:tl_id }}
+  {% endif %}
+</div>
+{% endwith %}
