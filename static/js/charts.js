@@ -250,18 +250,33 @@ function initPieChart(canvasId, data) {
             padding: 12,
             font: { size: 11 },
             // Append each slice's share to its legend entry (e.g. "US  45.2%").
+            // Reuse Chart.js's own doughnut label generation so each swatch's
+            // colour is the *actual* rendered arc colour — the legend can never
+            // disagree with the slice it labels. We only append the percentage.
             generateLabels: function (chart) {
               var ds = (chart.data.datasets || [])[0] || {};
               var values = ds.data || [];
               var total = values.reduce(function (a, b) { return a + (Number(b) || 0); }, 0);
-              return (chart.data.labels || []).map(function (label, i) {
+              var pct = function (i) {
                 var v = Number(values[i]) || 0;
-                var pct = total ? (v / total) * 100 : 0;
-                var bg = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[i] : ds.backgroundColor;
+                return "  " + (total ? (v / total) * 100 : 0).toFixed(1) + "%";
+              };
+              var dflt = Chart.overrides &&
+                Chart.overrides.doughnut.plugins.legend.labels.generateLabels;
+              if (dflt) {
+                var base = dflt(chart);
+                base.forEach(function (item) { item.text += pct(item.index); });
+                return base;
+              }
+              // Fallback for builds that don't expose Chart.overrides: read the
+              // resolved arc style so swatches still match the slices exactly.
+              var meta = chart.getDatasetMeta(0);
+              return (chart.data.labels || []).map(function (label, i) {
+                var style = meta.controller.getStyle(i);
                 return {
-                  text: label + "  " + pct.toFixed(1) + "%",
-                  fillStyle: bg,
-                  strokeStyle: bg,
+                  text: label + pct(i),
+                  fillStyle: style.backgroundColor,
+                  strokeStyle: style.borderColor,
                   lineWidth: 0,
                   hidden: !chart.getDataVisibility(i),
                   index: i,
