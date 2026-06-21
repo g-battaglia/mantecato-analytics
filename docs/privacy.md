@@ -43,14 +43,22 @@ per-event timing log or scroll map is kept — only the aggregate seconds.
 To count uniques exactly **without** a stored identifier, Mantecato uses a
 compute-and-discard scheme:
 
-1. A **random salt** is generated for each **exactness window** and shared
-   across workers. The window is `day`, `week` or `month`
+1. A **random salt** is generated for each **dedup window** and shared
+   across workers. The window is `day`, `week`, `month`, `quarter` or `year`
    (`VISITOR_EXACT_WINDOW`, **default `day`** → unique visitors over a range are
-   the sum of daily uniques, the conventional figure).
+   the sum of daily uniques, the conventional figure). A longer window
+   deduplicates returning visitors across more days — the salt, and therefore the
+   identifier lifetime, lasts as long as the window. All windows are **fixed
+   calendar periods ≤ 13 months with no per-visit renewal**. **Choosing a window
+   longer than `day` changes the legal basis — see "Why no consent banner".**
 2. On each pageview the server computes
    `HMAC-SHA256(window_salt, website_id + IP + User-Agent)` — an ephemeral
    digest. The IP and User-Agent are used only for this computation and are
-   **not stored**.
+   **not stored**. The IP is first **truncated** (`VISITOR_HASH_IP_PREFIX_V4` /
+   `_V6`, default `auto`: the full IP only for the `day` window, `/24` + `/48` for
+   any longer window) so a longer-lived digest cannot become a precise
+   fingerprint — the IP-minimisation condition the CNIL/Garante exemption
+   requires. Geo (country) and datacenter-bot detection still use the full IP.
 3. The digest deduplicates a visitor **within that window only**. It updates
    small integer counters (visits, bounces, on-site seconds) and is also stored
    on the event row (`website_event.visitor_key`) so unique visitors can be
@@ -155,15 +163,33 @@ pageviews.
 
 ## Why no consent banner is required
 
-- **ePrivacy Art. 5(3) / UK PECR**: these govern *storing or accessing
-  information on the terminal device*. Mantecato sets nothing on the device and
-  reads no device storage, so the cookie-consent rule is not triggered.
-- **GDPR / UK GDPR**: the transient processing of IP + User-Agent to derive the
-  discarded digest is first-party, single-purpose audience measurement on a
-  **legitimate-interest** basis, aligned with the consent-exemption criteria
-  used by DPAs such as the CNIL (first-party, anonymous statistics, no
-  cross-referencing, no cross-site tracking, no precise location).
-- **Italy / Garante**: first-party anonymised audience measurement.
+The banner requirement comes from **ePrivacy Art. 5(3) / UK PECR**, which govern
+*storing or accessing information on the terminal device*. Mantecato sets nothing
+on the device and reads no device storage, so that rule is **not triggered —
+whatever the dedup-window length**. The window length instead determines the
+**GDPR basis** for the transient IP + User-Agent processing:
+
+- **`day` window (default) — "no persistent identifier".** The salt is discarded
+  every 24h, so a visitor cannot be linked from one day to the next; there is no
+  persistent identifier at all and legitimate interest (GDPR Art. 6(1)(f)) applies
+  trivially. This is the Plausible/Fathom posture.
+- **Window longer than `day` — "consent-exempt audience measurement".** The salt
+  (identifier) now persists for the window, so the basis shifts to the DPA
+  audience-measurement exemption (CNIL *Sheet 16*; Italian *Garante* 2021, which
+  treats first-party analytics as consent-exempt in principle). That exemption is
+  **conditional** — all of the following must hold, and Mantecato is built to:
+  - first-party / single site, **no cross-referencing**, no cross-site tracking ✓
+  - aggregate-only output, country-level geo (no precise location) ✓
+  - **identifier lifetime ≤ 13 months, no per-visit renewal** ✓ (fixed windows ≤ 1 year)
+  - **IP truncation** (CNIL: last IPv4 byte; Garante: ≥ 4th octet) ✓ (auto at > `day`)
+  - data retention ≤ 25 months ✓ (digests nulled at ~13 months; aggregates anonymous)
+  - **transparency + opt-out** — publish the notice below and keep GPC honoured ✓
+
+  EDPB *Guidelines 2/2023* treat persistent fingerprinting and some IP tracking as
+  in-scope of Art. 5(3); the audience-measurement exemption is the route that keeps
+  a longer-lived first-party digest consent-free. For windows longer than `day`,
+  record a **DPIA** in addition to the LIA, keep IP truncation on (especially for
+  Italy), and have counsel confirm.
 - **US (CCPA/CPRA & state laws)**: no sale/share, no cross-context identifier,
   GPC honoured.
 
@@ -171,11 +197,18 @@ pageviews.
 
 1. Publish a privacy notice describing the above (template below).
 2. Record a short **Legitimate Interest Assessment (LIA)** for the transient
-   IP/User-Agent processing.
+   IP/User-Agent processing. If you set `VISITOR_EXACT_WINDOW` longer than `day`,
+   also record a **DPIA** (the digest is then a time-limited identifier) and keep
+   IP truncation on (`VISITOR_HASH_IP_PREFIX_*=auto` or `24`/`48`).
 3. Schedule `rollup_visitors` daily for the strict retention guarantee.
 4. Keep `SECRET_KEY` secret and set a restrictive `ALLOWED_HOSTS` in production.
 
 ## Model privacy-notice snippet (for site owners)
+
+> The wording below matches the **default `day` window** (no cross-day identifier).
+> If you run a longer `VISITOR_EXACT_WINDOW`, adjust the "across days" clause to say
+> the anonymous in-window digest deduplicates returning visitors within the window
+> (e.g. within a calendar month) and is discarded at window end.
 
 > We use Mantecato, a privacy-first, cookieless analytics tool, to measure
 > aggregate traffic on this site. It does not use cookies or browser storage and

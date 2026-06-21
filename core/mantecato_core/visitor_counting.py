@@ -48,7 +48,11 @@ SESSION_TIMEOUT_S = 30 * 60
 # Fixed key for the transaction-scoped advisory lock that serialises rollups.
 _ROLLUP_LOCK_KEY = 873_421_001
 
-_VALID_WINDOWS = ("day", "week", "month")
+# Supported dedup (salt) windows, longest = year. All are FIXED calendar periods
+# (never sliding/per-visit) and <= 13 months, so a longer salt stays inside the
+# CNIL/Garante consent-exempt audience-measurement envelope (identifier lifetime
+# <= 13 months, no automatic extension on each visit). See docs/privacy.md.
+_VALID_WINDOWS = ("day", "week", "month", "quarter", "year")
 
 # Process-local cache of the current window's salt. Keyed by period key.
 _SALT_CACHE: dict[str, bytes] = {}
@@ -85,12 +89,17 @@ def utc_day(value: datetime) -> date:
 
 
 def _period_key_for_date(d: date, window: str) -> str:
-    """Return the window key for a date: ``2026-06-08`` / ``2026-W23`` / ``2026-06``."""
+    """Return the period key for *d*: day ``2026-06-08`` / week ``2026-W23`` /
+    month ``2026-06`` / quarter ``2026-Q2`` / year ``2026``."""
     if window == "day":
         return d.isoformat()
     if window == "week":
         iso = d.isocalendar()
         return f"{iso.year:04d}-W{iso.week:02d}"
+    if window == "quarter":
+        return f"{d.year:04d}-Q{(d.month - 1) // 3 + 1}"
+    if window == "year":
+        return f"{d.year:04d}"
     return f"{d.year:04d}-{d.month:02d}"
 
 
@@ -112,6 +121,12 @@ def _period_bounds(d: date, window: str) -> tuple[date, date]:
     if window == "week":
         start = d - timedelta(days=d.weekday())  # ISO week starts Monday
         return start, start + timedelta(days=6)
+    if window == "quarter":
+        q_start_month = ((d.month - 1) // 3) * 3 + 1
+        start = date(d.year, q_start_month, 1)
+        return start, _month_end(date(d.year, q_start_month + 2, 1))
+    if window == "year":
+        return date(d.year, 1, 1), date(d.year, 12, 31)
     return d.replace(day=1), _month_end(d)
 
 
@@ -168,6 +183,31 @@ def get_or_create_salt(period: str) -> bytes:
     return salt
 
 
+def _digest_ip_prefixes() -> tuple[int, int]:
+    """Return ``(ipv4_prefix, ipv6_prefix)`` to apply to the IP before hashing.
+
+    Default ``"auto"``: keep the **full** IP only for the daily window (no
+    persistent identifier, Plausible/Fathom-style) and truncate to ``/24`` + ``/48``
+    for any longer window — IP minimisation required by CNIL/Garante to keep a
+    longer-lived digest inside the consent-exempt audience-measurement basis.
+    Explicit integer settings override per family. See docs/privacy.md.
+    """
+    is_day = _window() == "day"
+
+    def resolve(raw: object, full: int, truncated: int) -> int:
+        s = str(raw).strip().lower()
+        if s == "auto":
+            return full if is_day else truncated
+        try:
+            return max(0, min(full, int(s)))
+        except (TypeError, ValueError):
+            return full if is_day else truncated
+
+    v4 = resolve(getattr(settings, "VISITOR_HASH_IP_PREFIX_V4", "auto"), 32, 24)
+    v6 = resolve(getattr(settings, "VISITOR_HASH_IP_PREFIX_V6", "auto"), 128, 48)
+    return v4, v6
+
+
 def compute_visitor_key(
     salt: bytes,
     *,
@@ -177,10 +217,16 @@ def compute_visitor_key(
 ) -> str:
     """Derive the window-scoped, site-scoped dedup digest (hex).
 
-    Uses the full IP and User-Agent to maximise dedup accuracy. The inputs are
-    never stored; only this digest is, and only until the rollup discards the
-    salt that produced it.
+    The IP is first coarsened per :func:`_digest_ip_prefixes` (full IP for the
+    daily window, ``/24`` + ``/48`` for longer windows), so a multi-day salt cannot
+    turn the digest into a precise fingerprint. The IP/User-Agent inputs are never
+    stored; only this digest is, and only until the rollup discards the salt.
     """
+    if ip:
+        from apps.tracker.ip import truncate_ip
+
+        v4, v6 = _digest_ip_prefixes()
+        ip = truncate_ip(ip, v4, v6)
     subject = "|".join([str(website_id), ip or "", user_agent or ""])
     return hmac.new(salt, subject.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -721,15 +767,26 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     return {"days": len(site_acc), "events": nulled}
 
 
-def _first_day_of_period(period: str, window: str) -> date:
-    """Parse a period key back to its first calendar day."""
-    if window == "week":
+def _first_day_of_period(period: str, window: str | None = None) -> date:
+    """Parse a period key back to its first calendar day.
+
+    The format is auto-detected from the key itself (``window`` is accepted for
+    backwards compatibility but ignored), so the rollup stays correct even when the
+    operator has just changed ``VISITOR_EXACT_WINDOW`` and older rows still carry a
+    period key in the previous format.
+    """
+    if "-W" in period:
         year_s, week_s = period.split("-W")
         return date.fromisocalendar(int(year_s), int(week_s), 1)
-    if window == "month":
-        year_s, month_s = period.split("-")
-        return date(int(year_s), int(month_s), 1)
-    return date.fromisoformat(period)
+    if "-Q" in period:
+        year_s, q_s = period.split("-Q")
+        return date(int(year_s), (int(q_s) - 1) * 3 + 1, 1)
+    parts = period.split("-")
+    if len(parts) == 1:  # "2026" → year
+        return date(int(parts[0]), 1, 1)
+    if len(parts) == 2:  # "2026-06" → month
+        return date(int(parts[0]), int(parts[1]), 1)
+    return date.fromisoformat(period)  # "2026-06-08" → day
 
 
 def _derived_counts(g: dict[str, Any]) -> dict[str, int]:

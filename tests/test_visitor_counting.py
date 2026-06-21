@@ -8,7 +8,7 @@ Covers the visit/bounce engine, the read path, the rollup, per-event digests
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.test import override_settings
@@ -240,9 +240,12 @@ def test_rollup_finalizes_and_discards_past_day():
     assert not VisitorDayState.objects.filter(day=day).exists()
     assert not VisitorSalt.objects.filter(period=day.isoformat()).exists()
     # Still readable from the finalised aggregate.
-    assert read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
-        "unique_visitors"
-    ] == 2
+    assert (
+        read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
+            "unique_visitors"
+        ]
+        == 2
+    )
 
 
 def test_rollup_leaves_current_day_untouched():
@@ -277,9 +280,9 @@ def test_imported_events_read_from_digests():
     assert stats["total_pageviews"] == 3
     assert 2 <= stats["visits"] <= stats["total_pageviews"]
     # Digests are kept (not discarded) so the data stays filterable until retention.
-    assert WebsiteEvent.objects.filter(
-        website_id=WEBSITE_ID, visitor_key__isnull=False
-    ).count() == 3
+    assert (
+        WebsiteEvent.objects.filter(website_id=WEBSITE_ID, visitor_key__isnull=False).count() == 3
+    )
 
 
 def test_aggregate_events_into_daily_rolls_up_and_discards():
@@ -457,3 +460,71 @@ def test_per_scope_unique_visitors_beyond_retention():
         WEBSITE_ID, *_full_range(), scope="page", scope_values=["/x", "/y"]
     )
     assert counts["/x"] == 2 and counts["/y"] == 1
+
+
+# --- dedup horizon: configurable salt window (day..year) ---------------------
+
+
+@pytest.mark.parametrize(
+    "window,same_a,same_b,next_period",
+    [
+        ("day", datetime(2026, 6, 10, 1), datetime(2026, 6, 10, 23), datetime(2026, 6, 11, 1)),
+        # ISO week 24/2026 is Mon 8 Jun – Sun 14 Jun; 15 Jun is the next week.
+        ("week", datetime(2026, 6, 8, 1), datetime(2026, 6, 14, 23), datetime(2026, 6, 15, 1)),
+        ("month", datetime(2026, 6, 1, 1), datetime(2026, 6, 30, 23), datetime(2026, 7, 1, 1)),
+        ("quarter", datetime(2026, 7, 1, 1), datetime(2026, 9, 30, 23), datetime(2026, 10, 1, 1)),
+        ("year", datetime(2026, 1, 1, 1), datetime(2026, 12, 31, 23), datetime(2027, 1, 1, 1)),
+    ],
+)
+def test_visitor_key_stable_within_window_rotates_across(window, same_a, same_b, next_period):
+    # Same person → same digest inside the dedup window (cross-day dedup), and a
+    # fresh digest in the next window (salt rotation = forward secrecy). IP kept
+    # full here so the test isolates the *window* behaviour from IP truncation.
+    a, b, c = (t.replace(tzinfo=UTC) for t in (same_a, same_b, next_period))
+    with override_settings(
+        VISITOR_EXACT_WINDOW=window,
+        VISITOR_HASH_IP_PREFIX_V4="32",
+        VISITOR_HASH_IP_PREFIX_V6="128",
+    ):
+        kw = dict(website_id=WEBSITE_ID, ip="1.2.3.4", user_agent="UA")
+        k_a = visitor_key_for(occurred_at=a, **kw)
+        k_b = visitor_key_for(occurred_at=b, **kw)
+        k_c = visitor_key_for(occurred_at=c, **kw)
+    assert k_a == k_b, "same person, same window → one visitor"
+    assert k_a != k_c, "same person, next window → counted again (salt rotated)"
+
+
+# --- IP truncation for the digest (CNIL/Garante minimisation) ----------------
+
+
+def test_ip_truncation_auto_dedups_subnet_for_long_window():
+    when = datetime(2026, 6, 10, 12, tzinfo=UTC)
+    kw = dict(website_id=WEBSITE_ID, occurred_at=when, user_agent="UA")
+    with override_settings(VISITOR_EXACT_WINDOW="month"):
+        # auto → /24 at a >day window: same subnet collapses to one visitor.
+        assert visitor_key_for(ip="203.0.113.7", **kw) == visitor_key_for(ip="203.0.113.250", **kw)
+    with override_settings(VISITOR_EXACT_WINDOW="day"):
+        # auto → full IP in daily mode (Plausible-style, no persistent identifier).
+        assert visitor_key_for(ip="203.0.113.7", **kw) != visitor_key_for(ip="203.0.113.250", **kw)
+
+
+def test_ip_prefix_override_forces_full_ip():
+    when = datetime(2026, 6, 10, 12, tzinfo=UTC)
+    kw = dict(website_id=WEBSITE_ID, occurred_at=when, user_agent="UA")
+    with override_settings(VISITOR_EXACT_WINDOW="month", VISITOR_HASH_IP_PREFIX_V4="32"):
+        assert visitor_key_for(ip="203.0.113.7", **kw) != visitor_key_for(ip="203.0.113.250", **kw)
+
+
+def test_invalid_window_falls_back_to_day():
+    with override_settings(VISITOR_EXACT_WINDOW="decade"):
+        assert visitor_counting.current_window() == "day"
+
+
+def test_truncate_ip_masks_host_bits():
+    from apps.tracker.ip import truncate_ip
+
+    assert truncate_ip("203.0.113.77", 24, 48) == "203.0.113.0"
+    assert truncate_ip("203.0.113.77", 32, 128) == "203.0.113.77"  # full IP
+    assert truncate_ip("2001:db8:abcd:1234::1", 24, 48) == "2001:db8:abcd::"
+    assert truncate_ip("not-an-ip", 24, 48) == "not-an-ip"  # defensive passthrough
+    assert truncate_ip("", 24, 48) == ""

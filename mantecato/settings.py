@@ -196,12 +196,35 @@ MIDDLEWARE += [
 # in production to reduce log noise.
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 
-# Exactness window for cookieless unique-visitor counting: "day" | "week" |
-# "month". The dedup salt is stable for this window, so a visitor is counted
-# once per window. Default "day" → unique visitors over a range = sum of daily
-# uniques (the conventional, Umami-aligned figure). Use "month" for true
-# monthly uniques (lower, no cross-day double counting). See docs/privacy.md.
+# Dedup (salt) window for cookieless unique-visitor counting:
+# "day" | "week" | "month" | "quarter" | "year". The dedup salt is stable for
+# this fixed calendar window, so a returning visitor is counted once per window
+# (cross-day/cross-window deduplication grows with the window length).
+#   "day"   → no persistent identifier (salt discarded every 24h, Plausible-style);
+#             unique visitors over a range = sum of daily uniques (Umami-aligned).
+#   longer  → true within-window uniques (no double counting up to the window).
+# All options are FIXED periods <= 13 months with no per-visit renewal, so a
+# longer window stays inside the CNIL/Garante consent-exempt audience-measurement
+# envelope — but it shifts the legal basis (see docs/privacy.md) and you should
+# enable IP truncation (below). Default stays "day" (safest shipped default).
 VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
+_VALID_VISITOR_WINDOWS = ("day", "week", "month", "quarter", "year")
+if VISITOR_EXACT_WINDOW not in _VALID_VISITOR_WINDOWS:
+    logging.getLogger("mantecato.config").warning(
+        "VISITOR_EXACT_WINDOW=%r is not one of %s; falling back to 'day'.",
+        VISITOR_EXACT_WINDOW,
+        _VALID_VISITOR_WINDOWS,
+    )
+
+# IP precision for the visitor digest input (network prefix kept before hashing).
+# "auto" keeps the FULL IP only when VISITOR_EXACT_WINDOW="day" (no persistent
+# identifier) and truncates to /24 (IPv4) + /48 (IPv6) for any longer window.
+# Truncation is the CNIL ("truncate the last IPv4 byte") / Garante (mask >= 4th
+# octet) condition for a consent-exempt audience-measurement identifier that lives
+# longer than 24h. It only affects the digest; geo and datacenter-bot detection
+# keep the full IP. Set an integer (e.g. 24 / 48, or 32 / 128 for full) to override.
+VISITOR_HASH_IP_PREFIX_V4 = _env_str("VISITOR_HASH_IP_PREFIX_V4", "auto").strip().lower()
+VISITOR_HASH_IP_PREFIX_V6 = _env_str("VISITOR_HASH_IP_PREFIX_V6", "auto").strip().lower()
 
 # How long the per-event dedup digest (``website_event.visitor_key``) is kept so
 # exact visitor/visit/bounce counts can be computed — and **filtered** (by country,
@@ -211,6 +234,18 @@ VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
 # identifier. The window salt is still discarded at window end, so digests older
 # than their window are no longer re-linkable to an IP/UA. See docs/privacy.md.
 VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=396)
+# A digest must outlive its own window, else within-window events get NULLed before
+# the window closes and same-window dedup breaks. Warn if retention is too short.
+_WINDOW_MIN_DAYS = {"day": 1, "week": 7, "month": 31, "quarter": 92, "year": 366}
+if _WINDOW_MIN_DAYS.get(VISITOR_EXACT_WINDOW, 1) > VISITOR_KEY_RETENTION_DAYS:
+    logging.getLogger("mantecato.config").warning(
+        "VISITOR_KEY_RETENTION_DAYS=%d is shorter than the '%s' dedup window; "
+        "within-window digests may be discarded before the window closes. Raise it "
+        "to at least %d.",
+        VISITOR_KEY_RETENTION_DAYS,
+        VISITOR_EXACT_WINDOW,
+        _WINDOW_MIN_DAYS.get(VISITOR_EXACT_WINDOW, 1),
+    )
 
 # A single-pageview visit counts as a bounce only if its real on-page (active)
 # time stays below this many seconds — the "engaged bounce" definition powered by

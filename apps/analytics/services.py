@@ -91,11 +91,20 @@ def _stats_with_change(
     visitors = stats.get("visitors")
     visits = stats.get("visits")
 
+    # Unique visitors deduplicate within the configured dedup (salt) window; over a
+    # longer range they sum per-window. Surface that so a multi-window total reads
+    # honestly. The daily window is the conventional sum-of-daily, so no note.
+    from core.mantecato_core.visitor_counting import current_window
+
+    _window = current_window()
+    _visitors_note = None if _window == "day" else f"Deduplicated within each {_window}"
+
     return {
         "pageviews": _pageview_card("pageviews"),
         "visitors": _exact_card(
             "visitors",
             _format_compact(visitors) if visitors is not None else "N/A",
+            note=_visitors_note,
         ),
         "visits": _exact_card("visits", _format_compact(visits) if visits is not None else "N/A"),
         "bounce_rate": _exact_card("bounce_rate", bounce),
@@ -419,6 +428,7 @@ def get_compare_data(
     comp_range = get_comparison_range(date_range, comparison_mode)
 
     from core.mantecato_core.queries.compare import get_comparison_stats
+
     comparison = get_comparison_stats(
         website_id,
         start,
@@ -511,6 +521,7 @@ def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
         ),
     }
 
+
 def get_overview_tab_pages(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
 ) -> dict[str, Any]:
@@ -528,6 +539,7 @@ def get_overview_tab_pages(
         filters=filters,
     )
     return {"top_pages": pages}
+
 
 def get_overview_tab_events(
     website_id: str,
@@ -552,6 +564,7 @@ def get_overview_tab_events(
     # via the HTMX partial path (the full page aliases event_metrics→top_events).
     return {"top_events": events}
 
+
 def get_overview_tab_devices(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
 ) -> dict[str, Any]:
@@ -564,6 +577,7 @@ def get_overview_tab_devices(
         "os_data": breakdown["os"],
         "device_data": breakdown["device"],
     }
+
 
 def get_overview_tab_geo(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
@@ -578,6 +592,7 @@ def get_overview_tab_geo(
         "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
     }
 
+
 def get_overview_tab_referrers(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
 ) -> dict[str, Any]:
@@ -587,6 +602,7 @@ def get_overview_tab_referrers(
     return {
         "top_referrers": get_referrer_metrics(website_id, start, end, limit=10, filters=filters),
     }
+
 
 def get_overview_tab_sources(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
@@ -598,10 +614,13 @@ def get_overview_tab_sources(
         "channels": get_channel_metrics(website_id, start, end, filters=filters),
     }
 
+
 def get_realtime_data(website_id: str) -> dict[str, Any]:
     """Fetch realtime aggregate pageview data."""
     from django.utils import timezone
+
     now = timezone.now()
     from core.mantecato_core.date_utils import DateRange
+
     dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
     return get_overview_data(website_id, dr, granularity="hour")

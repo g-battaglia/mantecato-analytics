@@ -103,7 +103,35 @@ with the proxy mapping `/assets/m.js → /api/script` and `/collect → /api/sen
   users on some VPNs/carriers. If you filter bots and see legit users vanish,
   disable it (`DETECT_DATACENTER_IPS=false`) or tune `DATACENTER_CIDRS`.
 
-## 4. Operational notes
+## 4. Deduplicate returning visitors across days (`VISITOR_EXACT_WINDOW`)
+
+By default the visitor digest salt rotates **daily**, so "unique visitors" over a
+multi-day range is the **sum of daily uniques** — a visitor returning on 3 days
+counts as 3 (matching Umami's headline, but inflated vs true people). Set a longer
+**dedup window** to deduplicate returning visitors within it:
+
+| `VISITOR_EXACT_WINDOW` | Dedup horizon | Notes |
+|---|---|---|
+| `day` (default) | within a day | No persistent identifier (Plausible-style). |
+| `week` / `month` / `quarter` / `year` | within that period | True within-window uniques; salt = identifier lives that long (≤ 13 months). |
+
+```
+VISITOR_EXACT_WINDOW=month   # exact monthly uniques; recommended balance
+```
+
+Trade-offs:
+- A longer window **deduplicates more** but lengthens the identifier lifetime, so
+  it **shifts the legal basis** to the consent-exempt audience-measurement
+  exemption and **auto-enables IP truncation** (`/24` + `/48`). That truncation
+  slightly lowers dedup precision (visitors on the same subnet + identical
+  User-Agent merge). See [privacy.md](privacy.md) for the conditions (≤ 13-month
+  identifier, transparency + opt-out, DPIA).
+- Ranges **longer than the window** still sum per-window uniques, so pick the
+  window to match the ranges you care about (e.g. `month` for "this month").
+- Changing the window applies **going forward** — past windows keep their already
+  finalised, salt-discarded counts.
+
+## 5. Operational notes
 
 - **Deploy propagation:** `/api/script` is served with `Cache-Control:
   max-age=86400`, so tracker changes take up to **24h** to fully roll out as
