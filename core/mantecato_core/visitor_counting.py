@@ -448,12 +448,46 @@ def aggregate_state(qs: QuerySet) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def has_unrolled_past_periods(now: datetime | None = None) -> bool:
-    """Cheap check: is there ephemeral state for any window before the current one?"""
-    from apps.core.models import VisitorDayState
+def _finished_period_keys(now: datetime | None = None) -> set[str]:
+    """Period keys (across day- and scope-state) whose window has fully ended.
 
-    cur = period_key(now) if now else current_period_key()
-    return VisitorDayState.objects.exclude(period=cur).exists()
+    A window is *finished* once its last calendar day falls before the first day of
+    the current month. Deriving this from each key's real calendar bounds — rather
+    than string-comparing against the current month key — keeps the rollup correct
+    when legacy rows carry a finer-grained key (``2026-06-08`` / ``2026-W23``) from a
+    deployment that predates the fixed monthly window: such a key *inside* the current
+    month must stay live, not be mistaken for a past period and finalised mid-month
+    (which would prematurely delete the open month's state and corrupt its totals).
+    """
+    from apps.core.models import VisitorDayState, VisitorScopeState
+
+    month_start, _ = _period_bounds(utc_day(now or timezone.now()), _window())
+    keys = set(VisitorDayState.objects.values_list("period", flat=True).distinct())
+    keys |= set(VisitorScopeState.objects.values_list("period", flat=True).distinct())
+    return {k for k in keys if _period_ended(k, month_start)}
+
+
+def has_unrolled_past_periods(now: datetime | None = None) -> bool:
+    """Cheap check: is there ephemeral state for any window that has fully ended?"""
+    return bool(_finished_period_keys(now))
+
+
+def discard_expired_digests(now: datetime | None = None) -> int:
+    """NULL the per-event ``visitor_key`` digests older than the retention window.
+
+    Split out of :func:`rollup_finished_periods` so the lazy write-path can run it on
+    its own throttled cadence — otherwise, with a fixed monthly window, the only
+    digest-expiry pass would fire once a month (when a finished month exists to roll
+    up) instead of keeping pace as events cross the retention cutoff. Returns the
+    number of rows nulled. Idempotent: once caught up it matches nothing.
+    """
+    from apps.core.models import WebsiteEvent
+
+    retention = int(getattr(settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+    cutoff = (now or timezone.now()) - timedelta(days=retention)
+    return WebsiteEvent.objects.filter(created_at__lt=cutoff, visitor_key__isnull=False).update(
+        visitor_key=None
+    )
 
 
 def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
@@ -477,7 +511,8 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
 
     window = _window()
     threshold = _bounce_threshold()
-    cur = period_key(now) if now else current_period_key()
+    month_start, _ = _period_bounds(utc_day(now or timezone.now()), window)
+    finished_keys = _finished_period_keys(now)
     result = {"periods": 0, "rows": 0, "salts": 0, "scope_rows": 0}
 
     with transaction.atomic():
@@ -485,7 +520,9 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_ROLLUP_LOCK_KEY])
 
-        finished = VisitorDayState.objects.exclude(period=cur)
+        # Finalise only windows that have *ended* (by calendar bounds, robust to
+        # legacy day/week keys); current-month rows — whatever their key — stay live.
+        finished = VisitorDayState.objects.filter(period__in=finished_keys)
 
         # Aggregates store **all** visitors (humans + bots). The bot filter — and
         # every other filter — is applied **downstream at read time**, never baked
@@ -542,7 +579,7 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             )
 
         # 4) Per-window per-scope unique visitors (pages/sections/events).
-        scope_qs = VisitorScopeState.objects.exclude(period=cur)
+        scope_qs = VisitorScopeState.objects.filter(period__in=finished_keys)
         for g in scope_qs.values("website_id", "period", "scope", "scope_value").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
         ):
@@ -556,19 +593,19 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
                 unique_visitors=g["unique_visitors"] or 0,
             )
 
-        # 5) Discard the window's ephemeral state + salt, and NULL the per-event
-        #    digests only **beyond the retention window** — they are kept until then
-        #    so visitor metrics stay exact and filterable at read time.
-        from apps.core.models import WebsiteEvent
-
-        retention = int(getattr(settings, "VISITOR_KEY_RETENTION_DAYS", 396))
-        cutoff = timezone.now() - timedelta(days=retention)
-        WebsiteEvent.objects.filter(created_at__lt=cutoff, visitor_key__isnull=False).update(
-            visitor_key=None
-        )
+        # 5) NULL the per-event digests beyond the retention window (kept until then
+        #    so visitor metrics stay exact and filterable), then discard the finalised
+        #    windows' ephemeral state and their salts. Only salts whose own window has
+        #    ended are dropped, so a still-open legacy day-key's salt is preserved.
+        discard_expired_digests(now)
         result["scope_rows"], _ = scope_qs.delete()
         result["rows"], _ = finished.delete()
-        result["salts"], _ = VisitorSalt.objects.exclude(period=cur).delete()
+        expired_salts = [
+            p
+            for p in VisitorSalt.objects.values_list("period", flat=True)
+            if _period_ended(p, month_start)
+        ]
+        result["salts"], _ = VisitorSalt.objects.filter(period__in=expired_salts).delete()
 
     return result
 
@@ -755,6 +792,31 @@ def _first_day_of_period(period: str, window: str | None = None) -> date:
     if len(parts) == 2:  # "2026-06" → month
         return date(int(parts[0]), int(parts[1]), 1)
     return date.fromisoformat(period)  # "2026-06-08" → day
+
+
+def _period_end_of_key(period: str) -> date:
+    """Last calendar day of the window identified by *period* (format auto-detected).
+
+    Mirrors :func:`_first_day_of_period`; together they give a key's real calendar
+    bounds regardless of granularity, so the rollup can decide "has this window
+    ended?" without trusting the (now fixed-monthly) window setting.
+    """
+    start = _first_day_of_period(period)
+    if "-W" in period:
+        return start + timedelta(days=6)
+    if "-Q" in period:  # quarter starts at month 1/4/7/10 → ends two months later
+        return _month_end(date(start.year, start.month + 2, 1))
+    parts = period.split("-")
+    if len(parts) == 1:  # "2026" → year
+        return date(start.year, 12, 31)
+    if len(parts) == 2:  # "2026-06" → month
+        return _month_end(start)
+    return start  # "2026-06-08" → day
+
+
+def _period_ended(period: str, month_start: date) -> bool:
+    """True if *period*'s window ends strictly before the current month's first day."""
+    return bool(period) and _period_end_of_key(period) < month_start
 
 
 def _derived_counts(g: dict[str, Any]) -> dict[str, int]:

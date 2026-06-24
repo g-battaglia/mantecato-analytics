@@ -27,6 +27,18 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 - IPv4-mapped IPv6 client addresses (`::ffff:a.b.c.d`) are now unwrapped to IPv4
   before truncation, so they mask to the `/24` block instead of collapsing every
   such client to `::` (which would have merged them into one visitor).
+- **Upgrade safety**: the rollup now decides which windows are finished by their
+  real calendar bounds, not by string-comparing the month key. A deployment
+  upgrading mid-month from the previous (day-grained) window no longer has the
+  open month's still-live, day-keyed state finalised and deleted prematurely —
+  which would have corrupted that month's visitor totals. Only salts whose own
+  window has ended are discarded, preserving a live legacy day-key's salt.
+- Over-retention per-event digests are now nulled on the write-path's throttled
+  cadence (and by the `rollup_visitors` cron), instead of only when a month
+  finalises — so digests no longer linger up to a month past the 396-day cutoff.
+- The "Deduplicated within each month" caveat on the Visitors KPI is shown only
+  for ranges that actually span more than one month, not on single-month, today,
+  or realtime views.
 
 ### Removed
 - The `quarter` and `year` dedup windows (and configurable windows in general);

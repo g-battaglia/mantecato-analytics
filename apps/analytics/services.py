@@ -59,14 +59,16 @@ _UNAVAILABLE_NOTE = "Unavailable with current filters"
 def _stats_with_change(
     stats: dict[str, Any],
     prev_stats: dict[str, Any],
+    date_range: DateRange | None = None,
 ) -> dict[str, Any]:
     """Build the dashboard KPI cards.
 
     Pageview cards are always present. The visitor-derived cards (visitors,
     visits, bounce_rate, avg_duration, pages_per_visit) carry **exact** values
     when available and show ``N/A`` when suppressed (a content/device/geo filter
-    narrows the population, which aggregate counts cannot represent). ``visitors``
-    over a multi-day range is the sum of daily uniques.
+    narrows the population, which aggregate counts cannot represent). Unique
+    visitors are deduplicated within each calendar month; over a range spanning
+    more than one month the per-month uniques are summed.
     """
 
     def _change(cur: Any, prev: Any) -> Any:
@@ -90,13 +92,15 @@ def _stats_with_change(
     visitors = stats.get("visitors")
     visits = stats.get("visits")
 
-    # Unique visitors deduplicate within the configured dedup (salt) window; over a
-    # longer range they sum per-window. Surface that so a multi-window total reads
-    # honestly. The daily window is the conventional sum-of-daily, so no note.
-    from core.mantecato_core.visitor_counting import current_window
-
-    _window = current_window()
-    _visitors_note = None if _window == "day" else f"Deduplicated within each {_window}"
+    # Unique visitors deduplicate within each calendar month; over a range that spans
+    # more than one month they sum per-month. Surface that caveat only when it applies
+    # — within a single month (or a "today"/realtime view) the figure is the exact
+    # monthly-unique count and the note would read as noise.
+    _visitors_note = None
+    if date_range is not None:
+        start, end = date_range.start_date, date_range.end_date
+        if (start.year, start.month) != (end.year, end.month):
+            _visitors_note = "Deduplicated within each month"
 
     return {
         "pageviews": _pageview_card("pageviews"),
@@ -188,7 +192,7 @@ def get_overview_data(
     stats_cmp = get_website_stats_comparison(
         website_id, start, end, prev_range.start_date, prev_range.end_date, filters
     )
-    stats = _stats_with_change(stats_cmp["current"], stats_cmp["previous"])
+    stats = _stats_with_change(stats_cmp["current"], stats_cmp["previous"], date_range)
 
     ts_cmp = get_pageview_time_series_comparison(
         website_id, start, end, prev_range.start_date, prev_range.end_date, granularity, filters
@@ -459,6 +463,7 @@ def get_compare_data(
                 "bot_pageviews": previous.get("bot_pageviews", 0),
                 **prev_vm,
             },
+            date_range,
         )
     else:
         stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0})

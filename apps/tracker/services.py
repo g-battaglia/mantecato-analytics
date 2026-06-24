@@ -103,10 +103,15 @@ def _maybe_rollup() -> None:
     _last_rollup_attempt = now
     try:
         from core.mantecato_core.visitor_counting import (
+            discard_expired_digests,
             has_unrolled_past_periods,
             rollup_finished_periods,
         )
 
+        # Expire over-retention digests every throttle tick, not only when a month
+        # finalises — otherwise a fixed monthly window would null them just once a
+        # month. Cheap when caught up (matches no rows); independent of the rollup.
+        discard_expired_digests()
         if has_unrolled_past_periods():
             rollup_finished_periods()
     except Exception:

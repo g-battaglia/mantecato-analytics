@@ -259,6 +259,68 @@ def test_rollup_idempotent():
     assert VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site").unique_visitors == 1
 
 
+def test_rollup_keeps_legacy_day_keyed_current_month_state_live():
+    # Upgrade scenario: a deployment that predates the fixed monthly window keys its
+    # ephemeral state by DAY. A legacy day-key *inside the current (open) month* must
+    # stay live — finalising it as if it were a finished period would prematurely
+    # delete the open month's state and corrupt its totals.
+    today = _today()
+    day = utc_day(today)
+    day_key = day.isoformat()  # legacy day-grained key, e.g. "2026-06-24"
+    VisitorSalt.objects.create(period=day_key, salt=b"0" * 32)
+    VisitorDayState.objects.create(
+        website_id=WEBSITE_ID,
+        day=day,
+        period=day_key,
+        visitor_key="legacykey",
+        first_seen=today,
+        last_seen=today,
+    )
+    rollup_finished_periods()
+    assert VisitorDayState.objects.filter(period=day_key).exists()
+    assert VisitorSalt.objects.filter(period=day_key).exists()
+    assert not VisitorPeriod.objects.filter(
+        website_id=WEBSITE_ID, period_start=day.replace(day=1)
+    ).exists()
+
+
+def test_rollup_finalizes_legacy_day_keyed_past_month():
+    # The flip side: a legacy day-key whose month has ended IS finalised + discarded.
+    when = _days_ago(40)
+    day = utc_day(when)
+    day_key = day.isoformat()
+    VisitorSalt.objects.create(period=day_key, salt=b"0" * 32)
+    VisitorDayState.objects.create(
+        website_id=WEBSITE_ID,
+        day=day,
+        period=day_key,
+        visitor_key="legacykey",
+        first_seen=when,
+        last_seen=when,
+    )
+    rollup_finished_periods()
+    assert not VisitorDayState.objects.filter(period=day_key).exists()
+    assert not VisitorSalt.objects.filter(period=day_key).exists()
+    assert VisitorPeriod.objects.filter(
+        website_id=WEBSITE_ID, scope="site", period_start=day.replace(day=1)
+    ).exists()
+
+
+def test_discard_expired_digests_runs_without_a_finished_period():
+    # The retention NULL pass is decoupled from the period rollup, so over-retention
+    # digests are nulled on the write-path cadence even mid-month (no finished period).
+    from core.mantecato_core.visitor_counting import discard_expired_digests
+
+    for when, key in [(_days_ago(400), "oldkey"), (_days_ago(10), "newkey")]:
+        ev = WebsiteEvent.objects.create(
+            website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key=key
+        )
+        WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+    assert discard_expired_digests() == 1
+    assert WebsiteEvent.objects.filter(visitor_key="newkey").exists()
+    assert not WebsiteEvent.objects.filter(visitor_key="oldkey").exists()
+
+
 # --- import attribution: aggregate events into daily ------------------------
 
 

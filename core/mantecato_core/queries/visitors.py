@@ -82,9 +82,9 @@ def read_visit_stats(
     agg_upper_day, event_lower = _retention_split(current_window())
 
     # Within retention: exact and filterable, straight from the event digests.
-    ev_qs = pageview_queryset(
-        website_id, max(start_date, event_lower), end_date, filters
-    ).filter(visitor_key__isnull=False)
+    ev_qs = pageview_queryset(website_id, max(start_date, event_lower), end_date, filters).filter(
+        visitor_key__isnull=False
+    )
     stats = event_visitor_stats(ev_qs)
 
     # Beyond retention: anonymous daily aggregates (cannot be sliced by a filter).
@@ -215,9 +215,9 @@ def get_landing_metrics(
         row["bounces"] += bounces
 
     # Within retention: from the (filtered) event digests, sessionised per visit.
-    ev_qs = pageview_queryset(
-        website_id, max(start_date, event_lower), end_date, filters
-    ).filter(visitor_key__isnull=False)
+    ev_qs = pageview_queryset(website_id, max(start_date, event_lower), end_date, filters).filter(
+        visitor_key__isnull=False
+    )
     acc = event_landing_stats(ev_qs)
 
     # Beyond retention: finalised landing aggregates (cannot be sliced by a filter).
@@ -260,6 +260,12 @@ def visitors_by_bucket(
     Visitors line responds to the bot/country/device filter). Buckets are truncated
     in UTC to match the pageview series. Digests discarded past retention contribute
     nothing here; the chart range is normally within retention.
+
+    Each bucket is a *per-bucket* unique count: with the monthly dedup window a
+    visitor active on several days is one device per day, so the buckets do **not**
+    sum to the monthly-unique KPI (a returning visitor is counted once there). This
+    is the same daily-uniques-vs-period-total relationship Plausible/Fathom show; the
+    KPI card carries a "Deduplicated within each month" note for multi-month ranges.
     """
     from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
 
