@@ -7,15 +7,16 @@ This module receives anonymous analytics events from `@mantecato/tracker` via
 
 - Pageviews (`event_type = 1`)
 - Custom events by name only (`event_type = 2`)
-- URL path only (query string and fragment discarded), page title, hostname
+- URL path (query string discarded; fragment discarded unless a token-free SPA route), page title, hostname
 - Coarse browser, OS, and device labels parsed from the User-Agent
 - Country code
 - Event-level bot flag and bot reason
 
 It does not store sessions, visit IDs, raw IPs, raw User-Agents, query strings,
-URL fragments, UTM parameters, click IDs, screen size, language, event
-payload/properties, identify data, or revenue data. Referrers are reduced to the
-bare referring domain.
+UTM parameters, click IDs, screen size, language, event payload/properties,
+identify data, or revenue data. Referrers are reduced to the bare referring
+domain. URL fragments are dropped unless they are a token-free hash-based SPA
+route (`#/...`), which is kept as part of the path.
 
 ## Wire Protocol
 

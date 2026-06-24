@@ -34,8 +34,9 @@ per-event timing log or scroll map is kept — only the aggregate seconds.
 - ❌ Cookies or any browser storage (localStorage/sessionStorage/IndexedDB)
 - ❌ IP addresses (used transiently, then discarded — see below)
 - ❌ Raw User-Agent strings (only the coarse browser/os/device class is kept)
-- ❌ Query strings (`?...`) and URL fragments (`#...`) — discarded at ingestion;
-  they can carry PII/tokens
+- ❌ Query strings (`?...`) — discarded at ingestion; they can carry PII/tokens.
+  URL fragments (`#...`) are dropped too, **except** a token-free hash-based SPA
+  route (`#/...`, no `=`/`&`), which is kept as part of the page path
 - ❌ Full referrer URLs (only the bare domain is kept), UTM/click IDs,
   custom-event payloads, `identify()` data
 - ❌ Sessions lists, visitor profiles, journeys, session replay, region/city

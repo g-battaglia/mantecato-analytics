@@ -124,10 +124,12 @@ def _maybe_rollup() -> None:
 def _parse_url(url: str) -> dict[str, str | None]:
     """Parse a page URL into its path component.
 
-    The query string and fragment are intentionally **discarded and never stored**:
-    they can carry personal data (``?email=``, ``?token=``, ``#access_token=``...)
-    that has no place in privacy-first aggregate analytics. ``url_query`` is
-    always ``None``.
+    The query string is intentionally **discarded and never stored**: it can carry
+    personal data (``?email=``, ``?token=``...) with no place in privacy-first
+    aggregate analytics, so ``url_query`` is always ``None``. The URL fragment is
+    likewise dropped — **except** a hash-based SPA route (``#/dashboard``), which is
+    kept so per-route counts survive. A fragment that smells like a credential
+    carrier (contains ``=`` or ``&``, e.g. ``#access_token=...``) is never kept.
 
     Args:
         url: The raw page URL from the tracker payload (may be empty).
@@ -143,6 +145,14 @@ def _parse_url(url: str) -> dict[str, str | None]:
     if path == "/undefined":
         path = "/"
     path = unquote(path)
+    # Hash-based SPA routes (``#/dashboard``) carry the page identity in the
+    # fragment, so keep them. But a fragment can also smuggle credentials
+    # (``#access_token=...``), so only restore one that looks like a route: starts
+    # with "/" and has no query-like ``=``/``&``. Decode first so a ``%3D``-encoded
+    # token can't slip past the filter.
+    frag = unquote(parsed.fragment)
+    if frag.startswith("/") and "=" not in frag and "&" not in frag:
+        path = f"{path}#{frag}"
     return {"url_path": path[:500], "url_query": None}
 
 

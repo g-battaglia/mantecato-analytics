@@ -466,7 +466,7 @@ def get_compare_data(
             date_range,
         )
     else:
-        stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0})
+        stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0}, date_range)
 
     granularity = resolve_granularity(granularity, date_range)
     current_ts = get_pageview_time_series(website_id, start, end, granularity, filters=filters)

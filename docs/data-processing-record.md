@@ -31,7 +31,7 @@ sends cookies) and transmits, per pageview/event, only:
 | Sent value | Example | Notes |
 |---|---|---|
 | Website ID | `a0000000-…` | Identifies the operator's site, not the visitor |
-| Page path | `/pricing` | Query string `?…` and URL fragment `#…` are **dropped** (may carry tokens) |
+| Page path | `/pricing` | Query string `?…` is **dropped** (may carry tokens); URL fragment `#…` is dropped too, except a token-free SPA route (`#/…`) which is kept as part of the path |
 | Page title | `Pricing` | |
 | Referrer | `https://google.com/…` | Reduced server-side to **domain only**; same-site dropped |
 | Hostname | `example.com` | The tracked site |

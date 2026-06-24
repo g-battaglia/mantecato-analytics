@@ -434,8 +434,21 @@ def test_query_string_not_persisted():
 def test_url_fragment_not_persisted():
     from apps.tracker.services import _parse_url
 
+    # A credential-carrying fragment is dropped (contains ``=``).
     assert _parse_url("/oauth/callback#access_token=secret") == {
         "url_path": "/oauth/callback",
+        "url_query": None,
+    }
+    # A token encoded as ``%3D`` is decoded before filtering, so it is still dropped.
+    assert _parse_url("/app#%2Fx%3Dsecret") == {"url_path": "/app", "url_query": None}
+
+
+def test_hash_spa_route_is_kept():
+    from apps.tracker.services import _parse_url
+
+    # A hash-based SPA route carries the page identity, so it is preserved.
+    assert _parse_url("/app#/dashboard") == {
+        "url_path": "/app#/dashboard",
         "url_query": None,
     }
 

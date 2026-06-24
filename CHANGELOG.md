@@ -17,7 +17,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   month only once it has ended.
 - The tracker sends engagement heartbeats via `fetch(keepalive, credentials:"omit")`
   instead of `sendBeacon` (which forces `credentials:"include"`), so no first-party
-  cookies are ever sent. URL fragments (`#...`) are discarded like query strings.
+  cookies are ever sent. URL fragments (`#...`) are discarded like query strings,
+  except a token-free hash-based SPA route (`#/...`), which is kept as part of the
+  page path so per-route counts survive.
 - Docs (`docs/privacy.md`, `docs/accuracy.md`): document the single fixed legal
   posture — no device storage/access (no ePrivacy trigger) + consent-exempt
   audience measurement (first-party, IP masked, ≤13-month identifier, ≤25-month

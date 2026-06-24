@@ -776,46 +776,43 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     return {"days": len(site_acc), "events": nulled}
 
 
-def _first_day_of_period(period: str, window: str | None = None) -> date:
-    """Parse a period key back to its first calendar day.
+def _period_bounds_of_key(period: str) -> tuple[date, date]:
+    """First and last calendar day of the window identified by *period*.
 
-    The format is auto-detected from the key itself (``window`` is accepted for
-    backwards compatibility but ignored), so the rollup stays correct even when the
-    operator has just changed ``VISITOR_EXACT_WINDOW`` and older rows still carry a
-    period key in the previous format.
+    The format is auto-detected from the key itself (week ``-W`` / quarter ``-Q`` /
+    year / month / day) in a **single** place, so the rollup stays correct even when
+    older rows still carry a period key in a granularity that predates the fixed
+    monthly window — and the start/end bounds can never drift apart.
     """
     if "-W" in period:
         year_s, week_s = period.split("-W")
-        return date.fromisocalendar(int(year_s), int(week_s), 1)
-    if "-Q" in period:
+        start = date.fromisocalendar(int(year_s), int(week_s), 1)
+        return start, start + timedelta(days=6)
+    if "-Q" in period:  # quarter starts at month 1/4/7/10 → ends two months later
         year_s, q_s = period.split("-Q")
-        return date(int(year_s), (int(q_s) - 1) * 3 + 1, 1)
+        start = date(int(year_s), (int(q_s) - 1) * 3 + 1, 1)
+        return start, _month_end(date(start.year, start.month + 2, 1))
     parts = period.split("-")
     if len(parts) == 1:  # "2026" → year
-        return date(int(parts[0]), 1, 1)
+        return date(int(parts[0]), 1, 1), date(int(parts[0]), 12, 31)
     if len(parts) == 2:  # "2026-06" → month
-        return date(int(parts[0]), int(parts[1]), 1)
-    return date.fromisoformat(period)  # "2026-06-08" → day
+        start = date(int(parts[0]), int(parts[1]), 1)
+        return start, _month_end(start)
+    d = date.fromisoformat(period)  # "2026-06-08" → day
+    return d, d
+
+
+def _first_day_of_period(period: str, window: str | None = None) -> date:
+    """First calendar day of the window (format auto-detected from the key).
+
+    ``window`` is accepted for backwards compatibility but ignored.
+    """
+    return _period_bounds_of_key(period)[0]
 
 
 def _period_end_of_key(period: str) -> date:
-    """Last calendar day of the window identified by *period* (format auto-detected).
-
-    Mirrors :func:`_first_day_of_period`; together they give a key's real calendar
-    bounds regardless of granularity, so the rollup can decide "has this window
-    ended?" without trusting the (now fixed-monthly) window setting.
-    """
-    start = _first_day_of_period(period)
-    if "-W" in period:
-        return start + timedelta(days=6)
-    if "-Q" in period:  # quarter starts at month 1/4/7/10 → ends two months later
-        return _month_end(date(start.year, start.month + 2, 1))
-    parts = period.split("-")
-    if len(parts) == 1:  # "2026" → year
-        return date(start.year, 12, 31)
-    if len(parts) == 2:  # "2026-06" → month
-        return _month_end(start)
-    return start  # "2026-06-08" → day
+    """Last calendar day of the window identified by *period* (format auto-detected)."""
+    return _period_bounds_of_key(period)[1]
 
 
 def _period_ended(period: str, month_start: date) -> bool:
