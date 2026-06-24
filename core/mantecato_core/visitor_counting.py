@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 import threading
 from datetime import UTC, date, datetime, timedelta
@@ -40,6 +41,8 @@ from django.utils import timezone
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
+
+logger = logging.getLogger(__name__)
 
 # A visit ends after this much inactivity; the next hit starts a new visit.
 SESSION_TIMEOUT_S = 30 * 60
@@ -467,11 +470,6 @@ def _finished_period_keys(now: datetime | None = None) -> set[str]:
     return {k for k in keys if _period_ended(k, month_start)}
 
 
-def has_unrolled_past_periods(now: datetime | None = None) -> bool:
-    """Cheap check: is there ephemeral state for any window that has fully ended?"""
-    return bool(_finished_period_keys(now))
-
-
 def discard_expired_digests(now: datetime | None = None) -> int:
     """NULL the per-event ``visitor_key`` digests older than the retention window.
 
@@ -490,7 +488,9 @@ def discard_expired_digests(now: datetime | None = None) -> int:
     )
 
 
-def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
+def rollup_finished_periods(
+    now: datetime | None = None, finished_keys: set[str] | None = None
+) -> dict[str, int]:
     """Finalise every window before the current one, then discard its digests.
 
     Writes per-day site aggregates (:class:`VisitorDaily`, for the daily trend),
@@ -498,6 +498,9 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
     visitors and per-scope/landing breakdowns), then deletes the window's
     ephemeral state, scope-presence rows and salt. A Postgres advisory lock
     serialises concurrent calls; idempotent (a second run finds no state).
+
+    *finished_keys* lets a caller that has already computed the finished set (e.g.
+    the write-path guard) pass it in, avoiding a second scan of the period keys.
 
     Returns ``{"periods", "rows", "salts", "scope_rows"}``.
     """
@@ -512,7 +515,8 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
     window = _window()
     threshold = _bounce_threshold()
     month_start, _ = _period_bounds(utc_day(now or timezone.now()), window)
-    finished_keys = _finished_period_keys(now)
+    if finished_keys is None:
+        finished_keys = _finished_period_keys(now)
     result = {"periods": 0, "rows": 0, "salts": 0, "scope_rows": 0}
 
     with transaction.atomic():
@@ -815,8 +819,22 @@ def _period_end_of_key(period: str) -> date:
 
 
 def _period_ended(period: str, month_start: date) -> bool:
-    """True if *period*'s window ends strictly before the current month's first day."""
-    return bool(period) and _period_end_of_key(period) < month_start
+    """True if *period*'s window ends strictly before the current month's first day.
+
+    Defensive against an unparseable key: period keys are always produced by
+    :func:`_period_key_for_date` in a known format, so a malformed value can only
+    come from external DB corruption. Rather than let it abort the whole rollup
+    transaction (and block retention housekeeping), treat it as *not ended* — the
+    safest choice, since it leaves the row's state untouched instead of finalising
+    or deleting state we can't interpret.
+    """
+    if not period:
+        return False
+    try:
+        return _period_end_of_key(period) < month_start
+    except (ValueError, TypeError):
+        logger.warning("Skipping unparseable visitor period key %r during rollup", period)
+        return False
 
 
 def _derived_counts(g: dict[str, Any]) -> dict[str, int]:

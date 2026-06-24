@@ -39,6 +39,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 - The "Deduplicated within each month" caveat on the Visitors KPI is shown only
   for ranges that actually span more than one month, not on single-month, today,
   or realtime views.
+- The retention sweep (`discard_expired_digests`) now has a dedicated partial
+  index (`idx_we_visitor_key_expiry`, on `created_at` where `visitor_key IS NOT
+  NULL`): its age-only `UPDATE` no longer fell back to a sequential scan of
+  `website_event` on every throttled write-path tick.
+- A malformed/unparseable visitor period key (only reachable via DB corruption)
+  is now skipped with a warning instead of aborting the whole rollup transaction
+  and blocking retention housekeeping.
+- The write-path rollup computes the finished-window set once per tick (used as
+  both the guard and the rollup input) instead of scanning the period keys twice;
+  the now-unused `has_unrolled_past_periods` helper was removed.
 
 ### Removed
 - The `quarter` and `year` dedup windows (and configurable windows in general);

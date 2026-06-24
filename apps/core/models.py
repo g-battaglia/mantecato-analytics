@@ -277,6 +277,17 @@ class WebsiteEvent(models.Model):
                 condition=models.Q(event_type=2, visitor_key__isnull=False),
                 name="idx_we_visitor_key_evt",
             ),
+            # Retention sweep (``discard_expired_digests``) NULLs digests by age
+            # alone — ``created_at < cutoff AND visitor_key IS NOT NULL``, no
+            # ``website_id``/``event_type`` predicate — so it can't use the
+            # website-led indexes above. This partial index is led by
+            # ``created_at`` and scoped to the live (non-NULLed) rows, letting the
+            # periodic UPDATE range-seek the expiring rows instead of scanning.
+            models.Index(
+                fields=["created_at"],
+                condition=models.Q(visitor_key__isnull=False),
+                name="idx_we_visitor_key_expiry",
+            ),
         ]
 
     def __str__(self) -> str:

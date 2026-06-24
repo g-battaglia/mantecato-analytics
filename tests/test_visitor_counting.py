@@ -321,6 +321,31 @@ def test_discard_expired_digests_runs_without_a_finished_period():
     assert not WebsiteEvent.objects.filter(visitor_key="oldkey").exists()
 
 
+def test_rollup_skips_unparseable_period_key():
+    # A malformed period key can only reach the DB via corruption (keys are always
+    # produced by _period_key_for_date in a known format). It must NOT abort the
+    # rollup transaction: it is treated as "not ended" and left untouched, while a
+    # well-formed finished month is still finalised alongside it.
+    when = _days_ago(40)  # solidly in a previous (finished) calendar month
+    day = utc_day(when)
+    _visit(ip="1.1.1.1", when=when)
+    _visit(ip="2.2.2.2", when=when)
+
+    corrupt = VisitorDayState.objects.filter(website_id=WEBSITE_ID).first()
+    VisitorDayState.objects.filter(pk=corrupt.pk).update(period="2026-13")  # invalid month
+    VisitorSalt.objects.create(period="2026-13", salt=b"x" * 32)
+
+    rollup_finished_periods()  # must not raise
+
+    # The unparseable rows survive (skipped, not finalised/deleted)...
+    assert VisitorDayState.objects.filter(period="2026-13").exists()
+    assert VisitorSalt.objects.filter(period="2026-13").exists()
+    # ...while the well-formed finished month is finalised.
+    assert VisitorPeriod.objects.filter(
+        website_id=WEBSITE_ID, scope="site", period_start=day.replace(day=1)
+    ).exists()
+
+
 # --- import attribution: aggregate events into daily ------------------------
 
 

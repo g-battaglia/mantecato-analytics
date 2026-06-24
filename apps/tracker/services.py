@@ -103,17 +103,20 @@ def _maybe_rollup() -> None:
     _last_rollup_attempt = now
     try:
         from core.mantecato_core.visitor_counting import (
+            _finished_period_keys,
             discard_expired_digests,
-            has_unrolled_past_periods,
             rollup_finished_periods,
         )
 
         # Expire over-retention digests every throttle tick, not only when a month
         # finalises — otherwise a fixed monthly window would null them just once a
         # month. Cheap when caught up (matches no rows); independent of the rollup.
-        discard_expired_digests()
-        if has_unrolled_past_periods():
-            rollup_finished_periods()
+        discard_expired_digests(now)
+        # Compute the finished-window set once and reuse it as both the guard and the
+        # rollup input, so the period keys are scanned a single time per tick.
+        finished = _finished_period_keys(now)
+        if finished:
+            rollup_finished_periods(now, finished_keys=finished)
     except Exception:
         logger.warning("Lazy visitor rollup failed; will retry later", exc_info=True)
 
