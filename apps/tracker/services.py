@@ -116,9 +116,10 @@ def _maybe_rollup() -> None:
 def _parse_url(url: str) -> dict[str, str | None]:
     """Parse a page URL into its path component.
 
-    The query string is intentionally **discarded and never stored**: it can
-    carry personal data (``?email=``, ``?token=``, ``?name=``...) that has no
-    place in privacy-first aggregate analytics. ``url_query`` is always ``None``.
+    The query string and fragment are intentionally **discarded and never stored**:
+    they can carry personal data (``?email=``, ``?token=``, ``#access_token=``...)
+    that has no place in privacy-first aggregate analytics. ``url_query`` is
+    always ``None``.
 
     Args:
         url: The raw page URL from the tracker payload (may be empty).
@@ -133,8 +134,6 @@ def _parse_url(url: str) -> dict[str, str | None]:
     path = parsed.path or "/"
     if path == "/undefined":
         path = "/"
-    if parsed.fragment:
-        path = f"{path}#{parsed.fragment}"
     path = unquote(path)
     return {"url_path": path[:500], "url_query": None}
 

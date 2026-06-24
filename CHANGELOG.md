@@ -5,31 +5,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-### Added
-- **Configurable visitor dedup window**: `VISITOR_EXACT_WINDOW` now accepts
-  `quarter` and `year` in addition to `day`/`week`/`month`. A longer window
-  deduplicates returning visitors across more days (e.g. true monthly uniques)
-  instead of summing per-day uniques. All windows are fixed calendar periods
-  ≤ 13 months with no per-visit renewal.
-- **IP truncation for the visitor digest** (`VISITOR_HASH_IP_PREFIX_V4` / `_V6`,
-  default `auto`): keeps the full IP only for the `day` window and truncates to
-  `/24` + `/48` for any longer window — the CNIL/Garante IP-minimisation condition
-  that keeps a longer-lived first-party digest consent-free. Geolocation and
-  datacenter-bot detection still use the full IP.
-- Startup warnings for an invalid `VISITOR_EXACT_WINDOW` (falls back to `day`) and
-  for a `VISITOR_KEY_RETENTION_DAYS` shorter than the configured window.
-
 ### Changed
-- The dashboard labels the unique-visitor metric with its dedup window when the
-  window is longer than `day`.
-- Docs (`docs/privacy.md`, `docs/accuracy.md`): document the two legal bases —
-  `day` = "no persistent identifier"; longer windows = the consent-exempt
-  audience-measurement basis (CNIL Sheet 16 / Garante), with its conditions
-  (≤ 13-month identifier, IP truncation, transparency + opt-out, DPIA).
+- **Fixed, non-configurable visitor-counting privacy posture** (so it cannot be
+  misconfigured into needing a consent banner): the dedup window is fixed to one
+  **calendar month**, the digest IP is **always truncated** to `/24` (IPv4) /
+  `/48` (IPv6) before hashing, and the digest retention is fixed at **396 days**
+  (~13 months). The env vars `VISITOR_EXACT_WINDOW`, `VISITOR_HASH_IP_PREFIX_V4`,
+  `VISITOR_HASH_IP_PREFIX_V6` and `VISITOR_KEY_RETENTION_DAYS` are removed.
+- A returning visitor is now deduplicated within the calendar month; over a
+  multi-month range the per-month uniques are summed. The daily rollup finalises a
+  month only once it has ended.
+- The tracker sends engagement heartbeats via `fetch(keepalive, credentials:"omit")`
+  instead of `sendBeacon` (which forces `credentials:"include"`), so no first-party
+  cookies are ever sent. URL fragments (`#...`) are discarded like query strings.
+- Docs (`docs/privacy.md`, `docs/accuracy.md`): document the single fixed legal
+  posture — no device storage/access (no ePrivacy trigger) + consent-exempt
+  audience measurement (first-party, IP masked, ≤13-month identifier, ≤25-month
+  retention, transparency + GPC), all satisfied by construction.
 
-### Notes
-- The shipped default stays `VISITOR_EXACT_WINDOW=day`; the change applies going
-  forward (historical digests cannot be retro-deduplicated — the salts are gone).
+### Fixed
+- IPv4-mapped IPv6 client addresses (`::ffff:a.b.c.d`) are now unwrapped to IPv4
+  before truncation, so they mask to the `/24` block instead of collapsing every
+  such client to `::` (which would have merged them into one visitor).
+
+### Removed
+- The `quarter` and `year` dedup windows (and configurable windows in general);
+  the year window had a retention-boundary read bug. The fixed monthly window is
+  not affected.
 
 ## [4.0.0] — 2026-06-15
 

@@ -4,9 +4,8 @@ Pageview aggregates plus **exact** site-level visitor/visit/bounce/duration
 metrics from the cookieless compute-and-discard counter, and a referrer-**domain**
 traffic-source breakdown. No full referrer URL, UTM, revenue, retention, funnel,
 journey metrics, and no persistent per-person identifier. Unique visitors are
-exact over the configured exactness window (``VISITOR_EXACT_WINDOW``, default
-month); a range spanning several windows sums per-window uniques (no cross-window
-linkage).
+exact over the fixed monthly dedup window; a range spanning several months sums
+per-month uniques (no cross-month linkage).
 """
 
 from __future__ import annotations

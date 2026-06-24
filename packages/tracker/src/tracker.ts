@@ -292,19 +292,16 @@ export function createTracker(config: TrackerConfig): Tracker {
     });
     const apiUrl = `${baseUrl}${endpoint}`;
     try {
-      // Prefer sendBeacon (survives unload); a "text/plain" Blob is CORS-safe and
-      // still parses as JSON server-side. Fall back to keepalive fetch.
-      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon(apiUrl, new Blob([body], { type: "text/plain" }));
-      } else {
-        void fetch(apiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          keepalive: true,
-          credentials,
-        });
-      }
+      // Use keepalive fetch instead of sendBeacon: the Beacon API fixes
+      // credentials to "include", which can leak existing first-party cookies to
+      // same-origin/proxied collectors. The tracker guarantee is no cookies.
+      void fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+        credentials: "omit",
+      });
     } catch {
       // Silently ignore tracking failures
     }

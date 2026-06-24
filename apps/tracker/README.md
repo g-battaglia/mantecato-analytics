@@ -7,14 +7,15 @@ This module receives anonymous analytics events from `@mantecato/tracker` via
 
 - Pageviews (`event_type = 1`)
 - Custom events by name only (`event_type = 2`)
-- URL path/query, page title, hostname
+- URL path only (query string and fragment discarded), page title, hostname
 - Coarse browser, OS, and device labels parsed from the User-Agent
 - Country code
 - Event-level bot flag and bot reason
 
-It does not store sessions, visit IDs, visitor IDs, referrers, UTM parameters,
-click IDs, screen size, language, event payload/properties, identify data, or
-revenue data.
+It does not store sessions, visit IDs, raw IPs, raw User-Agents, query strings,
+URL fragments, UTM parameters, click IDs, screen size, language, event
+payload/properties, identify data, or revenue data. Referrers are reduced to the
+bare referring domain.
 
 ## Wire Protocol
 
@@ -59,12 +60,12 @@ Only `name` is accepted for custom events. Any submitted properties are ignored.
 
 No session cache token is returned.
 
-## Visitor Estimates
+## Visitor Counts
 
-During ingestion, human pageviews update hourly HyperLogLog sketches using a
-monthly rotating HMAC over coarse request attributes already present in the
-HTTP request. The transient digest is discarded immediately. The database only
-stores aggregate sketch registers by website, hour, and scope.
+During ingestion, the server derives a window-scoped HMAC digest from request
+attributes already present in the HTTP request. Raw IPs and raw User-Agents are
+never stored; the digest is nulled after retention and the window salt is
+discarded at window end.
 
 ## Architecture
 
@@ -82,4 +83,3 @@ ua.py          Coarse User-Agent parsing and bot classification
 |---|---|---|
 | `POST` | `/api/send` | Pageview/custom-event ingestion |
 | `GET` | `/api/script` | JavaScript tracker bundle |
-

@@ -172,6 +172,9 @@ def truncate_ip(ip: str, ipv4_prefix: int = 24, ipv6_prefix: int = 48) -> str:
     basis; an analogous prefix (default ``/48``) is applied to IPv6.
 
     ``ipv4_prefix >= 32`` / ``ipv6_prefix >= 128`` mean "no truncation" (full IP).
+    IPv4-mapped IPv6 addresses (``::ffff:203.0.113.7``) are unwrapped to their IPv4
+    form first, so an IPv4 client masks to ``203.0.113.0`` (the ``/24`` block) and
+    dedups consistently whether it arrives as IPv4 or IPv4-mapped — not to ``::``.
     Non-IP strings are returned unchanged (defensive — input is post-``_strip_port``).
 
     Args:
@@ -188,6 +191,10 @@ def truncate_ip(ip: str, ipv4_prefix: int = 24, ipv6_prefix: int = 48) -> str:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return ip
+    # Treat IPv4-mapped IPv6 (``::ffff:a.b.c.d``) as the IPv4 address it carries,
+    # else the /48 branch would collapse every IPv4 client to ``::``.
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
     if addr.version == 4:
         if ipv4_prefix >= 32:
             return str(addr)

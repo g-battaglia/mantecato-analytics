@@ -441,10 +441,6 @@ Set at least these values:
 | `GEO_DATABASE_URL` | — | Custom GeoIP database URL |
 | `GEOIP_PATH` | `./geo/GeoLite2-City.mmdb` | Path to GeoIP database file |
 | `CLIENT_IP_HEADER` | — | Custom IP header (e.g. `CF-Connecting-IP`) |
-| `VISITOR_EXACT_WINDOW` | `day` | Visitor dedup window: `day`/`week`/`month`/`quarter`/`year`. Longer = cross-day dedup; shifts the legal basis & auto-truncates IP (see [docs/privacy.md](docs/privacy.md)) |
-| `VISITOR_HASH_IP_PREFIX_V4` | `auto` | IPv4 prefix kept for the visitor digest (`auto` = full IP at `day`, `/24` for longer windows) |
-| `VISITOR_HASH_IP_PREFIX_V6` | `auto` | IPv6 prefix kept for the visitor digest (`auto` = full IP at `day`, `/48` for longer windows) |
-| `VISITOR_KEY_RETENTION_DAYS` | `396` | Days the per-event dedup digest is kept before the rollup nulls it (~13 months) |
 | `SENTRY_DSN` | — | Sentry DSN for error tracking |
 | `LANGUAGE_CODE` | `en-us` | Default language |
 | `TIME_ZONE` | `UTC` | Server time zone |

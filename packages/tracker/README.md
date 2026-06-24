@@ -11,11 +11,19 @@ Collected payload fields are limited to:
 - `url`
 - `title`
 - `name` for custom events
+- `referrer` when available (reduced to a bare domain server-side)
 - `tag` when configured
 
-The tracker does not send cookies, persistent identifiers, referrers, UTM
-parameters, screen size, language, event properties, identify payloads,
-revenue data, or session replay data.
+The tracker does not send cookies, persistent identifiers, UTM parameters, screen
+size, language, event properties, identify payloads, revenue data, or session
+replay data. It uses `credentials: "omit"` by default; engagement heartbeats also
+force `credentials: "omit"` so existing first-party cookies are not sent to the
+collector.
+
+Keep `credentials: "omit"` / `data-fetch-credentials="omit"` for the no-cookie
+deployment posture. Setting `include` or proxying the collector in a way that
+forwards site cookies can send existing first-party cookies to the collector and
+requires a fresh privacy/consent review.
 
 ## Installation
 
@@ -100,7 +108,7 @@ interface TrackerConfig {
   excludeSearch?: boolean;
   excludeHash?: boolean;
   beforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload | false | null | undefined;
-  credentials?: RequestCredentials;
+  credentials?: RequestCredentials; // default "omit"; "include" can send cookies
 }
 ```
 

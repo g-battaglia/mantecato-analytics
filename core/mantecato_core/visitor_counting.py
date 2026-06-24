@@ -6,23 +6,22 @@ any persistent per-person identifier.
 
 How it stays compliant:
 
-- At ingestion the server hashes ``(website_id + client IP + User-Agent)`` with
-  a **random per-window salt** into an ephemeral digest (``visitor_key``). The
-  IP and User-Agent are used transiently and never stored.
-- The digest deduplicates a visitor **within one exactness window** (day, week or
-  month — ``settings.VISITOR_EXACT_WINDOW``). The salt is regenerated each window
-  and **deleted** by the rollup, so digests can never be recomputed or linked
-  across windows (forward secrecy; no cross-window identity, no returning-visitor
-  tracking).
+- At ingestion the server hashes ``(website_id + truncated client IP + User-Agent)``
+  with a **random per-window salt** into an ephemeral digest (``visitor_key``).
+  The IP is always coarsened (``/24`` IPv4, ``/48`` IPv6) before hashing, and the
+  IP/User-Agent are used transiently and never stored.
+- The digest deduplicates a visitor **within one fixed calendar month**. The salt
+  is regenerated each month and **deleted** by the rollup, so digests can never be
+  recomputed or linked across months (forward secrecy; no cross-window identity,
+  no returning-visitor tracking).
 - Only aggregate integer counts survive (:class:`VisitorDaily` per day,
   :class:`VisitorPeriod` per window).
 
-Window stable for *N* days ⇒ unique visitors are exact over that window (and any
-sub-range of the live window). Longer window = more precision at the cost of the
-ephemeral state living that long before discard. Because there is no terminal
-storage/access this falls outside ePrivacy Art.5(3)/PECR; the transient IP+UA
-processing rests on legitimate interest (audience measurement). See
-``docs/privacy.md``.
+The dedup window, the IP truncation and the retention are **fixed and not
+configurable** so the privacy posture cannot be misconfigured. Because there is no
+terminal storage/access this falls outside ePrivacy Art.5(3)/PECR regardless; the
+transient truncated-IP+UA processing rests on the consent-exempt audience-measurement
+basis (first-party, IP masked, identifier ≤ 13 months). See ``docs/privacy.md``.
 """
 
 from __future__ import annotations
@@ -48,11 +47,18 @@ SESSION_TIMEOUT_S = 30 * 60
 # Fixed key for the transaction-scoped advisory lock that serialises rollups.
 _ROLLUP_LOCK_KEY = 873_421_001
 
-# Supported dedup (salt) windows, longest = year. All are FIXED calendar periods
-# (never sliding/per-visit) and <= 13 months, so a longer salt stays inside the
-# CNIL/Garante consent-exempt audience-measurement envelope (identifier lifetime
-# <= 13 months, no automatic extension on each visit). See docs/privacy.md.
-_VALID_WINDOWS = ("day", "week", "month", "quarter", "year")
+# The dedup (salt) window is FIXED to one calendar month — not configurable. A
+# fixed monthly salt is a calendar period (never sliding/per-visit) well under the
+# 13-month CNIL/Garante identifier ceiling, so the cookieless digest stays inside
+# the consent-exempt audience-measurement envelope by construction. See docs/privacy.md.
+_WINDOW = "month"
+
+# Network prefix kept from the client IP before it feeds the digest hash — FIXED,
+# not configurable. /24 (IPv4) / /48 (IPv6) is the minimisation Garante (mask the
+# 4th octet) / CNIL (drop the last octet) require for a consent-exempt audience
+# identifier. Geo (country) and datacenter-bot detection still use the full IP.
+_DIGEST_IPV4_PREFIX = 24
+_DIGEST_IPV6_PREFIX = 48
 
 # Process-local cache of the current window's salt. Keyed by period key.
 _SALT_CACHE: dict[str, bytes] = {}
@@ -65,20 +71,17 @@ _SALT_LOCK = threading.Lock()
 
 
 def _window() -> str:
-    """Return the configured exactness window, defaulting to ``day``.
+    """Return the dedup window — always ``month`` (fixed, not configurable).
 
-    Mirrors the ``VISITOR_EXACT_WINDOW`` default in settings: with ``day``,
-    unique visitors over a multi-day range is the sum of per-day uniques (the
-    conventional, Umami-aligned figure); ``month`` gives true monthly uniques
-    with no cross-day double counting. See ``docs/privacy.md``.
+    A returning visitor is deduplicated within the calendar month and counted once
+    per month over any range; the salt rotates monthly. See ``docs/privacy.md``.
     """
-    w = str(getattr(settings, "VISITOR_EXACT_WINDOW", "day")).strip().lower()
-    return w if w in _VALID_WINDOWS else "day"
+    return _WINDOW
 
 
 def current_window() -> str:
-    """Public accessor for the configured exactness window."""
-    return _window()
+    """Public accessor for the dedup window (always ``month``)."""
+    return _WINDOW
 
 
 def utc_day(value: datetime) -> date:
@@ -89,17 +92,13 @@ def utc_day(value: datetime) -> date:
 
 
 def _period_key_for_date(d: date, window: str) -> str:
-    """Return the period key for *d*: day ``2026-06-08`` / week ``2026-W23`` /
-    month ``2026-06`` / quarter ``2026-Q2`` / year ``2026``."""
+    """Return the period key for *d*: month ``2026-06`` (or day ``2026-06-08`` /
+    week ``2026-W23`` for legacy rows)."""
     if window == "day":
         return d.isoformat()
     if window == "week":
         iso = d.isocalendar()
         return f"{iso.year:04d}-W{iso.week:02d}"
-    if window == "quarter":
-        return f"{d.year:04d}-Q{(d.month - 1) // 3 + 1}"
-    if window == "year":
-        return f"{d.year:04d}"
     return f"{d.year:04d}-{d.month:02d}"
 
 
@@ -121,12 +120,6 @@ def _period_bounds(d: date, window: str) -> tuple[date, date]:
     if window == "week":
         start = d - timedelta(days=d.weekday())  # ISO week starts Monday
         return start, start + timedelta(days=6)
-    if window == "quarter":
-        q_start_month = ((d.month - 1) // 3) * 3 + 1
-        start = date(d.year, q_start_month, 1)
-        return start, _month_end(date(d.year, q_start_month + 2, 1))
-    if window == "year":
-        return date(d.year, 1, 1), date(d.year, 12, 31)
     return d.replace(day=1), _month_end(d)
 
 
@@ -183,31 +176,6 @@ def get_or_create_salt(period: str) -> bytes:
     return salt
 
 
-def _digest_ip_prefixes() -> tuple[int, int]:
-    """Return ``(ipv4_prefix, ipv6_prefix)`` to apply to the IP before hashing.
-
-    Default ``"auto"``: keep the **full** IP only for the daily window (no
-    persistent identifier, Plausible/Fathom-style) and truncate to ``/24`` + ``/48``
-    for any longer window — IP minimisation required by CNIL/Garante to keep a
-    longer-lived digest inside the consent-exempt audience-measurement basis.
-    Explicit integer settings override per family. See docs/privacy.md.
-    """
-    is_day = _window() == "day"
-
-    def resolve(raw: object, full: int, truncated: int) -> int:
-        s = str(raw).strip().lower()
-        if s == "auto":
-            return full if is_day else truncated
-        try:
-            return max(0, min(full, int(s)))
-        except (TypeError, ValueError):
-            return full if is_day else truncated
-
-    v4 = resolve(getattr(settings, "VISITOR_HASH_IP_PREFIX_V4", "auto"), 32, 24)
-    v6 = resolve(getattr(settings, "VISITOR_HASH_IP_PREFIX_V6", "auto"), 128, 48)
-    return v4, v6
-
-
 def compute_visitor_key(
     salt: bytes,
     *,
@@ -215,18 +183,18 @@ def compute_visitor_key(
     ip: str | None,
     user_agent: str | None,
 ) -> str:
-    """Derive the window-scoped, site-scoped dedup digest (hex).
+    """Derive the month-scoped, site-scoped dedup digest (hex).
 
-    The IP is first coarsened per :func:`_digest_ip_prefixes` (full IP for the
-    daily window, ``/24`` + ``/48`` for longer windows), so a multi-day salt cannot
-    turn the digest into a precise fingerprint. The IP/User-Agent inputs are never
-    stored; only this digest is, and only until the rollup discards the salt.
+    The IP is always coarsened to ``/24`` (IPv4) / ``/48`` (IPv6) before hashing
+    (:data:`_DIGEST_IPV4_PREFIX` / :data:`_DIGEST_IPV6_PREFIX`), so the monthly salt
+    cannot turn the digest into a precise fingerprint — the CNIL/Garante IP-masking
+    condition, applied unconditionally. The IP/User-Agent inputs are never stored;
+    only this digest is, and only until the rollup discards the salt.
     """
     if ip:
         from apps.tracker.ip import truncate_ip
 
-        v4, v6 = _digest_ip_prefixes()
-        ip = truncate_ip(ip, v4, v6)
+        ip = truncate_ip(ip, _DIGEST_IPV4_PREFIX, _DIGEST_IPV6_PREFIX)
     subject = "|".join([str(website_id), ip or "", user_agent or ""])
     return hmac.new(salt, subject.encode("utf-8"), hashlib.sha256).hexdigest()
 

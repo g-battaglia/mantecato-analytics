@@ -188,6 +188,30 @@ describe("controls", () => {
     expect(call[1].credentials).toBe("omit");
   });
 
+  it("never sends credentials on engagement heartbeats", async () => {
+    Object.defineProperty(document, "readyState", {
+      value: "complete",
+      writable: true,
+      configurable: true,
+    });
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(1_000);
+
+    const tracker = createTracker(makeConfig({ autoTrack: true, credentials: "include" }));
+    await Promise.resolve();
+
+    now.mockReturnValue(17_000);
+    window.dispatchEvent(new Event("pagehide"));
+    await Promise.resolve();
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]?.[1]?.credentials).toBe("include");
+    const engagementCall = calls.find(([, init]) => JSON.parse(String(init?.body)).type === "engagement");
+    expect(engagementCall?.[1]?.credentials).toBe("omit");
+
+    tracker.destroy();
+  });
+
   it("stops and resumes with disable/enable", async () => {
     const tracker = createTracker(makeConfig());
     tracker.disable();

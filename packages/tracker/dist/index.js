@@ -162,17 +162,13 @@ function createTracker(config) {
     });
     const apiUrl = `${baseUrl}${endpoint}`;
     try {
-      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon(apiUrl, new Blob([body], { type: "text/plain" }));
-      } else {
-        void fetch(apiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          keepalive: true,
-          credentials
-        });
-      }
+      void fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+        credentials: "omit"
+      });
     } catch {
     }
   }

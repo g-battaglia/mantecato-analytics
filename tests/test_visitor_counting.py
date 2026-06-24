@@ -1,9 +1,10 @@
 """Tests for the cookieless **exact** visitor/visit/bounce counter.
 
-Default exactness window is ``day`` (Umami-aligned: unique visitors over a range
-= sum of daily uniques). Monthly dedup is verified explicitly via override.
-Covers the visit/bounce engine, the read path, the rollup, per-event digests
-(hourly visitors, realtime, import attribution), and privacy guarantees.
+The dedup window is FIXED to one calendar month (not configurable): a returning
+visitor is counted once per month, and the daily rollup finalises a month only
+once it has ended. Covers the visit/bounce engine, the read path, the rollup,
+per-event digests (hourly visitors, realtime, import attribution), always-on IP
+truncation, and privacy guarantees.
 """
 
 from __future__ import annotations
@@ -151,29 +152,21 @@ def test_bot_not_counted():
     assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 0
 
 
-# --- unique semantics: day window (default) vs month -------------------------
+# --- unique semantics: fixed monthly dedup window ----------------------------
 
 
-def test_unique_visitors_summed_per_day_default():
-    # Same visitor on three different days → with the day window, 3 daily uniques.
-    for n in (0, 1, 2):
-        _visit(ip="1.1.1.1", when=_days_ago(n))
-    s, e = _full_range()
-    stats = read_visit_stats(WEBSITE_ID, s, e)
-    assert stats["unique_visitors"] == 3
-    assert stats["visits"] == 3
-    assert stats["bounces"] == 3
-
-
-@override_settings(VISITOR_EXACT_WINDOW="month")
 def test_unique_visitors_monthly_dedup():
-    # Same visitor on three days of the same month → ONE unique (month window).
+    # Same visitor on three days of the same month → ONE unique (fixed month window),
+    # but three separate visits/bounces (each a distinct >30-min-apart session).
     base = timezone.now().replace(day=10, hour=12, minute=0, second=0, microsecond=0)
     for d in (10, 15, 20):
         _visit(ip="1.1.1.1", when=base.replace(day=d))
     start = base.replace(day=1)
     end = base.replace(day=28) + timedelta(hours=1)
-    assert read_visit_stats(WEBSITE_ID, start, end)["unique_visitors"] == 1
+    stats = read_visit_stats(WEBSITE_ID, start, end)
+    assert stats["unique_visitors"] == 1
+    assert stats["visits"] == 3
+    assert stats["bounces"] == 3
 
 
 def test_distinct_visitors_counted_separately():
@@ -224,22 +217,26 @@ def test_per_scope_unique_visitors_filterable_by_country():
     assert counts["/a"] == 1
 
 
-# --- rollup (day window) ----------------------------------------------------
+# --- rollup (monthly window: finalises a month only once it has ended) -------
 
 
-def test_rollup_finalizes_and_discards_past_day():
-    when = _days_ago(1)
+def test_rollup_finalizes_and_discards_past_month():
+    when = _days_ago(40)  # solidly in a previous (finished) calendar month
     day = utc_day(when)
+    period_start = day.replace(day=1)
+    period_key = f"{day.year:04d}-{day.month:02d}"
     _visit(ip="1.1.1.1", when=when)
     _visit(ip="2.2.2.2", when=when)
     rollup_finished_periods()
     daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=day)
     assert daily.unique_visitors == 2
-    period = VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site", period_start=day)
+    period = VisitorPeriod.objects.get(
+        website_id=WEBSITE_ID, scope="site", period_start=period_start
+    )
     assert period.unique_visitors == 2
     assert not VisitorDayState.objects.filter(day=day).exists()
-    assert not VisitorSalt.objects.filter(period=day.isoformat()).exists()
-    # Still readable from the finalised aggregate.
+    assert not VisitorSalt.objects.filter(period=period_key).exists()
+    # Still readable from the retained per-event digests (kept until retention).
     assert (
         read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
             "unique_visitors"
@@ -248,14 +245,15 @@ def test_rollup_finalizes_and_discards_past_day():
     )
 
 
-def test_rollup_leaves_current_day_untouched():
+def test_rollup_leaves_current_month_untouched():
+    # A visit in the current month is NOT finalised: the month is still open.
     _visit(when=_today())
     rollup_finished_periods()
     assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 1
 
 
 def test_rollup_idempotent():
-    _visit(ip="1.1.1.1", when=_days_ago(1))
+    _visit(ip="1.1.1.1", when=_days_ago(40))
     rollup_finished_periods()
     rollup_finished_periods()
     assert VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site").unique_visitors == 1
@@ -344,6 +342,15 @@ def test_query_string_not_persisted():
     )
     ev = WebsiteEvent.objects.get(website_id=WEBSITE_ID)
     assert ev.url_path == "/checkout" and ev.url_query is None
+
+
+def test_url_fragment_not_persisted():
+    from apps.tracker.services import _parse_url
+
+    assert _parse_url("/oauth/callback#access_token=secret") == {
+        "url_path": "/oauth/callback",
+        "url_query": None,
+    }
 
 
 # --- engagement beacons (recorded; do not break ingestion) ------------------
@@ -462,62 +469,38 @@ def test_per_scope_unique_visitors_beyond_retention():
     assert counts["/x"] == 2 and counts["/y"] == 1
 
 
-# --- dedup horizon: configurable salt window (day..year) ---------------------
+# --- dedup horizon: fixed monthly salt window (not configurable) -------------
 
 
-@pytest.mark.parametrize(
-    "window,same_a,same_b,next_period",
-    [
-        ("day", datetime(2026, 6, 10, 1), datetime(2026, 6, 10, 23), datetime(2026, 6, 11, 1)),
-        # ISO week 24/2026 is Mon 8 Jun – Sun 14 Jun; 15 Jun is the next week.
-        ("week", datetime(2026, 6, 8, 1), datetime(2026, 6, 14, 23), datetime(2026, 6, 15, 1)),
-        ("month", datetime(2026, 6, 1, 1), datetime(2026, 6, 30, 23), datetime(2026, 7, 1, 1)),
-        ("quarter", datetime(2026, 7, 1, 1), datetime(2026, 9, 30, 23), datetime(2026, 10, 1, 1)),
-        ("year", datetime(2026, 1, 1, 1), datetime(2026, 12, 31, 23), datetime(2027, 1, 1, 1)),
-    ],
-)
-def test_visitor_key_stable_within_window_rotates_across(window, same_a, same_b, next_period):
-    # Same person → same digest inside the dedup window (cross-day dedup), and a
-    # fresh digest in the next window (salt rotation = forward secrecy). IP kept
-    # full here so the test isolates the *window* behaviour from IP truncation.
-    a, b, c = (t.replace(tzinfo=UTC) for t in (same_a, same_b, next_period))
-    with override_settings(
-        VISITOR_EXACT_WINDOW=window,
-        VISITOR_HASH_IP_PREFIX_V4="32",
-        VISITOR_HASH_IP_PREFIX_V6="128",
-    ):
-        kw = dict(website_id=WEBSITE_ID, ip="1.2.3.4", user_agent="UA")
-        k_a = visitor_key_for(occurred_at=a, **kw)
-        k_b = visitor_key_for(occurred_at=b, **kw)
-        k_c = visitor_key_for(occurred_at=c, **kw)
-    assert k_a == k_b, "same person, same window → one visitor"
-    assert k_a != k_c, "same person, next window → counted again (salt rotated)"
+def test_window_is_fixed_to_month():
+    # The dedup window is hardcoded; there is no setting that changes it.
+    assert visitor_counting.current_window() == "month"
 
 
-# --- IP truncation for the digest (CNIL/Garante minimisation) ----------------
+def test_visitor_key_stable_within_month_rotates_across():
+    # Same person → same digest inside the calendar month (cross-day dedup), and a
+    # fresh digest in the next month (salt rotation = forward secrecy).
+    a = datetime(2026, 6, 1, 1, tzinfo=UTC)
+    b = datetime(2026, 6, 30, 23, tzinfo=UTC)
+    c = datetime(2026, 7, 1, 1, tzinfo=UTC)
+    kw = dict(website_id=WEBSITE_ID, ip="1.2.3.4", user_agent="UA")
+    k_a = visitor_key_for(occurred_at=a, **kw)
+    k_b = visitor_key_for(occurred_at=b, **kw)
+    k_c = visitor_key_for(occurred_at=c, **kw)
+    assert k_a == k_b, "same person, same month → one visitor"
+    assert k_a != k_c, "same person, next month → counted again (salt rotated)"
 
 
-def test_ip_truncation_auto_dedups_subnet_for_long_window():
+# --- IP truncation for the digest (always on, CNIL/Garante minimisation) -----
+
+
+def test_ip_always_truncated_to_subnet():
     when = datetime(2026, 6, 10, 12, tzinfo=UTC)
     kw = dict(website_id=WEBSITE_ID, occurred_at=when, user_agent="UA")
-    with override_settings(VISITOR_EXACT_WINDOW="month"):
-        # auto → /24 at a >day window: same subnet collapses to one visitor.
-        assert visitor_key_for(ip="203.0.113.7", **kw) == visitor_key_for(ip="203.0.113.250", **kw)
-    with override_settings(VISITOR_EXACT_WINDOW="day"):
-        # auto → full IP in daily mode (Plausible-style, no persistent identifier).
-        assert visitor_key_for(ip="203.0.113.7", **kw) != visitor_key_for(ip="203.0.113.250", **kw)
-
-
-def test_ip_prefix_override_forces_full_ip():
-    when = datetime(2026, 6, 10, 12, tzinfo=UTC)
-    kw = dict(website_id=WEBSITE_ID, occurred_at=when, user_agent="UA")
-    with override_settings(VISITOR_EXACT_WINDOW="month", VISITOR_HASH_IP_PREFIX_V4="32"):
-        assert visitor_key_for(ip="203.0.113.7", **kw) != visitor_key_for(ip="203.0.113.250", **kw)
-
-
-def test_invalid_window_falls_back_to_day():
-    with override_settings(VISITOR_EXACT_WINDOW="decade"):
-        assert visitor_counting.current_window() == "day"
+    # Always /24: two hosts in the same subnet + same UA collapse to one visitor...
+    assert visitor_key_for(ip="203.0.113.7", **kw) == visitor_key_for(ip="203.0.113.250", **kw)
+    # ...but different /24 subnets stay distinct.
+    assert visitor_key_for(ip="203.0.113.7", **kw) != visitor_key_for(ip="198.51.100.7", **kw)
 
 
 def test_truncate_ip_masks_host_bits():
@@ -526,5 +509,7 @@ def test_truncate_ip_masks_host_bits():
     assert truncate_ip("203.0.113.77", 24, 48) == "203.0.113.0"
     assert truncate_ip("203.0.113.77", 32, 128) == "203.0.113.77"  # full IP
     assert truncate_ip("2001:db8:abcd:1234::1", 24, 48) == "2001:db8:abcd::"
+    # IPv4-mapped IPv6 is unwrapped to IPv4 and masked as /24, never to "::".
+    assert truncate_ip("::ffff:203.0.113.77", 24, 48) == "203.0.113.0"
     assert truncate_ip("not-an-ip", 24, 48) == "not-an-ip"  # defensive passthrough
     assert truncate_ip("", 24, 48) == ""

@@ -103,41 +103,32 @@ with the proxy mapping `/assets/m.js → /api/script` and `/collect → /api/sen
   users on some VPNs/carriers. If you filter bots and see legit users vanish,
   disable it (`DETECT_DATACENTER_IPS=false`) or tune `DATACENTER_CIDRS`.
 
-## 4. Deduplicate returning visitors across days (`VISITOR_EXACT_WINDOW`)
+## 4. How returning visitors are deduplicated (fixed monthly window)
 
-By default the visitor digest salt rotates **daily**, so "unique visitors" over a
-multi-day range is the **sum of daily uniques** — a visitor returning on 3 days
-counts as 3 (matching Umami's headline, but inflated vs true people). Set a longer
-**dedup window** to deduplicate returning visitors within it:
+The visitor digest salt rotates **once per calendar month** — a fixed,
+non-configurable window chosen so the privacy posture cannot be misconfigured. A
+returning visitor is therefore counted **once per month**:
 
-| `VISITOR_EXACT_WINDOW` | Dedup horizon | Notes |
-|---|---|---|
-| `day` (default) | within a day | No persistent identifier (Plausible-style). |
-| `week` / `month` / `quarter` / `year` | within that period | True within-window uniques; salt = identifier lives that long (≤ 13 months). |
+- Within a month, the same person (same `/24` subnet + User-Agent) is one unique
+  visitor, however many days they return.
+- Over a range **longer than a month**, the per-month uniques are **summed** (no
+  cross-month linkage), so "unique visitors" for a 6-month range is the sum of the
+  six monthly figures, not a single 6-month dedup.
 
-```
-VISITOR_EXACT_WINDOW=month   # exact monthly uniques; recommended balance
-```
-
-Trade-offs:
-- A longer window **deduplicates more** but lengthens the identifier lifetime, so
-  it **shifts the legal basis** to the consent-exempt audience-measurement
-  exemption and **auto-enables IP truncation** (`/24` + `/48`). That truncation
-  slightly lowers dedup precision (visitors on the same subnet + identical
-  User-Agent merge). See [privacy.md](privacy.md) for the conditions (≤ 13-month
-  identifier, transparency + opt-out, DPIA).
-- Ranges **longer than the window** still sum per-window uniques, so pick the
-  window to match the ranges you care about (e.g. `month` for "this month").
-- Changing the window applies **going forward** — past windows keep their already
-  finalised, salt-discarded counts.
+Precision trade-off: because the IP is always truncated to `/24` (+ `/48` for
+IPv6) before hashing — the CNIL/Garante minimisation condition — distinct visitors
+who share a `/24` subnet **and** an identical User-Agent in the same month merge
+into one. This is the deliberate, fixed cost of needing no consent banner; see
+[privacy.md](privacy.md).
 
 ## 5. Operational notes
 
 - **Deploy propagation:** `/api/script` is served with `Cache-Control:
   max-age=86400`, so tracker changes take up to **24h** to fully roll out as
   browser caches expire. Lower it at your proxy if you need faster propagation.
-- **Delivery reliability is already handled:** the initial pageview is sent on
-  load with `fetch(keepalive)`, and engagement beacons use `navigator.sendBeacon`,
-  so events survive page unload.
+- **Delivery reliability is already handled:** pageviews and engagement heartbeats
+  are sent with `fetch(..., keepalive: true, credentials: "omit")`, so unload
+  delivery stays reliable without sending existing first-party cookies to the
+  collector.
 - **Run the rollup** (`manage.py rollup_visitors`) daily for the retention
   guarantee; it does not affect live counts.

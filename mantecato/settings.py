@@ -196,56 +196,24 @@ MIDDLEWARE += [
 # in production to reduce log noise.
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 
-# Dedup (salt) window for cookieless unique-visitor counting:
-# "day" | "week" | "month" | "quarter" | "year". The dedup salt is stable for
-# this fixed calendar window, so a returning visitor is counted once per window
-# (cross-day/cross-window deduplication grows with the window length).
-#   "day"   → no persistent identifier (salt discarded every 24h, Plausible-style);
-#             unique visitors over a range = sum of daily uniques (Umami-aligned).
-#   longer  → true within-window uniques (no double counting up to the window).
-# All options are FIXED periods <= 13 months with no per-visit renewal, so a
-# longer window stays inside the CNIL/Garante consent-exempt audience-measurement
-# envelope — but it shifts the legal basis (see docs/privacy.md) and you should
-# enable IP truncation (below). Default stays "day" (safest shipped default).
-VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
-_VALID_VISITOR_WINDOWS = ("day", "week", "month", "quarter", "year")
-if VISITOR_EXACT_WINDOW not in _VALID_VISITOR_WINDOWS:
-    logging.getLogger("mantecato.config").warning(
-        "VISITOR_EXACT_WINDOW=%r is not one of %s; falling back to 'day'.",
-        VISITOR_EXACT_WINDOW,
-        _VALID_VISITOR_WINDOWS,
-    )
-
-# IP precision for the visitor digest input (network prefix kept before hashing).
-# "auto" keeps the FULL IP only when VISITOR_EXACT_WINDOW="day" (no persistent
-# identifier) and truncates to /24 (IPv4) + /48 (IPv6) for any longer window.
-# Truncation is the CNIL ("truncate the last IPv4 byte") / Garante (mask >= 4th
-# octet) condition for a consent-exempt audience-measurement identifier that lives
-# longer than 24h. It only affects the digest; geo and datacenter-bot detection
-# keep the full IP. Set an integer (e.g. 24 / 48, or 32 / 128 for full) to override.
-VISITOR_HASH_IP_PREFIX_V4 = _env_str("VISITOR_HASH_IP_PREFIX_V4", "auto").strip().lower()
-VISITOR_HASH_IP_PREFIX_V6 = _env_str("VISITOR_HASH_IP_PREFIX_V6", "auto").strip().lower()
+# Cookieless unique-visitor counting has a FIXED, NON-CONFIGURABLE privacy posture
+# so it cannot be misconfigured into needing a consent banner or wrong counts:
+#   - dedup (salt) window = one calendar month (core/.../visitor_counting.py:_WINDOW)
+#   - digest IP truncation = always /24 (IPv4) + /48 (IPv6) (_DIGEST_IP*_PREFIX)
+#   - digest retention = 396 days (~13 months), the constant below
+# A returning visitor is deduplicated within the month (the salt rotates monthly and
+# is discarded at month end → forward secrecy). All three are fixed first-party,
+# IP-masked, ≤13-month-identifier values → consent-exempt audience measurement.
+# See docs/privacy.md.
 
 # How long the per-event dedup digest (``website_event.visitor_key``) is kept so
 # exact visitor/visit/bounce counts can be computed — and **filtered** (by country,
 # device, bot rules) — at read time, like the session-based product. After this the
 # rollup folds the data into permanent anonymous aggregates and NULLs the digest.
-# Default ≈13 months: the CNIL ceiling for a consent-free audience-measurement
-# identifier. The window salt is still discarded at window end, so digests older
-# than their window are no longer re-linkable to an IP/UA. See docs/privacy.md.
-VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=396)
-# A digest must outlive its own window, else within-window events get NULLed before
-# the window closes and same-window dedup breaks. Warn if retention is too short.
-_WINDOW_MIN_DAYS = {"day": 1, "week": 7, "month": 31, "quarter": 92, "year": 366}
-if _WINDOW_MIN_DAYS.get(VISITOR_EXACT_WINDOW, 1) > VISITOR_KEY_RETENTION_DAYS:
-    logging.getLogger("mantecato.config").warning(
-        "VISITOR_KEY_RETENTION_DAYS=%d is shorter than the '%s' dedup window; "
-        "within-window digests may be discarded before the window closes. Raise it "
-        "to at least %d.",
-        VISITOR_KEY_RETENTION_DAYS,
-        VISITOR_EXACT_WINDOW,
-        _WINDOW_MIN_DAYS.get(VISITOR_EXACT_WINDOW, 1),
-    )
+# ≈13 months: the CNIL ceiling for a consent-free audience-measurement identifier.
+# The monthly salt is still discarded at month end, so digests older than their month
+# are no longer re-linkable to an IP/UA. Fixed (not env-configurable). See docs/privacy.md.
+VISITOR_KEY_RETENTION_DAYS = 396
 
 # A single-pageview visit counts as a bounce only if its real on-page (active)
 # time stays below this many seconds — the "engaged bounce" definition powered by

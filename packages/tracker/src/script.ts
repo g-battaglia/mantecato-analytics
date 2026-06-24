@@ -14,7 +14,7 @@
  *     data-exclude-search="true"
  *     data-exclude-hash="true"
  *     data-before-send="myBeforeSendFn"
- *     data-fetch-credentials="include"
+ *     data-fetch-credentials="omit"
  *   ></script>
  *
  * All data-* attributes are optional except data-website-id.

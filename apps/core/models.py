@@ -286,13 +286,12 @@ class WebsiteEvent(models.Model):
 class VisitorSalt(models.Model):
     """Per-exactness-window random salt for the compute-and-discard counter.
 
-    The salt keys the HMAC that turns a request's (IP + User-Agent) into an
-    ephemeral, site-scoped dedup digest. ``period`` is the window key (e.g.
-    ``"2026-06"`` for a month, ``"2026-W23"`` for a week, ``"2026-06-08"`` for a
-    day) controlled by ``settings.VISITOR_EXACT_WINDOW``. The salt is created
-    lazily on the first event of the window and **deleted** by the rollup once
-    the window is finalised, so past digests can never be recomputed (forward
-    secrecy). The salt is independent from ``SECRET_KEY``.
+    The salt keys the HMAC that turns a request's (truncated IP + User-Agent) into
+    an ephemeral, site-scoped dedup digest. ``period`` is the fixed monthly window
+    key (e.g. ``"2026-06"``; legacy rows may carry ``"2026-W23"`` / ``"2026-06-08"``).
+    The salt is created lazily on the first event of the month and **deleted** by the
+    rollup once the month is finalised, so past digests can never be recomputed
+    (forward secrecy). The salt is independent from ``SECRET_KEY``.
     """
 
     period = models.CharField(max_length=16, primary_key=True)
