@@ -4,9 +4,8 @@ Pageview aggregates plus **exact** site-level visitor/visit/bounce/duration
 metrics from the cookieless compute-and-discard counter, and a referrer-**domain**
 traffic-source breakdown. No full referrer URL, UTM, revenue, retention, funnel,
 journey metrics, and no persistent per-person identifier. Unique visitors are
-exact over the configured exactness window (``VISITOR_EXACT_WINDOW``, default
-month); a range spanning several windows sums per-window uniques (no cross-window
-linkage).
+exact over the fixed monthly dedup window; a range spanning several months sums
+per-month uniques (no cross-month linkage).
 """
 
 from __future__ import annotations
@@ -60,14 +59,16 @@ _UNAVAILABLE_NOTE = "Unavailable with current filters"
 def _stats_with_change(
     stats: dict[str, Any],
     prev_stats: dict[str, Any],
+    date_range: DateRange | None = None,
 ) -> dict[str, Any]:
     """Build the dashboard KPI cards.
 
     Pageview cards are always present. The visitor-derived cards (visitors,
     visits, bounce_rate, avg_duration, pages_per_visit) carry **exact** values
     when available and show ``N/A`` when suppressed (a content/device/geo filter
-    narrows the population, which aggregate counts cannot represent). ``visitors``
-    over a multi-day range is the sum of daily uniques.
+    narrows the population, which aggregate counts cannot represent). Unique
+    visitors are deduplicated within each calendar month; over a range spanning
+    more than one month the per-month uniques are summed.
     """
 
     def _change(cur: Any, prev: Any) -> Any:
@@ -91,11 +92,22 @@ def _stats_with_change(
     visitors = stats.get("visitors")
     visits = stats.get("visits")
 
+    # Unique visitors deduplicate within each calendar month; over a range that spans
+    # more than one month they sum per-month. Surface that caveat only when it applies
+    # — within a single month (or a "today"/realtime view) the figure is the exact
+    # monthly-unique count and the note would read as noise.
+    _visitors_note = None
+    if date_range is not None:
+        start, end = date_range.start_date, date_range.end_date
+        if (start.year, start.month) != (end.year, end.month):
+            _visitors_note = "Deduplicated within each month"
+
     return {
         "pageviews": _pageview_card("pageviews"),
         "visitors": _exact_card(
             "visitors",
             _format_compact(visitors) if visitors is not None else "N/A",
+            note=_visitors_note,
         ),
         "visits": _exact_card("visits", _format_compact(visits) if visits is not None else "N/A"),
         "bounce_rate": _exact_card("bounce_rate", bounce),
@@ -180,7 +192,7 @@ def get_overview_data(
     stats_cmp = get_website_stats_comparison(
         website_id, start, end, prev_range.start_date, prev_range.end_date, filters
     )
-    stats = _stats_with_change(stats_cmp["current"], stats_cmp["previous"])
+    stats = _stats_with_change(stats_cmp["current"], stats_cmp["previous"], date_range)
 
     ts_cmp = get_pageview_time_series_comparison(
         website_id, start, end, prev_range.start_date, prev_range.end_date, granularity, filters
@@ -419,6 +431,7 @@ def get_compare_data(
     comp_range = get_comparison_range(date_range, comparison_mode)
 
     from core.mantecato_core.queries.compare import get_comparison_stats
+
     comparison = get_comparison_stats(
         website_id,
         start,
@@ -450,9 +463,10 @@ def get_compare_data(
                 "bot_pageviews": previous.get("bot_pageviews", 0),
                 **prev_vm,
             },
+            date_range,
         )
     else:
-        stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0})
+        stats = _stats_with_change({"pageviews": 0}, {"pageviews": 0}, date_range)
 
     granularity = resolve_granularity(granularity, date_range)
     current_ts = get_pageview_time_series(website_id, start, end, granularity, filters=filters)
@@ -511,6 +525,7 @@ def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:
         ),
     }
 
+
 def get_overview_tab_pages(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
 ) -> dict[str, Any]:
@@ -528,6 +543,7 @@ def get_overview_tab_pages(
         filters=filters,
     )
     return {"top_pages": pages}
+
 
 def get_overview_tab_events(
     website_id: str,
@@ -552,6 +568,7 @@ def get_overview_tab_events(
     # via the HTMX partial path (the full page aliases event_metrics→top_events).
     return {"top_events": events}
 
+
 def get_overview_tab_devices(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
 ) -> dict[str, Any]:
@@ -564,6 +581,7 @@ def get_overview_tab_devices(
         "os_data": breakdown["os"],
         "device_data": breakdown["device"],
     }
+
 
 def get_overview_tab_geo(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
@@ -578,6 +596,7 @@ def get_overview_tab_geo(
         "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
     }
 
+
 def get_overview_tab_referrers(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
 ) -> dict[str, Any]:
@@ -587,6 +606,7 @@ def get_overview_tab_referrers(
     return {
         "top_referrers": get_referrer_metrics(website_id, start, end, limit=10, filters=filters),
     }
+
 
 def get_overview_tab_sources(
     website_id: str, date_range: DateRange, filters: list[Filter] | None = None
@@ -598,10 +618,13 @@ def get_overview_tab_sources(
         "channels": get_channel_metrics(website_id, start, end, filters=filters),
     }
 
+
 def get_realtime_data(website_id: str) -> dict[str, Any]:
     """Fetch realtime aggregate pageview data."""
     from django.utils import timezone
+
     now = timezone.now()
     from core.mantecato_core.date_utils import DateRange
+
     dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
     return get_overview_data(website_id, dr, granularity="hour")

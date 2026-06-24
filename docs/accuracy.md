@@ -103,13 +103,32 @@ with the proxy mapping `/assets/m.js → /api/script` and `/collect → /api/sen
   users on some VPNs/carriers. If you filter bots and see legit users vanish,
   disable it (`DETECT_DATACENTER_IPS=false`) or tune `DATACENTER_CIDRS`.
 
-## 4. Operational notes
+## 4. How returning visitors are deduplicated (fixed monthly window)
+
+The visitor digest salt rotates **once per calendar month** — a fixed,
+non-configurable window chosen so the privacy posture cannot be misconfigured. A
+returning visitor is therefore counted **once per month**:
+
+- Within a month, the same person (same `/24` subnet + User-Agent) is one unique
+  visitor, however many days they return.
+- Over a range **longer than a month**, the per-month uniques are **summed** (no
+  cross-month linkage), so "unique visitors" for a 6-month range is the sum of the
+  six monthly figures, not a single 6-month dedup.
+
+Precision trade-off: because the IP is always truncated to `/24` (+ `/48` for
+IPv6) before hashing — the CNIL/Garante minimisation condition — distinct visitors
+who share a `/24` subnet **and** an identical User-Agent in the same month merge
+into one. This is the deliberate, fixed cost of needing no consent banner; see
+[privacy.md](privacy.md).
+
+## 5. Operational notes
 
 - **Deploy propagation:** `/api/script` is served with `Cache-Control:
   max-age=86400`, so tracker changes take up to **24h** to fully roll out as
   browser caches expire. Lower it at your proxy if you need faster propagation.
-- **Delivery reliability is already handled:** the initial pageview is sent on
-  load with `fetch(keepalive)`, and engagement beacons use `navigator.sendBeacon`,
-  so events survive page unload.
+- **Delivery reliability is already handled:** pageviews and engagement heartbeats
+  are sent with `fetch(..., keepalive: true, credentials: "omit")`, so unload
+  delivery stays reliable without sending existing first-party cookies to the
+  collector.
 - **Run the rollup** (`manage.py rollup_visitors`) daily for the retention
   guarantee; it does not affect live counts.

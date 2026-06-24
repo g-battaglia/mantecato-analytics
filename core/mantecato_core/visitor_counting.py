@@ -6,29 +6,29 @@ any persistent per-person identifier.
 
 How it stays compliant:
 
-- At ingestion the server hashes ``(website_id + client IP + User-Agent)`` with
-  a **random per-window salt** into an ephemeral digest (``visitor_key``). The
-  IP and User-Agent are used transiently and never stored.
-- The digest deduplicates a visitor **within one exactness window** (day, week or
-  month — ``settings.VISITOR_EXACT_WINDOW``). The salt is regenerated each window
-  and **deleted** by the rollup, so digests can never be recomputed or linked
-  across windows (forward secrecy; no cross-window identity, no returning-visitor
-  tracking).
+- At ingestion the server hashes ``(website_id + truncated client IP + User-Agent)``
+  with a **random per-window salt** into an ephemeral digest (``visitor_key``).
+  The IP is always coarsened (``/24`` IPv4, ``/48`` IPv6) before hashing, and the
+  IP/User-Agent are used transiently and never stored.
+- The digest deduplicates a visitor **within one fixed calendar month**. The salt
+  is regenerated each month and **deleted** by the rollup, so digests can never be
+  recomputed or linked across months (forward secrecy; no cross-window identity,
+  no returning-visitor tracking).
 - Only aggregate integer counts survive (:class:`VisitorDaily` per day,
   :class:`VisitorPeriod` per window).
 
-Window stable for *N* days ⇒ unique visitors are exact over that window (and any
-sub-range of the live window). Longer window = more precision at the cost of the
-ephemeral state living that long before discard. Because there is no terminal
-storage/access this falls outside ePrivacy Art.5(3)/PECR; the transient IP+UA
-processing rests on legitimate interest (audience measurement). See
-``docs/privacy.md``.
+The dedup window, the IP truncation and the retention are **fixed and not
+configurable** so the privacy posture cannot be misconfigured. Because there is no
+terminal storage/access this falls outside ePrivacy Art.5(3)/PECR regardless; the
+transient truncated-IP+UA processing rests on the consent-exempt audience-measurement
+basis (first-party, IP masked, identifier ≤ 13 months). See ``docs/privacy.md``.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 import threading
 from datetime import UTC, date, datetime, timedelta
@@ -42,13 +42,26 @@ from django.utils import timezone
 if TYPE_CHECKING:
     from django.db.models import QuerySet
 
+logger = logging.getLogger(__name__)
+
 # A visit ends after this much inactivity; the next hit starts a new visit.
 SESSION_TIMEOUT_S = 30 * 60
 
 # Fixed key for the transaction-scoped advisory lock that serialises rollups.
 _ROLLUP_LOCK_KEY = 873_421_001
 
-_VALID_WINDOWS = ("day", "week", "month")
+# The dedup (salt) window is FIXED to one calendar month — not configurable. A
+# fixed monthly salt is a calendar period (never sliding/per-visit) well under the
+# 13-month CNIL/Garante identifier ceiling, so the cookieless digest stays inside
+# the consent-exempt audience-measurement envelope by construction. See docs/privacy.md.
+_WINDOW = "month"
+
+# Network prefix kept from the client IP before it feeds the digest hash — FIXED,
+# not configurable. /24 (IPv4) / /48 (IPv6) is the minimisation Garante (mask the
+# 4th octet) / CNIL (drop the last octet) require for a consent-exempt audience
+# identifier. Geo (country) and datacenter-bot detection still use the full IP.
+_DIGEST_IPV4_PREFIX = 24
+_DIGEST_IPV6_PREFIX = 48
 
 # Process-local cache of the current window's salt. Keyed by period key.
 _SALT_CACHE: dict[str, bytes] = {}
@@ -61,20 +74,17 @@ _SALT_LOCK = threading.Lock()
 
 
 def _window() -> str:
-    """Return the configured exactness window, defaulting to ``day``.
+    """Return the dedup window — always ``month`` (fixed, not configurable).
 
-    Mirrors the ``VISITOR_EXACT_WINDOW`` default in settings: with ``day``,
-    unique visitors over a multi-day range is the sum of per-day uniques (the
-    conventional, Umami-aligned figure); ``month`` gives true monthly uniques
-    with no cross-day double counting. See ``docs/privacy.md``.
+    A returning visitor is deduplicated within the calendar month and counted once
+    per month over any range; the salt rotates monthly. See ``docs/privacy.md``.
     """
-    w = str(getattr(settings, "VISITOR_EXACT_WINDOW", "day")).strip().lower()
-    return w if w in _VALID_WINDOWS else "day"
+    return _WINDOW
 
 
 def current_window() -> str:
-    """Public accessor for the configured exactness window."""
-    return _window()
+    """Public accessor for the dedup window (always ``month``)."""
+    return _WINDOW
 
 
 def utc_day(value: datetime) -> date:
@@ -85,7 +95,8 @@ def utc_day(value: datetime) -> date:
 
 
 def _period_key_for_date(d: date, window: str) -> str:
-    """Return the window key for a date: ``2026-06-08`` / ``2026-W23`` / ``2026-06``."""
+    """Return the period key for *d*: month ``2026-06`` (or day ``2026-06-08`` /
+    week ``2026-W23`` for legacy rows)."""
     if window == "day":
         return d.isoformat()
     if window == "week":
@@ -175,12 +186,18 @@ def compute_visitor_key(
     ip: str | None,
     user_agent: str | None,
 ) -> str:
-    """Derive the window-scoped, site-scoped dedup digest (hex).
+    """Derive the month-scoped, site-scoped dedup digest (hex).
 
-    Uses the full IP and User-Agent to maximise dedup accuracy. The inputs are
-    never stored; only this digest is, and only until the rollup discards the
-    salt that produced it.
+    The IP is always coarsened to ``/24`` (IPv4) / ``/48`` (IPv6) before hashing
+    (:data:`_DIGEST_IPV4_PREFIX` / :data:`_DIGEST_IPV6_PREFIX`), so the monthly salt
+    cannot turn the digest into a precise fingerprint — the CNIL/Garante IP-masking
+    condition, applied unconditionally. The IP/User-Agent inputs are never stored;
+    only this digest is, and only until the rollup discards the salt.
     """
+    if ip:
+        from apps.tracker.ip import truncate_ip
+
+        ip = truncate_ip(ip, _DIGEST_IPV4_PREFIX, _DIGEST_IPV6_PREFIX)
     subject = "|".join([str(website_id), ip or "", user_agent or ""])
     return hmac.new(salt, subject.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -434,15 +451,46 @@ def aggregate_state(qs: QuerySet) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def has_unrolled_past_periods(now: datetime | None = None) -> bool:
-    """Cheap check: is there ephemeral state for any window before the current one?"""
-    from apps.core.models import VisitorDayState
+def _finished_period_keys(now: datetime | None = None) -> set[str]:
+    """Period keys (across day- and scope-state) whose window has fully ended.
 
-    cur = period_key(now) if now else current_period_key()
-    return VisitorDayState.objects.exclude(period=cur).exists()
+    A window is *finished* once its last calendar day falls before the first day of
+    the current month. Deriving this from each key's real calendar bounds — rather
+    than string-comparing against the current month key — keeps the rollup correct
+    when legacy rows carry a finer-grained key (``2026-06-08`` / ``2026-W23``) from a
+    deployment that predates the fixed monthly window: such a key *inside* the current
+    month must stay live, not be mistaken for a past period and finalised mid-month
+    (which would prematurely delete the open month's state and corrupt its totals).
+    """
+    from apps.core.models import VisitorDayState, VisitorScopeState
+
+    month_start, _ = _period_bounds(utc_day(now or timezone.now()), _window())
+    keys = set(VisitorDayState.objects.values_list("period", flat=True).distinct())
+    keys |= set(VisitorScopeState.objects.values_list("period", flat=True).distinct())
+    return {k for k in keys if _period_ended(k, month_start)}
 
 
-def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
+def discard_expired_digests(now: datetime | None = None) -> int:
+    """NULL the per-event ``visitor_key`` digests older than the retention window.
+
+    Split out of :func:`rollup_finished_periods` so the lazy write-path can run it on
+    its own throttled cadence — otherwise, with a fixed monthly window, the only
+    digest-expiry pass would fire once a month (when a finished month exists to roll
+    up) instead of keeping pace as events cross the retention cutoff. Returns the
+    number of rows nulled. Idempotent: once caught up it matches nothing.
+    """
+    from apps.core.models import WebsiteEvent
+
+    retention = int(getattr(settings, "VISITOR_KEY_RETENTION_DAYS", 396))
+    cutoff = (now or timezone.now()) - timedelta(days=retention)
+    return WebsiteEvent.objects.filter(created_at__lt=cutoff, visitor_key__isnull=False).update(
+        visitor_key=None
+    )
+
+
+def rollup_finished_periods(
+    now: datetime | None = None, finished_keys: set[str] | None = None
+) -> dict[str, int]:
     """Finalise every window before the current one, then discard its digests.
 
     Writes per-day site aggregates (:class:`VisitorDaily`, for the daily trend),
@@ -450,6 +498,9 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
     visitors and per-scope/landing breakdowns), then deletes the window's
     ephemeral state, scope-presence rows and salt. A Postgres advisory lock
     serialises concurrent calls; idempotent (a second run finds no state).
+
+    *finished_keys* lets a caller that has already computed the finished set (e.g.
+    the write-path guard) pass it in, avoiding a second scan of the period keys.
 
     Returns ``{"periods", "rows", "salts", "scope_rows"}``.
     """
@@ -463,7 +514,9 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
 
     window = _window()
     threshold = _bounce_threshold()
-    cur = period_key(now) if now else current_period_key()
+    month_start, _ = _period_bounds(utc_day(now or timezone.now()), window)
+    if finished_keys is None:
+        finished_keys = _finished_period_keys(now)
     result = {"periods": 0, "rows": 0, "salts": 0, "scope_rows": 0}
 
     with transaction.atomic():
@@ -471,7 +524,9 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_ROLLUP_LOCK_KEY])
 
-        finished = VisitorDayState.objects.exclude(period=cur)
+        # Finalise only windows that have *ended* (by calendar bounds, robust to
+        # legacy day/week keys); current-month rows — whatever their key — stay live.
+        finished = VisitorDayState.objects.filter(period__in=finished_keys)
 
         # Aggregates store **all** visitors (humans + bots). The bot filter — and
         # every other filter — is applied **downstream at read time**, never baked
@@ -528,7 +583,7 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
             )
 
         # 4) Per-window per-scope unique visitors (pages/sections/events).
-        scope_qs = VisitorScopeState.objects.exclude(period=cur)
+        scope_qs = VisitorScopeState.objects.filter(period__in=finished_keys)
         for g in scope_qs.values("website_id", "period", "scope", "scope_value").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
         ):
@@ -542,19 +597,19 @@ def rollup_finished_periods(now: datetime | None = None) -> dict[str, int]:
                 unique_visitors=g["unique_visitors"] or 0,
             )
 
-        # 5) Discard the window's ephemeral state + salt, and NULL the per-event
-        #    digests only **beyond the retention window** — they are kept until then
-        #    so visitor metrics stay exact and filterable at read time.
-        from apps.core.models import WebsiteEvent
-
-        retention = int(getattr(settings, "VISITOR_KEY_RETENTION_DAYS", 396))
-        cutoff = timezone.now() - timedelta(days=retention)
-        WebsiteEvent.objects.filter(created_at__lt=cutoff, visitor_key__isnull=False).update(
-            visitor_key=None
-        )
+        # 5) NULL the per-event digests beyond the retention window (kept until then
+        #    so visitor metrics stay exact and filterable), then discard the finalised
+        #    windows' ephemeral state and their salts. Only salts whose own window has
+        #    ended are dropped, so a still-open legacy day-key's salt is preserved.
+        discard_expired_digests(now)
         result["scope_rows"], _ = scope_qs.delete()
         result["rows"], _ = finished.delete()
-        result["salts"], _ = VisitorSalt.objects.exclude(period=cur).delete()
+        expired_salts = [
+            p
+            for p in VisitorSalt.objects.values_list("period", flat=True)
+            if _period_ended(p, month_start)
+        ]
+        result["salts"], _ = VisitorSalt.objects.filter(period__in=expired_salts).delete()
 
     return result
 
@@ -721,15 +776,62 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     return {"days": len(site_acc), "events": nulled}
 
 
-def _first_day_of_period(period: str, window: str) -> date:
-    """Parse a period key back to its first calendar day."""
-    if window == "week":
+def _period_bounds_of_key(period: str) -> tuple[date, date]:
+    """First and last calendar day of the window identified by *period*.
+
+    The format is auto-detected from the key itself (week ``-W`` / quarter ``-Q`` /
+    year / month / day) in a **single** place, so the rollup stays correct even when
+    older rows still carry a period key in a granularity that predates the fixed
+    monthly window — and the start/end bounds can never drift apart.
+    """
+    if "-W" in period:
         year_s, week_s = period.split("-W")
-        return date.fromisocalendar(int(year_s), int(week_s), 1)
-    if window == "month":
-        year_s, month_s = period.split("-")
-        return date(int(year_s), int(month_s), 1)
-    return date.fromisoformat(period)
+        start = date.fromisocalendar(int(year_s), int(week_s), 1)
+        return start, start + timedelta(days=6)
+    if "-Q" in period:  # quarter starts at month 1/4/7/10 → ends two months later
+        year_s, q_s = period.split("-Q")
+        start = date(int(year_s), (int(q_s) - 1) * 3 + 1, 1)
+        return start, _month_end(date(start.year, start.month + 2, 1))
+    parts = period.split("-")
+    if len(parts) == 1:  # "2026" → year
+        return date(int(parts[0]), 1, 1), date(int(parts[0]), 12, 31)
+    if len(parts) == 2:  # "2026-06" → month
+        start = date(int(parts[0]), int(parts[1]), 1)
+        return start, _month_end(start)
+    d = date.fromisoformat(period)  # "2026-06-08" → day
+    return d, d
+
+
+def _first_day_of_period(period: str, window: str | None = None) -> date:
+    """First calendar day of the window (format auto-detected from the key).
+
+    ``window`` is accepted for backwards compatibility but ignored.
+    """
+    return _period_bounds_of_key(period)[0]
+
+
+def _period_end_of_key(period: str) -> date:
+    """Last calendar day of the window identified by *period* (format auto-detected)."""
+    return _period_bounds_of_key(period)[1]
+
+
+def _period_ended(period: str, month_start: date) -> bool:
+    """True if *period*'s window ends strictly before the current month's first day.
+
+    Defensive against an unparseable key: period keys are always produced by
+    :func:`_period_key_for_date` in a known format, so a malformed value can only
+    come from external DB corruption. Rather than let it abort the whole rollup
+    transaction (and block retention housekeeping), treat it as *not ended* — the
+    safest choice, since it leaves the row's state untouched instead of finalising
+    or deleting state we can't interpret.
+    """
+    if not period:
+        return False
+    try:
+        return _period_end_of_key(period) < month_start
+    except (ValueError, TypeError):
+        logger.warning("Skipping unparseable visitor period key %r during rollup", period)
+        return False
 
 
 def _derived_counts(g: dict[str, Any]) -> dict[str, int]:

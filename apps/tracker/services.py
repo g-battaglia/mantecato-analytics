@@ -103,12 +103,20 @@ def _maybe_rollup() -> None:
     _last_rollup_attempt = now
     try:
         from core.mantecato_core.visitor_counting import (
-            has_unrolled_past_periods,
+            _finished_period_keys,
+            discard_expired_digests,
             rollup_finished_periods,
         )
 
-        if has_unrolled_past_periods():
-            rollup_finished_periods()
+        # Expire over-retention digests every throttle tick, not only when a month
+        # finalises — otherwise a fixed monthly window would null them just once a
+        # month. Cheap when caught up (matches no rows); independent of the rollup.
+        discard_expired_digests(now)
+        # Compute the finished-window set once and reuse it as both the guard and the
+        # rollup input, so the period keys are scanned a single time per tick.
+        finished = _finished_period_keys(now)
+        if finished:
+            rollup_finished_periods(now, finished_keys=finished)
     except Exception:
         logger.warning("Lazy visitor rollup failed; will retry later", exc_info=True)
 
@@ -116,9 +124,12 @@ def _maybe_rollup() -> None:
 def _parse_url(url: str) -> dict[str, str | None]:
     """Parse a page URL into its path component.
 
-    The query string is intentionally **discarded and never stored**: it can
-    carry personal data (``?email=``, ``?token=``, ``?name=``...) that has no
-    place in privacy-first aggregate analytics. ``url_query`` is always ``None``.
+    The query string is intentionally **discarded and never stored**: it can carry
+    personal data (``?email=``, ``?token=``...) with no place in privacy-first
+    aggregate analytics, so ``url_query`` is always ``None``. The URL fragment is
+    likewise dropped — **except** a hash-based SPA route (``#/dashboard``), which is
+    kept so per-route counts survive. A fragment that smells like a credential
+    carrier (contains ``=`` or ``&``, e.g. ``#access_token=...``) is never kept.
 
     Args:
         url: The raw page URL from the tracker payload (may be empty).
@@ -133,9 +144,15 @@ def _parse_url(url: str) -> dict[str, str | None]:
     path = parsed.path or "/"
     if path == "/undefined":
         path = "/"
-    if parsed.fragment:
-        path = f"{path}#{parsed.fragment}"
     path = unquote(path)
+    # Hash-based SPA routes (``#/dashboard``) carry the page identity in the
+    # fragment, so keep them. But a fragment can also smuggle credentials
+    # (``#access_token=...``), so only restore one that looks like a route: starts
+    # with "/" and has no query-like ``=``/``&``. Decode first so a ``%3D``-encoded
+    # token can't slip past the filter.
+    frag = unquote(parsed.fragment)
+    if frag.startswith("/") and "=" not in frag and "&" not in frag:
+        path = f"{path}#{frag}"
     return {"url_path": path[:500], "url_query": None}
 
 

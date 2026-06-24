@@ -196,21 +196,24 @@ MIDDLEWARE += [
 # in production to reduce log noise.
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 
-# Exactness window for cookieless unique-visitor counting: "day" | "week" |
-# "month". The dedup salt is stable for this window, so a visitor is counted
-# once per window. Default "day" → unique visitors over a range = sum of daily
-# uniques (the conventional, Umami-aligned figure). Use "month" for true
-# monthly uniques (lower, no cross-day double counting). See docs/privacy.md.
-VISITOR_EXACT_WINDOW = _env_str("VISITOR_EXACT_WINDOW", "day").strip().lower()
+# Cookieless unique-visitor counting has a FIXED, NON-CONFIGURABLE privacy posture
+# so it cannot be misconfigured into needing a consent banner or wrong counts:
+#   - dedup (salt) window = one calendar month (core/.../visitor_counting.py:_WINDOW)
+#   - digest IP truncation = always /24 (IPv4) + /48 (IPv6) (_DIGEST_IP*_PREFIX)
+#   - digest retention = 396 days (~13 months), the constant below
+# A returning visitor is deduplicated within the month (the salt rotates monthly and
+# is discarded at month end → forward secrecy). All three are fixed first-party,
+# IP-masked, ≤13-month-identifier values → consent-exempt audience measurement.
+# See docs/privacy.md.
 
 # How long the per-event dedup digest (``website_event.visitor_key``) is kept so
 # exact visitor/visit/bounce counts can be computed — and **filtered** (by country,
 # device, bot rules) — at read time, like the session-based product. After this the
 # rollup folds the data into permanent anonymous aggregates and NULLs the digest.
-# Default ≈13 months: the CNIL ceiling for a consent-free audience-measurement
-# identifier. The window salt is still discarded at window end, so digests older
-# than their window are no longer re-linkable to an IP/UA. See docs/privacy.md.
-VISITOR_KEY_RETENTION_DAYS = _env_int("VISITOR_KEY_RETENTION_DAYS", default=396)
+# ≈13 months: the CNIL ceiling for a consent-free audience-measurement identifier.
+# The monthly salt is still discarded at month end, so digests older than their month
+# are no longer re-linkable to an IP/UA. Fixed (not env-configurable). See docs/privacy.md.
+VISITOR_KEY_RETENTION_DAYS = 396
 
 # A single-pageview visit counts as a bounce only if its real on-page (active)
 # time stays below this many seconds — the "engaged bounce" definition powered by

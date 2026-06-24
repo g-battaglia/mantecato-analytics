@@ -1,14 +1,15 @@
 """Tests for the cookieless **exact** visitor/visit/bounce counter.
 
-Default exactness window is ``day`` (Umami-aligned: unique visitors over a range
-= sum of daily uniques). Monthly dedup is verified explicitly via override.
-Covers the visit/bounce engine, the read path, the rollup, per-event digests
-(hourly visitors, realtime, import attribution), and privacy guarantees.
+The dedup window is FIXED to one calendar month (not configurable): a returning
+visitor is counted once per month, and the daily rollup finalises a month only
+once it has ended. Covers the visit/bounce engine, the read path, the rollup,
+per-event digests (hourly visitors, realtime, import attribution), always-on IP
+truncation, and privacy guarantees.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.test import override_settings
@@ -151,29 +152,21 @@ def test_bot_not_counted():
     assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 0
 
 
-# --- unique semantics: day window (default) vs month -------------------------
+# --- unique semantics: fixed monthly dedup window ----------------------------
 
 
-def test_unique_visitors_summed_per_day_default():
-    # Same visitor on three different days → with the day window, 3 daily uniques.
-    for n in (0, 1, 2):
-        _visit(ip="1.1.1.1", when=_days_ago(n))
-    s, e = _full_range()
-    stats = read_visit_stats(WEBSITE_ID, s, e)
-    assert stats["unique_visitors"] == 3
-    assert stats["visits"] == 3
-    assert stats["bounces"] == 3
-
-
-@override_settings(VISITOR_EXACT_WINDOW="month")
 def test_unique_visitors_monthly_dedup():
-    # Same visitor on three days of the same month → ONE unique (month window).
+    # Same visitor on three days of the same month → ONE unique (fixed month window),
+    # but three separate visits/bounces (each a distinct >30-min-apart session).
     base = timezone.now().replace(day=10, hour=12, minute=0, second=0, microsecond=0)
     for d in (10, 15, 20):
         _visit(ip="1.1.1.1", when=base.replace(day=d))
     start = base.replace(day=1)
     end = base.replace(day=28) + timedelta(hours=1)
-    assert read_visit_stats(WEBSITE_ID, start, end)["unique_visitors"] == 1
+    stats = read_visit_stats(WEBSITE_ID, start, end)
+    assert stats["unique_visitors"] == 1
+    assert stats["visits"] == 3
+    assert stats["bounces"] == 3
 
 
 def test_distinct_visitors_counted_separately():
@@ -224,38 +217,133 @@ def test_per_scope_unique_visitors_filterable_by_country():
     assert counts["/a"] == 1
 
 
-# --- rollup (day window) ----------------------------------------------------
+# --- rollup (monthly window: finalises a month only once it has ended) -------
 
 
-def test_rollup_finalizes_and_discards_past_day():
-    when = _days_ago(1)
+def test_rollup_finalizes_and_discards_past_month():
+    when = _days_ago(40)  # solidly in a previous (finished) calendar month
     day = utc_day(when)
+    period_start = day.replace(day=1)
+    period_key = f"{day.year:04d}-{day.month:02d}"
     _visit(ip="1.1.1.1", when=when)
     _visit(ip="2.2.2.2", when=when)
     rollup_finished_periods()
     daily = VisitorDaily.objects.get(website_id=WEBSITE_ID, scope="site", day=day)
     assert daily.unique_visitors == 2
-    period = VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site", period_start=day)
+    period = VisitorPeriod.objects.get(
+        website_id=WEBSITE_ID, scope="site", period_start=period_start
+    )
     assert period.unique_visitors == 2
     assert not VisitorDayState.objects.filter(day=day).exists()
-    assert not VisitorSalt.objects.filter(period=day.isoformat()).exists()
-    # Still readable from the finalised aggregate.
-    assert read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
-        "unique_visitors"
-    ] == 2
+    assert not VisitorSalt.objects.filter(period=period_key).exists()
+    # Still readable from the retained per-event digests (kept until retention).
+    assert (
+        read_visit_stats(WEBSITE_ID, when - timedelta(hours=1), when + timedelta(hours=1))[
+            "unique_visitors"
+        ]
+        == 2
+    )
 
 
-def test_rollup_leaves_current_day_untouched():
+def test_rollup_leaves_current_month_untouched():
+    # A visit in the current month is NOT finalised: the month is still open.
     _visit(when=_today())
     rollup_finished_periods()
     assert VisitorDayState.objects.filter(website_id=WEBSITE_ID).count() == 1
 
 
 def test_rollup_idempotent():
-    _visit(ip="1.1.1.1", when=_days_ago(1))
+    _visit(ip="1.1.1.1", when=_days_ago(40))
     rollup_finished_periods()
     rollup_finished_periods()
     assert VisitorPeriod.objects.get(website_id=WEBSITE_ID, scope="site").unique_visitors == 1
+
+
+def test_rollup_keeps_legacy_day_keyed_current_month_state_live():
+    # Upgrade scenario: a deployment that predates the fixed monthly window keys its
+    # ephemeral state by DAY. A legacy day-key *inside the current (open) month* must
+    # stay live — finalising it as if it were a finished period would prematurely
+    # delete the open month's state and corrupt its totals.
+    today = _today()
+    day = utc_day(today)
+    day_key = day.isoformat()  # legacy day-grained key, e.g. "2026-06-24"
+    VisitorSalt.objects.create(period=day_key, salt=b"0" * 32)
+    VisitorDayState.objects.create(
+        website_id=WEBSITE_ID,
+        day=day,
+        period=day_key,
+        visitor_key="legacykey",
+        first_seen=today,
+        last_seen=today,
+    )
+    rollup_finished_periods()
+    assert VisitorDayState.objects.filter(period=day_key).exists()
+    assert VisitorSalt.objects.filter(period=day_key).exists()
+    assert not VisitorPeriod.objects.filter(
+        website_id=WEBSITE_ID, period_start=day.replace(day=1)
+    ).exists()
+
+
+def test_rollup_finalizes_legacy_day_keyed_past_month():
+    # The flip side: a legacy day-key whose month has ended IS finalised + discarded.
+    when = _days_ago(40)
+    day = utc_day(when)
+    day_key = day.isoformat()
+    VisitorSalt.objects.create(period=day_key, salt=b"0" * 32)
+    VisitorDayState.objects.create(
+        website_id=WEBSITE_ID,
+        day=day,
+        period=day_key,
+        visitor_key="legacykey",
+        first_seen=when,
+        last_seen=when,
+    )
+    rollup_finished_periods()
+    assert not VisitorDayState.objects.filter(period=day_key).exists()
+    assert not VisitorSalt.objects.filter(period=day_key).exists()
+    assert VisitorPeriod.objects.filter(
+        website_id=WEBSITE_ID, scope="site", period_start=day.replace(day=1)
+    ).exists()
+
+
+def test_discard_expired_digests_runs_without_a_finished_period():
+    # The retention NULL pass is decoupled from the period rollup, so over-retention
+    # digests are nulled on the write-path cadence even mid-month (no finished period).
+    from core.mantecato_core.visitor_counting import discard_expired_digests
+
+    for when, key in [(_days_ago(400), "oldkey"), (_days_ago(10), "newkey")]:
+        ev = WebsiteEvent.objects.create(
+            website_id=WEBSITE_ID, url_path="/x", event_type=1, visitor_key=key
+        )
+        WebsiteEvent.objects.filter(pk=ev.pk).update(created_at=when)
+    assert discard_expired_digests() == 1
+    assert WebsiteEvent.objects.filter(visitor_key="newkey").exists()
+    assert not WebsiteEvent.objects.filter(visitor_key="oldkey").exists()
+
+
+def test_rollup_skips_unparseable_period_key():
+    # A malformed period key can only reach the DB via corruption (keys are always
+    # produced by _period_key_for_date in a known format). It must NOT abort the
+    # rollup transaction: it is treated as "not ended" and left untouched, while a
+    # well-formed finished month is still finalised alongside it.
+    when = _days_ago(40)  # solidly in a previous (finished) calendar month
+    day = utc_day(when)
+    _visit(ip="1.1.1.1", when=when)
+    _visit(ip="2.2.2.2", when=when)
+
+    corrupt = VisitorDayState.objects.filter(website_id=WEBSITE_ID).first()
+    VisitorDayState.objects.filter(pk=corrupt.pk).update(period="2026-13")  # invalid month
+    VisitorSalt.objects.create(period="2026-13", salt=b"x" * 32)
+
+    rollup_finished_periods()  # must not raise
+
+    # The unparseable rows survive (skipped, not finalised/deleted)...
+    assert VisitorDayState.objects.filter(period="2026-13").exists()
+    assert VisitorSalt.objects.filter(period="2026-13").exists()
+    # ...while the well-formed finished month is finalised.
+    assert VisitorPeriod.objects.filter(
+        website_id=WEBSITE_ID, scope="site", period_start=day.replace(day=1)
+    ).exists()
 
 
 # --- import attribution: aggregate events into daily ------------------------
@@ -277,9 +365,9 @@ def test_imported_events_read_from_digests():
     assert stats["total_pageviews"] == 3
     assert 2 <= stats["visits"] <= stats["total_pageviews"]
     # Digests are kept (not discarded) so the data stays filterable until retention.
-    assert WebsiteEvent.objects.filter(
-        website_id=WEBSITE_ID, visitor_key__isnull=False
-    ).count() == 3
+    assert (
+        WebsiteEvent.objects.filter(website_id=WEBSITE_ID, visitor_key__isnull=False).count() == 3
+    )
 
 
 def test_aggregate_events_into_daily_rolls_up_and_discards():
@@ -341,6 +429,28 @@ def test_query_string_not_persisted():
     )
     ev = WebsiteEvent.objects.get(website_id=WEBSITE_ID)
     assert ev.url_path == "/checkout" and ev.url_query is None
+
+
+def test_url_fragment_not_persisted():
+    from apps.tracker.services import _parse_url
+
+    # A credential-carrying fragment is dropped (contains ``=``).
+    assert _parse_url("/oauth/callback#access_token=secret") == {
+        "url_path": "/oauth/callback",
+        "url_query": None,
+    }
+    # A token encoded as ``%3D`` is decoded before filtering, so it is still dropped.
+    assert _parse_url("/app#%2Fx%3Dsecret") == {"url_path": "/app", "url_query": None}
+
+
+def test_hash_spa_route_is_kept():
+    from apps.tracker.services import _parse_url
+
+    # A hash-based SPA route carries the page identity, so it is preserved.
+    assert _parse_url("/app#/dashboard") == {
+        "url_path": "/app#/dashboard",
+        "url_query": None,
+    }
 
 
 # --- engagement beacons (recorded; do not break ingestion) ------------------
@@ -457,3 +567,49 @@ def test_per_scope_unique_visitors_beyond_retention():
         WEBSITE_ID, *_full_range(), scope="page", scope_values=["/x", "/y"]
     )
     assert counts["/x"] == 2 and counts["/y"] == 1
+
+
+# --- dedup horizon: fixed monthly salt window (not configurable) -------------
+
+
+def test_window_is_fixed_to_month():
+    # The dedup window is hardcoded; there is no setting that changes it.
+    assert visitor_counting.current_window() == "month"
+
+
+def test_visitor_key_stable_within_month_rotates_across():
+    # Same person → same digest inside the calendar month (cross-day dedup), and a
+    # fresh digest in the next month (salt rotation = forward secrecy).
+    a = datetime(2026, 6, 1, 1, tzinfo=UTC)
+    b = datetime(2026, 6, 30, 23, tzinfo=UTC)
+    c = datetime(2026, 7, 1, 1, tzinfo=UTC)
+    kw = dict(website_id=WEBSITE_ID, ip="1.2.3.4", user_agent="UA")
+    k_a = visitor_key_for(occurred_at=a, **kw)
+    k_b = visitor_key_for(occurred_at=b, **kw)
+    k_c = visitor_key_for(occurred_at=c, **kw)
+    assert k_a == k_b, "same person, same month → one visitor"
+    assert k_a != k_c, "same person, next month → counted again (salt rotated)"
+
+
+# --- IP truncation for the digest (always on, CNIL/Garante minimisation) -----
+
+
+def test_ip_always_truncated_to_subnet():
+    when = datetime(2026, 6, 10, 12, tzinfo=UTC)
+    kw = dict(website_id=WEBSITE_ID, occurred_at=when, user_agent="UA")
+    # Always /24: two hosts in the same subnet + same UA collapse to one visitor...
+    assert visitor_key_for(ip="203.0.113.7", **kw) == visitor_key_for(ip="203.0.113.250", **kw)
+    # ...but different /24 subnets stay distinct.
+    assert visitor_key_for(ip="203.0.113.7", **kw) != visitor_key_for(ip="198.51.100.7", **kw)
+
+
+def test_truncate_ip_masks_host_bits():
+    from apps.tracker.ip import truncate_ip
+
+    assert truncate_ip("203.0.113.77", 24, 48) == "203.0.113.0"
+    assert truncate_ip("203.0.113.77", 32, 128) == "203.0.113.77"  # full IP
+    assert truncate_ip("2001:db8:abcd:1234::1", 24, 48) == "2001:db8:abcd::"
+    # IPv4-mapped IPv6 is unwrapped to IPv4 and masked as /24, never to "::".
+    assert truncate_ip("::ffff:203.0.113.77", 24, 48) == "203.0.113.0"
+    assert truncate_ip("not-an-ip", 24, 48) == "not-an-ip"  # defensive passthrough
+    assert truncate_ip("", 24, 48) == ""

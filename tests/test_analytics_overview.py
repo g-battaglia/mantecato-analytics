@@ -468,3 +468,26 @@ class TestServiceHelpers:
     def test_percentage_change_both_zero(self) -> None:
         from apps.analytics.services import _percentage_change
         assert _percentage_change(0, 0) is None
+
+    def test_visitors_note_only_on_multi_month_ranges(self) -> None:
+        # The "Deduplicated within each month" caveat applies only when uniques are
+        # summed across months — not on a single-month or realtime/today view.
+        from apps.analytics.services import _stats_with_change
+        from core.mantecato_core.date_utils import DateRange
+
+        stats = {"pageviews": 10, "visitors": 5, "visits": 6, "bounce_rate": 50}
+
+        def _note(date_range: DateRange | None) -> str | None:
+            return _stats_with_change(stats, dict(stats), date_range)["visitors"]["note"]
+
+        within_month = DateRange(
+            start_date=datetime(2026, 6, 1, tzinfo=UTC),
+            end_date=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+        across_months = DateRange(
+            start_date=datetime(2026, 5, 1, tzinfo=UTC),
+            end_date=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+        assert _note(within_month) is None
+        assert _note(None) is None  # realtime / no range
+        assert _note(across_months) == "Deduplicated within each month"
