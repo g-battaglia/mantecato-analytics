@@ -190,6 +190,28 @@ class Website(models.Model):
         return self.name
 
 
+class BadgeHit(models.Model):
+    """Aggregate hit counter for a site's public README/badge image.
+
+    One integer per website (resolved from the site's public ``share_id`` at the
+    ``/api/badge`` endpoint). It counts fetches of the badge SVG — a first-party
+    "README views" counter, so no third-party badge service is needed. It stores
+    **only a count**: no IP, User-Agent, or any per-request/per-person data, and
+    badge fetches never enter the pageview pipeline (they don't become events).
+    """
+
+    id = _uuid_pk()
+    website_id = models.UUIDField(unique=True)
+    count = models.BigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "badge_hit"
+
+    def __str__(self) -> str:
+        return f"badge:{self.website_id}:{self.count}"
+
+
 class WebsiteEvent(models.Model):
     """A pageview event — the core analytics data unit.
 

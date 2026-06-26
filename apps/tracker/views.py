@@ -15,6 +15,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
+from apps.analytics.formatting import format_compact
 from apps.tracker.geo import resolve_geo
 from apps.tracker.ip import get_client_ip
 from apps.tracker.services import (
@@ -34,6 +36,8 @@ from apps.tracker.services import (
     is_trackable_website,
 )
 from apps.tracker.ua import classify_bot_user_agent, parse_user_agent
+from core.mantecato_core.badge import render_badge
+from core.mantecato_core.database import raw_query_one
 from core.mantecato_core.ip_reputation import is_datacenter_ip
 
 if TYPE_CHECKING:
@@ -291,6 +295,80 @@ def api_script(request: HttpRequest) -> HttpResponse:
     response["Cache-Control"] = "public, max-age=86400"
     response["Access-Control-Allow-Origin"] = "*"
     return response
+
+
+# ----------------------------------------------------------------------------
+# First-party README view-counter badge — GET /api/badge
+# ----------------------------------------------------------------------------
+#
+# Serves an SVG counter badge so a repo README needs no third-party badge
+# service. It counts its OWN fetches (≈ README renders, made server-side by
+# GitHub's camo proxy — no end-user device, so no ePrivacy Art. 5(3) trigger)
+# into a single aggregate integer per site. No IP/User-Agent/per-person data is
+# stored, and the fetch never enters the pageview pipeline. The counter is keyed
+# on an existing site's public ``share_id`` (operator opt-in), so the key set is
+# bounded — no arbitrary counters. NOTE: GitHub caches the image (camo), so the
+# count under-reports and is not real-time — inherent to every such badge.
+
+
+def _badge_response(svg: str, *, status: int = 200) -> HttpResponse:
+    """Wrap an SVG string in an image response with no-cache + CORS headers."""
+    response = HttpResponse(svg, content_type="image/svg+xml; charset=utf-8", status=status)
+    # Discourage caching so GitHub's camo proxy re-fetches (best-effort; camo
+    # still caches, which is why the counter under-reports).
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return _add_cors(response)
+
+
+def _bump_badge_hit(website_id: str) -> int:
+    """Atomically increment and return the badge counter for *website_id*.
+
+    A single UPSERT (concurrency-safe, one round-trip) avoids the get-or-create
+    race; ``RETURNING`` gives the new value.
+    """
+    row = raw_query_one(
+        """
+        INSERT INTO badge_hit (id, website_id, count, updated_at)
+        VALUES ({{id::uuid}}, {{wid::uuid}}, 1, now())
+        ON CONFLICT (website_id)
+            DO UPDATE SET count = badge_hit.count + 1, updated_at = now()
+        RETURNING count
+        """,
+        {"id": str(uuid.uuid4()), "wid": website_id},
+    )
+    return int(row["count"]) if row else 0
+
+
+@require_GET
+def badge_view(request: HttpRequest) -> HttpResponse:
+    """``GET /api/badge?share_id=<id>`` — first-party README view-counter badge.
+
+    Resolves the site by its public ``share_id``, atomically increments that
+    site's badge counter, and returns a flat SVG ``[ label | N ]``. Unknown or
+    missing ``share_id`` returns a 404 *image* (so a README never shows a broken
+    image). Optional ``label`` (default ``views``) and ``color`` query params.
+    """
+    share_id = (request.GET.get("share_id") or "").strip()
+    label = (request.GET.get("label") or "views").strip() or "views"
+    color = request.GET.get("color")
+
+    if not share_id:
+        return _badge_response(render_badge("badge", "no share_id", "red"), status=404)
+
+    from apps.core.models import Website
+
+    website_id = (
+        Website.objects.filter(share_id=share_id, is_deleted=False)
+        .values_list("id", flat=True)
+        .first()
+    )
+    if website_id is None:
+        return _badge_response(render_badge(label, "not found", "red"), status=404)
+
+    count = _bump_badge_hit(str(website_id))
+    return _badge_response(render_badge(label, format_compact(count), color))
 
 
 # Backward-compatible re-export so existing URL configs / tests that
