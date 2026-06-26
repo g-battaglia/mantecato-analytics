@@ -96,6 +96,54 @@ privacy opt-outs and dodge ad-blockers via first-party proxying — see
 
 ---
 
+## 🔒 Privacy & Compliance
+
+Mantecato is built to run **without a cookie/consent banner** and to fit the major
+privacy regimes **by construction**. _Engineering-for-compliance, not legal advice —
+have counsel confirm for your specific deployment._
+
+**Why there's no banner.** The banner trigger (ePrivacy **Art. 5(3)** / UK PECR) is
+about *storing or accessing information on the device*. Mantecato uses **no cookies
+and no browser storage** (`credentials: "omit"`), so it never does that — regardless
+of anything done server-side.
+
+**Optimised for GDPR and the consent-exempt audience-measurement frameworks.** The
+privacy-critical parameters are **fixed and non-configurable**, so the posture cannot
+be misconfigured:
+
+- **first-party / single-site** — no cross-site or cross-day tracking, no fingerprinting
+- client **IP masked to `/24` (IPv4) · `/48` (IPv6)** and **never stored** (used transiently, then discarded)
+- short-lived **in-month identifier** (random monthly salt, deleted at month end), **≤ 13 months**, no per-visit renewal
+- **country-level geo only** (no region/city), **aggregate-only output**
+- **Global Privacy Control (GPC) honoured** by default
+
+| Region | Framework | Status |
+|---|---|---|
+| 🇪🇺 EU | GDPR + ePrivacy | **No banner** (no device storage); transient IP/UA on the consent-exempt audience-measurement basis |
+| 🇮🇹 Italy | **Garante** — cookie guidelines (2021) | Met: IP masked on ≥ 4th octet, single-site, aggregate-only |
+| 🇫🇷 France | **CNIL** — *Sheet n°16* | Met: last IP octet dropped (`/24`), ≤ 13-month identifier, ≤ 25-month retention |
+| 🇬🇧 UK | PECR + DUAA 2025 (statistical purposes) | No banner; first-party, transparency + opt-out |
+| 🇺🇸 US | CCPA/CPRA + state laws | No sale/share, no cross-context ads, **GPC honoured** → privacy-policy disclosure only |
+| 🇨🇦 / 🇦🇺 | PIPEDA · Québec Law 25 / Privacy Act (APPs) | No banner; transparency notice, no sensitive data |
+
+Details: [docs/privacy.md](docs/privacy.md) (legal basis, model privacy notice) ·
+[docs/data-processing-record.md](docs/data-processing-record.md) (authority-ready data inventory).
+
+### 📉 Accuracy trade-off: visitor counts are deliberately conservative
+
+Because the IP is **masked to `/24` and never stored**, Mantecato cannot distinguish
+visitors who share the same network block **and** the same browser — it counts them
+as **one** visitor. As a result, **unique-visitor counts read lower than full-IP tools**
+(Google Analytics, Umami, …); the gap **grows with the time range** and is **largest on
+desktop / shared networks** (offices, ISPs, campuses, mobile CGNAT). This is the
+privacy ↔ precision trade-off — **by design, not a bug**:
+
+- **Pageviews, visits and trends are unaffected** — only the *distinct-visitor* figure is conservative.
+- That masking is exactly what keeps the no-banner, consent-exempt posture valid; recovering those visitors would require the **full IP**, which steps outside the EU audience-measurement exemption.
+- It is the "cookieless ceiling" every cookieless tool has — Mantecato simply errs on the side of privacy. More in [docs/accuracy.md](docs/accuracy.md).
+
+---
+
 ## 🖥️ Dashboard
 
 A full-featured, responsive analytics dashboard with interactive charts and maps. No JavaScript framework — just fast, server-rendered pages with HTMX for instant interactivity.
@@ -633,6 +681,12 @@ python manage.py importumamidata --noinput
 ```
 
 Your existing `data-umami-event` HTML attributes keep working — the tracker is wire-compatible. Just swap the script URL and you're done.
+
+> **Heads-up on the numbers:** for its consent-exempt privacy posture Mantecato masks
+> the IP to `/24`, whereas Umami hashes the full IP. So after migrating, **unique-visitor
+> counts read somewhat lower than Umami** (most on desktop / shared networks; the gap
+> grows with the date range) — **pageviews and trends stay comparable**. This is by
+> design — see [Privacy & Compliance](#-privacy--compliance).
 
 > **Mantecato is an independent project — not affiliated with or endorsed by Umami.** It is a from-scratch Django implementation that speaks Umami's tracker wire protocol and can import an Umami database, so you can migrate without re-instrumenting your sites. Umami is [MIT-licensed](https://github.com/umami-software/umami) and a trademark of its respective owners.
 
