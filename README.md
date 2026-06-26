@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=g-battaglia.mantecato-analytics&left_text=Repo%20views" alt="Repo views">
 </p>
 
 <h1 align="center">📊 Mantecato</h1>
