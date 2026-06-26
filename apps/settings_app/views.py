@@ -22,6 +22,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -53,6 +54,7 @@ from apps.settings_app.services import (
     purge_website_data,
     remove_api_key,
     save_bot_config,
+    set_website_badge,
     soft_delete_user,
     soft_delete_website,
     start_umami_import_job,
@@ -484,6 +486,68 @@ class SitePurgeView(LoginRequiredMixin, View):
                 f"{result['events']:,} events, {result['visitor_rows']:,} visitor count rows.",
             )
         return redirect("site_list")
+
+
+class SiteBadgeView(LoginRequiredMixin, View):
+    """Manage a site's public README view-counter badge.
+
+    ``GET`` shows the badge state with a ready-to-paste snippet (absolute URL
+    built from the current request host, so the operator never has to know it).
+    ``POST`` with ``action`` ∈ ``enable|regenerate|disable`` toggles the site's
+    ``share_id`` (the badge endpoint is gated on it). A site needs no real
+    domain — a name-only "site" is a valid README/badge-only entry.
+    """
+
+    template_name = "settings/site_badge.html"
+
+    def _get_site(self, request: HttpRequest, site_id: str) -> Website | None:
+        qs = Website.objects.filter(id=site_id, is_deleted=False)
+        if not request.user.is_staff:
+            qs = qs.filter(user_id=request.user.id)
+        return qs.first()
+
+    def get(self, request: HttpRequest, site_id: str) -> HttpResponse:
+        site = self._get_site(request, site_id)
+        if site is None:
+            raise Http404("Website not found.")
+        return render(request, self.template_name, self._context(request, site))
+
+    def post(self, request: HttpRequest, site_id: str) -> HttpResponse:
+        action = request.POST.get("action", "enable")
+        if action not in ("enable", "regenerate", "disable"):
+            action = "enable"
+        result = set_website_badge(
+            site_id=str(site_id),
+            user_id=str(request.user.id),
+            is_admin=request.user.is_staff,
+            action=action,
+        )
+        if result is None:
+            messages.error(request, "Site not found.")
+            return redirect("site_list")
+        messages.success(
+            request,
+            {
+                "enable": "Badge enabled.",
+                "regenerate": "Badge link regenerated — update the old snippet.",
+                "disable": "Badge disabled.",
+            }[action],
+        )
+        return redirect("site_badge", site_id=site_id)
+
+    def _context(self, request: HttpRequest, site: Website) -> dict:
+        badge_url = markdown = html = None
+        if site.share_id:
+            path = f"{reverse('tracker_badge')}?share_id={site.share_id}&label=views"
+            badge_url = request.build_absolute_uri(path)
+            markdown = f"![views]({badge_url})"
+            html = f'<img src="{badge_url}" alt="views">'
+        return {
+            "site": site,
+            "badge_url": badge_url,
+            "markdown_snippet": markdown,
+            "html_snippet": html,
+        }
 
 
 # ============================================================================

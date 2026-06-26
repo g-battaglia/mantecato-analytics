@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Badge" %}{% endblock %}
+{% block page_title %}{% trans "Badge" %}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-2xl">
+  <div class="mb-6">
+    <a href="{% url 'site_list' %}" class="text-sm text-primary hover:text-primary">
+      &larr; {% trans "Back to Sites" %}
+    </a>
+    <h2 class="text-xl font-semibold text-foreground mt-2">{{ site.name }} — {% trans "README badge" %}</h2>
+    <p class="mt-1 text-sm text-muted-foreground">
+      {% trans "A first-party view-counter badge served by Mantecato itself — no third-party badge service. A site needs no real domain: a name-only entry works as a README/badge." %}
+    </p>
+  </div>
+
+  <div class="rounded-lg border border-border bg-card px-4 sm:px-6 py-6 shadow-sm">
+    {% if badge_url %}
+      <div class="flex items-center gap-3">
+        <img src="{{ badge_url }}" alt="views badge" height="20">
+        <span class="text-xs text-muted-foreground">{% trans "Live preview" %}</span>
+      </div>
+
+      <div class="mt-5 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-foreground">{% trans "Markdown (for a README)" %}</label>
+          <div class="mt-1 flex items-stretch gap-2">
+            <code data-copy class="flex-1 select-all break-all rounded bg-muted px-3 py-2 font-mono text-xs text-foreground">{{ markdown_snippet }}</code>
+            <button type="button" data-copy-btn
+                    class="shrink-0 rounded-md border border-input bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted/50">
+              {% trans "Copy" %}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-foreground">{% trans "HTML" %}</label>
+          <div class="mt-1 flex items-stretch gap-2">
+            <code data-copy class="flex-1 select-all break-all rounded bg-muted px-3 py-2 font-mono text-xs text-foreground">{{ html_snippet }}</code>
+            <button type="button" data-copy-btn
+                    class="shrink-0 rounded-md border border-input bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted/50">
+              {% trans "Copy" %}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-foreground">{% trans "Direct image URL" %}</label>
+          <div class="mt-1 flex items-stretch gap-2">
+            <code data-copy class="flex-1 select-all break-all rounded bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">{{ badge_url }}</code>
+            <button type="button" data-copy-btn
+                    class="shrink-0 rounded-md border border-input bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted/50">
+              {% trans "Copy" %}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p class="mt-4 text-xs text-muted-foreground">
+        {% trans "Counts fetches of this badge (≈ README views) into an anonymous per-site counter — no IP, no User-Agent, never a pageview. Note: GitHub caches the image, so the count under-reports and is not real-time." %}
+      </p>
+
+      <div class="mt-6 flex flex-wrap justify-end gap-3 border-t border-border pt-4">
+        <form method="post" class="inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="regenerate">
+          <button type="submit"
+                  class="rounded-md border border-input bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/50"
+                  onclick="return confirm('{% trans 'Regenerate the badge link? The old URL will stop working.' %}')">
+            {% trans "Regenerate link" %}
+          </button>
+        </form>
+        <form method="post" class="inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="disable">
+          <button type="submit"
+                  class="rounded-md border border-input bg-card px-4 py-2 text-sm font-medium text-destructive shadow-sm hover:bg-muted/50"
+                  onclick="return confirm('{% trans 'Disable this badge? The image will stop rendering.' %}')">
+            {% trans "Disable badge" %}
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <p class="text-sm text-muted-foreground">
+        {% trans "No public badge yet for this site. Enable it to get a counter badge served by your own Mantecato instance — no third-party service." %}
+      </p>
+      <div class="mt-5 flex justify-end">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="enable">
+          <button type="submit"
+                  class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">
+            {% trans "Enable badge" %}
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function () {
+  document.querySelectorAll('[data-copy-btn]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var code = btn.parentElement.querySelector('[data-copy]');
+      if (!code) return;
+      var text = code.textContent;
+      var done = function () {
+        var prev = btn.textContent;
+        btn.textContent = '{% trans "Copied" %}';
+        setTimeout(function () { btn.textContent = prev; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

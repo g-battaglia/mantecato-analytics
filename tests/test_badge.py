@@ -107,3 +107,64 @@ def test_badgehit_stores_no_identifier():
     names = {f.name for f in BadgeHit._meta.get_fields()}
     assert "ip" not in names and "ip_address" not in names
     assert "user_agent" not in names and "ua" not in names and "visitor_key" not in names
+
+
+# --- Settings badge-management flow ------------------------------------------
+
+
+@pytest.fixture
+def owner(django_user_model):
+    return django_user_model.objects.create_user(username="owner", password="pw")
+
+
+@pytest.mark.django_db
+def test_settings_enable_generates_share_id_and_snippet(client, owner):
+    # A name-only site (no domain) is a valid README/badge entry.
+    site = Website.objects.create(id=WEBSITE_ID, name="README", user_id=owner.id)
+    client.force_login(owner)
+    badge_page = f"/settings/sites/{WEBSITE_ID}/badge/"
+
+    resp = client.post(badge_page, {"action": "enable"})
+    assert resp.status_code == 302
+    site.refresh_from_db()
+    assert site.share_id  # a share_id was generated
+
+    page = client.get(badge_page)
+    assert page.status_code == 200
+    assert b"/api/badge?share_id=" in page.content  # ready-to-paste snippet shown
+    assert site.share_id.encode() in page.content
+
+    # The generated badge actually works end-to-end.
+    badge = client.get("/api/badge", {"share_id": site.share_id})
+    assert badge.status_code == 200 and badge["Content-Type"].startswith("image/svg+xml")
+
+
+@pytest.mark.django_db
+def test_settings_regenerate_and_disable(client, owner):
+    site = Website.objects.create(id=WEBSITE_ID, name="README", user_id=owner.id)
+    client.force_login(owner)
+    badge_page = f"/settings/sites/{WEBSITE_ID}/badge/"
+
+    client.post(badge_page, {"action": "enable"})
+    site.refresh_from_db()
+    first = site.share_id
+
+    client.post(badge_page, {"action": "regenerate"})
+    site.refresh_from_db()
+    assert site.share_id and site.share_id != first  # rotated
+
+    client.post(badge_page, {"action": "disable"})
+    site.refresh_from_db()
+    assert site.share_id is None
+    # Disabled → the badge endpoint 404s.
+    assert client.get("/api/badge", {"share_id": first}).status_code == 404
+
+
+@pytest.mark.django_db
+def test_settings_badge_page_denied_for_non_owner(client, django_user_model):
+    other = django_user_model.objects.create_user(username="other", password="pw")
+    Website.objects.create(
+        id=WEBSITE_ID, name="x", user_id="b0000000-0000-0000-0000-0000000000bb"
+    )
+    client.force_login(other)
+    assert client.get(f"/settings/sites/{WEBSITE_ID}/badge/").status_code == 404

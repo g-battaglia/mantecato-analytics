@@ -15,6 +15,7 @@ read and the write step rolls back cleanly. Update functions use
 from __future__ import annotations
 
 import hashlib
+import secrets
 import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -304,6 +305,52 @@ def create_website(
         user_id=user_id,
     )
     return {"id": str(site.id), "name": site.name, "domain": site.domain}
+
+
+def generate_share_id() -> str:
+    """Return a random URL-safe public share id for a site's badge.
+
+    ~32 chars (fits ``Website.share_id`` max_length=64); unguessable so the
+    public ``/api/badge`` endpoint can't be enumerated.
+    """
+    return secrets.token_urlsafe(24)
+
+
+def set_website_badge(
+    site_id: str,
+    user_id: str,
+    is_admin: bool = False,
+    *,
+    action: str = "enable",
+) -> dict[str, Any] | None:
+    """Enable / regenerate / disable a site's public badge (its ``share_id``).
+
+    ``enable`` sets a fresh ``share_id`` only if none exists; ``regenerate``
+    always rotates it (invalidating the old badge URL); ``disable`` clears it
+    (the badge endpoint then 404s). Ownership is enforced unless *is_admin*.
+
+    Returns a dict with ``id``, ``name`` and the resulting ``share_id`` (``None``
+    after disable), or ``None`` if the site was not found / not owned.
+    """
+    qs = Website.objects.filter(id=site_id, is_deleted=False)
+    if not is_admin:
+        qs = qs.filter(user_id=user_id)
+    site = qs.first()
+    if site is None:
+        return None
+
+    if action == "disable":
+        site.share_id = None
+    elif action == "regenerate" or not site.share_id:
+        # The unique constraint makes a collision astronomically unlikely; retry
+        # a few times defensively rather than surfacing an IntegrityError.
+        for _ in range(5):
+            candidate = generate_share_id()
+            if not Website.objects.filter(share_id=candidate).exists():
+                site.share_id = candidate
+                break
+    site.save(update_fields=["share_id"])
+    return {"id": str(site.id), "name": site.name, "share_id": site.share_id}
 
 
 def soft_delete_website(
