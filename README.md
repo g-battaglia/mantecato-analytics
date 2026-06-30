@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/HTMX-2.x-3366CC?logo=htmx&logoColor=white" alt="HTMX">
   <img src="https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache 2.0 License">
   <img src="https://visitor-badge.laobi.icu/badge?page_id=g-battaglia.mantecato-analytics&left_text=Repo%20views" alt="Repo views">
 </p>
 <p align="center">
@@ -785,4 +785,5 @@ ruff format .
 
 ## 📄 License
 
-MIT — do whatever you want with it.
+[Apache License 2.0](LICENSE) — free to use, modify, and distribute, with an
+explicit patent grant and the usual attribution/NOTICE requirements.

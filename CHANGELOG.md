@@ -6,6 +6,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Changed
+- **Relicensed from MIT to the Apache License 2.0.** Apache 2.0 keeps the same
+  permissive freedoms but adds an explicit patent grant and trademark clause.
+  The full text now lives in the root `LICENSE` file.
 - **Fixed, non-configurable visitor-counting privacy posture** (so it cannot be
   misconfigured into needing a consent banner): the dedup window is fixed to one
   **calendar month**, the digest IP is **always truncated** to `/24` (IPv4) /
