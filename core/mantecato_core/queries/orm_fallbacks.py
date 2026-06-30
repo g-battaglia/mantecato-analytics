@@ -71,7 +71,9 @@ def _filter_q(column: str, operator: str, value: str) -> Q | None:
         if not values:
             return None
         q = Q(**{f"{column}__in": values})
-        return q if operator == "in" else ~q
+        # Mirror build_filter_sql's not_in (``col IS NULL OR col <> ALL(...)``),
+        # which keeps NULL rows — ``~Q(col__in=...)`` alone would drop them.
+        return q if operator == "in" else (Q(**{f"{column}__isnull": True}) | ~q)
     return None
 
 

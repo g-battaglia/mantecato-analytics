@@ -29,6 +29,7 @@
   {% if widgets %}
   <div class="grid grid-cols-12 gap-4">
     {% for w in widgets %}
+    {% if w.id %}
     {% with span=w.grid.w|default:6 %}
     <div style="grid-column: span {{ span }} / span {{ span }};"
          hx-get="{% url 'dashboard_widget' dashboard.id w.id %}?{{ request.GET.urlencode }}"
@@ -38,6 +39,7 @@
       </div>
     </div>
     {% endwith %}
+    {% endif %}
     {% endfor %}
   </div>
   {% else %}

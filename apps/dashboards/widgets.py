@@ -71,8 +71,8 @@ BREAKDOWN_SOURCES: dict[str, tuple[str, str, str, str, str]] = {
     "os": ("get_devices_data", "os", "value", "pageviews", "Views"),
     "device": ("get_devices_data", "device", "value", "pageviews", "Views"),
     "country": ("get_geo_data", "geo", "country", "pageviews", "Views"),
-    "sources": ("get_sources_data", "sources", "referrerDomain", "visitors", "Visitors"),
-    "entry": ("get_landing_data", "landing", "urlPath", "visits", "Visits"),
+    "sources": ("get_sources_data", "sources", "referrer", "pageviews", "Views"),
+    "entry": ("get_landing_data", "landing", "entry_path", "visits", "Visits"),
 }
 
 _PALETTE = [
@@ -147,7 +147,7 @@ def _pie_payload(rows: list[dict], limit: int = 8) -> dict:
 # ── Per-type renderers ───────────────────────────────────────────────────────
 
 
-def _render_kpi(website_id, widget, date_range, filters) -> dict[str, Any]:
+def _render_kpi(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
     metric = widget.get("metric", "pageviews")
     if metric not in KPI_METRICS:
         return {"error": f"Unknown KPI metric: {metric}"}
@@ -155,12 +155,14 @@ def _render_kpi(website_id, widget, date_range, filters) -> dict[str, Any]:
     return {"kind": "kpi", "stat": stats.get(metric), "metric_label": KPI_METRICS[metric]}
 
 
-def _render_timeseries(website_id, widget, date_range, filters) -> dict[str, Any]:
-    data = services.get_timeseries_data(website_id, date_range, filters)
+def _render_timeseries(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+    # A per-widget granularity wins; otherwise the runtime (filter-bar) value.
+    gran = widget.get("granularity") or granularity or "auto"
+    data = services.get_timeseries_data(website_id, date_range, filters, granularity=gran)
     return {"kind": "timeseries", "chart": build_timeseries_chart_data(data["timeseries"])}
 
 
-def _render_breakdown(website_id, widget, date_range, filters) -> dict[str, Any]:
+def _render_breakdown(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
     source = widget.get("source", "events")
     spec = BREAKDOWN_SOURCES.get(source)
     if spec is None:
@@ -187,7 +189,7 @@ def _render_breakdown(website_id, widget, date_range, filters) -> dict[str, Any]
     }
 
 
-def _render_heatmap(website_id, widget, date_range, filters) -> dict[str, Any]:
+def _render_heatmap(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
     data = services.get_heatmap_data(website_id, date_range, filters)
     return {"kind": "heatmap", "grid": data["grid"], "max_val": data["max_val"]}
 
@@ -210,6 +212,7 @@ def render_widget(
     *,
     runtime_range: DateRange,
     runtime_filters: list[Filter] | None = None,
+    runtime_granularity: str = "auto",
 ) -> dict[str, Any]:
     """Render one widget into a uniform context dict for the templates.
 
@@ -229,7 +232,7 @@ def render_widget(
     try:
         date_range = _resolve_range(widget, runtime_range)
         filters = _resolve_filters(dashboard_cfg, widget, runtime_filters)
-        return {**base, **renderer(website_id, widget, date_range, filters)}
+        return {**base, **renderer(website_id, widget, date_range, filters, runtime_granularity)}
     except Exception as exc:  # noqa: BLE001 — a widget must never break the page
         return {**base, "error": f"Could not load widget: {exc}"}
 
@@ -273,11 +276,21 @@ def validate_dashboard_config(config: Any) -> list[str]:
     if not isinstance(widgets, list):
         return errors + ["'widgets' must be a list"]
 
+    seen_ids: set[str] = set()
     for i, w in enumerate(widgets):
         where = f"widget[{i}]"
         if not isinstance(w, dict):
             errors.append(f"{where}: must be an object")
             continue
+        # A stable, unique id is required: it is reversed into the per-widget
+        # HTMX URL ({% url 'dashboard_widget' %}) — an empty id 500s the page.
+        wid = w.get("id")
+        if not isinstance(wid, str) or not wid.strip():
+            errors.append(f"{where}: a non-empty string 'id' is required")
+        elif wid in seen_ids:
+            errors.append(f"{where}: duplicate id '{wid}'")
+        else:
+            seen_ids.add(wid)
         wtype = w.get("type")
         if wtype not in WIDGET_TYPES:
             errors.append(f"{where}: type '{wtype}' must be one of {sorted(WIDGET_TYPES)}")

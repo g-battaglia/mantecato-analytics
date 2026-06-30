@@ -449,6 +449,7 @@ class DashboardWidgetView(LoginRequiredMixin, View):
             widget,
             runtime_range=runtime["date_range"],
             runtime_filters=runtime["filters"],
+            runtime_granularity=runtime["granularity"],
         )
         return render(request, self.template_name, {"w": rendered})
 
@@ -485,5 +486,6 @@ class DashboardWidgetPreviewView(LoginRequiredMixin, View):
             widget,
             runtime_range=runtime["date_range"],
             runtime_filters=runtime["filters"],
+            runtime_granularity=runtime["granularity"],
         )
         return render(request, self.template_name, {"w": rendered})

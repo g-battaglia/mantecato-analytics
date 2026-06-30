@@ -47,21 +47,31 @@ def _range():
 
 def test_validate_ok():
     cfg = {"version": 2, "filters": ["url_path:starts_with:/pro/"], "widgets": [
-        {"type": "kpi", "metric": "visitors"},
-        {"type": "breakdown", "source": "sections", "depth": 1},
-        {"type": "timeseries"},
+        {"id": "a", "type": "kpi", "metric": "visitors"},
+        {"id": "b", "type": "breakdown", "source": "sections", "depth": 1},
+        {"id": "c", "type": "timeseries"},
     ]}
     assert validate_dashboard_config(cfg) == []
 
 
 def test_validate_catches_bad_widgets():
     errs = validate_dashboard_config({"widgets": [
-        {"type": "nope"},
-        {"type": "kpi", "metric": "bad"},
-        {"type": "breakdown", "source": "zzz"},
-        {"type": "kpi", "metric": "visitors", "filters": ["x:y"]},
+        {"id": "a", "type": "nope"},
+        {"id": "b", "type": "kpi", "metric": "bad"},
+        {"id": "c", "type": "breakdown", "source": "zzz"},
+        {"id": "d", "type": "kpi", "metric": "visitors", "filters": ["x:y"]},
     ]})
     assert len(errs) >= 4
+
+
+def test_validate_requires_unique_widget_ids():
+    missing = validate_dashboard_config({"widgets": [{"type": "kpi", "metric": "visitors"}]})
+    assert any("id" in e for e in missing)
+    dup = validate_dashboard_config({"widgets": [
+        {"id": "x", "type": "kpi", "metric": "visitors"},
+        {"id": "x", "type": "timeseries"},
+    ]})
+    assert any("duplicate" in e for e in dup)
 
 
 # ── Dispatcher ───────────────────────────────────────────────────────────────
@@ -107,6 +117,28 @@ def test_timeseries_widget(seeded):
     w = render_widget(WEBSITE_ID, {}, {"id": "w4", "type": "timeseries"}, runtime_range=_range())
     assert "error" not in w and w["kind"] == "timeseries"
     assert "labels" in w["chart"]
+
+
+def test_timeseries_respects_runtime_granularity(seeded):
+    # Threading the filter-bar granularity through must not break rendering.
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "t", "type": "timeseries"},
+        runtime_range=_range(), runtime_granularity="day",
+    )
+    assert "error" not in w and "labels" in w["chart"]
+
+
+def test_sources_breakdown_uses_real_keys(seeded):
+    # Regression: the "sources" mapping used non-existent keys → every row "—"/0.
+    _ev("/pro/x", referrer_domain="google.com")
+    _ev("/pro/x", referrer_domain="google.com")
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "s", "type": "breakdown", "source": "sources"}, runtime_range=_range()
+    )
+    assert "error" not in w
+    assert w["rows"], "expected referrer rows"
+    assert all(r["label"] != "—" for r in w["rows"])
+    assert any(r["value"] > 0 for r in w["rows"])
 
 
 def test_unknown_widget_returns_error(seeded):

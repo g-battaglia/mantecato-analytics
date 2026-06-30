@@ -36,6 +36,11 @@
   function uid() {
     return "w" + Math.random().toString(36).slice(2, 8) + (state.widgets.length + 1);
   }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
 
   /* ── State ───────────────────────────────────────────────────────────── */
   var cfg = readJSON("dash-config", {}) || {};
@@ -55,10 +60,10 @@
   function widgetShell(w) {
     var badge = w.type === "breakdown" ? (w.source || "breakdown") : w.type;
     return (
-      '<div class="flex h-full flex-col rounded-lg border border-border bg-card shadow-sm" data-wid="' + w.id + '">' +
+      '<div class="flex h-full flex-col rounded-lg border border-border bg-card shadow-sm" data-wid="' + esc(w.id) + '">' +
         '<div class="w-drag flex cursor-move items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5">' +
-          '<span class="truncate text-xs font-medium text-foreground">' + (w.title || "") +
-            ' <span class="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">' + badge + "</span></span>" +
+          '<span class="truncate text-xs font-medium text-foreground">' + esc(w.title || "") +
+            ' <span class="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">' + esc(badge) + "</span></span>" +
           '<span class="flex shrink-0 items-center gap-1">' +
             '<button type="button" data-act="edit" class="text-muted-foreground hover:text-foreground" title="Edit"><i data-lucide="settings-2" class="size-3.5"></i></button>' +
             '<button type="button" data-act="del" class="text-muted-foreground hover:text-destructive" title="Remove"><i data-lucide="trash-2" class="size-3.5"></i></button>' +
@@ -204,16 +209,16 @@
       w.grid = existing ? existing.grid : undefined;
       Object.keys(existing).forEach(function (k) { delete existing[k]; });
       Object.assign(existing, w);
-      preview(existing);
-      // Refresh the header (title/type may have changed).
+      // Refresh the header (title/type may have changed), then preview once
+      // against the freshly-swapped shell.
       var shell = root.querySelector('[data-wid="' + w.id + '"]');
       if (shell) {
         var holder = document.createElement("div");
         holder.innerHTML = widgetShell(existing);
         shell.parentNode.replaceChild(holder.firstChild, shell);
         if (window.lucide) lucide.createIcons();
-        preview(existing);
       }
+      preview(existing);
     } else {
       state.widgets.push(w);
       addGridItem(w);
@@ -246,7 +251,7 @@
     state.filters.forEach(function (f, idx) {
       var chip = document.createElement("span");
       chip.className = "inline-flex h-7 items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 font-mono text-[11px] text-foreground";
-      chip.innerHTML = "<span>" + f + '</span><button type="button" class="text-muted-foreground hover:text-destructive">×</button>';
+      chip.innerHTML = "<span>" + esc(f) + '</span><button type="button" class="text-muted-foreground hover:text-destructive">×</button>';
       chip.querySelector("button").addEventListener("click", function () {
         state.filters.splice(idx, 1); renderDashFilters(); state.widgets.forEach(preview);
       });
