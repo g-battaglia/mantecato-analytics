@@ -45,10 +45,11 @@ class TestDashboardCrud:
         assert result["userId"] == USER_A
         assert result["websiteId"] == SITE
         assert result["config"] == {
-            "version": 1,
-            "columns": 2,
-            "widgets": [],
+            "version": 2,
+            "layout": {"columns": 12},
             "dateRange": "30d",
+            "filters": [],
+            "widgets": [],
         }
         assert result["id"]
         assert result["createdAt"]

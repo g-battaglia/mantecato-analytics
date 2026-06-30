@@ -143,6 +143,7 @@ def _attach_scope_visitors(
     value_key: str,
     target_key: str = "visitors",
     filters: list[Filter] | None = None,
+    depth: int = 2,
 ) -> None:
     """Attach **exact** per-scope (page/section/event) unique visitors to *rows*.
 
@@ -154,7 +155,7 @@ def _attach_scope_visitors(
         return
     values = [str(r.get(value_key) or "") for r in rows]
     counts = read_scope_visitors(
-        website_id, start, end, scope=scope, scope_values=values, filters=filters
+        website_id, start, end, scope=scope, scope_values=values, filters=filters, depth=depth
     )
     for row in rows:
         row[target_key] = counts.get(str(row.get(value_key) or ""))
@@ -295,13 +296,20 @@ def get_sections_data(
     website_id: str,
     date_range: DateRange,
     filters: list[Filter] | None = None,
+    *,
+    depth: int = 2,
 ) -> dict[str, Any]:
-    """Fetch section-level analytics (URL-prefix groupings)."""
+    """Fetch section-level analytics (URL-prefix groupings).
+
+    ``depth`` controls how many leading URL path segments form a section.
+    ``depth=1`` groups by the first segment — which, for the Astrologer Studio
+    tracking, is the user tier (``/anon|free|trial|pro|lifetime/...``).
+    """
     filters = filters or []
     start = date_range.start_date
     end = date_range.end_date
 
-    sections = get_top_sections(website_id, start, end, limit=100, filters=filters)
+    sections = get_top_sections(website_id, start, end, limit=100, filters=filters, depth=depth)
     _attach_scope_visitors(
         website_id,
         start,
@@ -310,10 +318,46 @@ def get_sections_data(
         scope="section",
         value_key="section",
         filters=filters,
+        depth=depth,
     )
     _add_percentage(sections, "views")
 
     return {"sections": sections}
+
+
+def get_kpis_data(
+    website_id: str,
+    date_range: DateRange,
+    filters: list[Filter] | None = None,
+) -> dict[str, Any]:
+    """Lightweight KPI cards only — pageviews + exact visitor metrics, with change.
+
+    Used by dashboard KPI widgets: avoids running the full overview (≈15 queries)
+    just to read one stat.
+    """
+    filters = filters or []
+    start, end = date_range.start_date, date_range.end_date
+    prev_range = get_comparison_range(date_range, "previous_period")
+    stats_cmp = get_website_stats_comparison(
+        website_id, start, end, prev_range.start_date, prev_range.end_date, filters
+    )
+    return {"stats": _stats_with_change(stats_cmp["current"], stats_cmp["previous"], date_range)}
+
+
+def get_timeseries_data(
+    website_id: str,
+    date_range: DateRange,
+    filters: list[Filter] | None = None,
+    *,
+    granularity: str = "auto",
+) -> dict[str, Any]:
+    """Pageview (and exact visits at day+ granularity) time series for a chart widget."""
+    filters = filters or []
+    granularity = resolve_granularity(granularity, date_range)
+    timeseries = get_pageview_time_series(
+        website_id, date_range.start_date, date_range.end_date, granularity, filters=filters
+    )
+    return {"timeseries": timeseries, "granularity": granularity}
 
 
 def get_heatmap_data(

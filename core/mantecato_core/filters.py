@@ -32,6 +32,9 @@ VALID_OPERATORS = {
     "not_contains",
     "starts_with",
     "not_starts_with",
+    # Multi-value membership. Value is a comma-separated list (e.g. "IT,FR").
+    "in",
+    "not_in",
 }
 
 GRANULARITIES = ("minute", "hour", "day", "week", "month")
@@ -159,6 +162,20 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
             elif f.operator == "not_starts_with":
                 or_clauses.append(f"{prefix}.{f.column} NOT ILIKE {{{{{param_name}}}}}")
                 params[param_name] = f"{f.value}%"
+            elif f.operator in ("in", "not_in"):
+                # Comma-separated multi-value membership, bound as a text[] param
+                # (same {{name::type}} array pattern used by the bot filter).
+                values = [v for v in (f.value.split(",") if f.value else []) if v != ""]
+                if not values:
+                    continue
+                if f.operator == "in":
+                    or_clauses.append(f"{prefix}.{f.column} = ANY({{{{{param_name}::text[]}}}})")
+                else:
+                    or_clauses.append(
+                        f"({prefix}.{f.column} IS NULL "
+                        f"OR {prefix}.{f.column} <> ALL({{{{{param_name}::text[]}}}}))"
+                    )
+                params[param_name] = values
 
         if len(or_clauses) == 1:
             and_clauses.append(or_clauses[0])

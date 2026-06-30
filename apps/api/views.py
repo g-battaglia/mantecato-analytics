@@ -530,6 +530,22 @@ class DashboardDetailView(ApiAuthMixin, JSONView):
         return json_response(result)
 
 
+def _validate_dashboard_config(config: object) -> JsonResponse | None:
+    """Return a 400 response when a provided dashboard config is invalid, else None.
+
+    Protects the programmatic seeding path: a config whose widget schema would
+    not render is rejected up front with a clear message.
+    """
+    if config is None:
+        return None
+    from apps.dashboards.widgets import validate_dashboard_config
+
+    errors = validate_dashboard_config(config)
+    if errors:
+        return json_response({"error": "; ".join(errors[:5])}, status=400)
+    return None
+
+
 class DashboardCreateView(ApiWriteMixin, JSONView):
     """``POST /api/dashboards/create/`` -- create a new custom dashboard.
 
@@ -563,6 +579,10 @@ class DashboardCreateView(ApiWriteMixin, JSONView):
         website_id = body.get("website_id", "")
         if not website_id:
             return json_response({"error": "website_id is required."}, status=400)
+        config = body.get("config")
+        config_error = _validate_dashboard_config(config)
+        if config_error is not None:
+            return config_error
         if not _website_accessible(request, website_id):
             return _forbidden_website()
         result = create_new_dashboard(
@@ -570,7 +590,7 @@ class DashboardCreateView(ApiWriteMixin, JSONView):
             website_id=website_id,
             name=name,
             description=body.get("description", ""),
-            config=body.get("config"),
+            config=config,
         )
         return json_response(result, status=201)
 
@@ -603,6 +623,9 @@ class DashboardUpdateView(ApiWriteMixin, JSONView):
         body, err = _parse_json_body(request)
         if err is not None:
             return err
+        config_error = _validate_dashboard_config(body.get("config"))
+        if config_error is not None:
+            return config_error
         result = update_existing_dashboard(
             report_id=report_id,
             user_id=request.api_user_id,

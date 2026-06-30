@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.db import connection
-from django.db.models import Count, Max, QuerySet
+from django.db.models import Count, Max, Q, QuerySet
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
@@ -39,11 +39,53 @@ def _parse_bot_config(value: str) -> dict[str, Any]:
     return cfg if isinstance(cfg, dict) else {}
 
 
+_FILTERABLE_COLUMNS = {
+    "url_path",
+    "page_title",
+    "hostname",
+    "browser",
+    "os",
+    "device",
+    "country",
+    "event_name",
+    "referrer_domain",
+}
+
+
+def _filter_q(column: str, operator: str, value: str) -> Q | None:
+    """Translate one Filter into a Django ``Q`` (mirrors build_filter_sql)."""
+    if operator == "eq":
+        return Q(**{column: value})
+    if operator == "neq":
+        return ~Q(**{column: value})
+    if operator == "contains":
+        return Q(**{f"{column}__icontains": value})
+    if operator == "not_contains":
+        return ~Q(**{f"{column}__icontains": value})
+    if operator == "starts_with":
+        return Q(**{f"{column}__istartswith": value})
+    if operator == "not_starts_with":
+        return ~Q(**{f"{column}__istartswith": value})
+    if operator in ("in", "not_in"):
+        values = [v for v in (value.split(",") if value else []) if v != ""]
+        if not values:
+            return None
+        q = Q(**{f"{column}__in": values})
+        return q if operator == "in" else ~q
+    return None
+
+
 def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
-    """Apply privacy-first filters to a WebsiteEvent queryset."""
+    """Apply privacy-first filters to a WebsiteEvent queryset.
+
+    Mirrors the raw-SQL semantics of ``build_filter_sql``: filters on the **same
+    column are OR-ed**, different columns are **AND-ed** — so e.g. two
+    ``url_path:starts_with`` filters mean "/trial/ OR /pro/", not an impossible
+    "both at once".
+    """
+    grouped: dict[str, list[Q]] = defaultdict(list)
     for item in filters or []:
-        column = item.column
-        if column == "__bot_filter__":
+        if item.column == "__bot_filter__":
             cfg = _parse_bot_config(item.value)
             reasons: list[str] = []
             if cfg.get("knownBots", True):
@@ -63,32 +105,17 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
                 qs = qs.exclude(country__in=countries)
             continue
 
-        if column not in {
-            "url_path",
-            "page_title",
-            "hostname",
-            "browser",
-            "os",
-            "device",
-            "country",
-            "event_name",
-            "referrer_domain",
-        }:
+        if item.column not in _FILTERABLE_COLUMNS:
             continue
+        q = _filter_q(item.column, item.operator, item.value)
+        if q is not None:
+            grouped[item.column].append(q)
 
-        value = item.value
-        if item.operator == "eq":
-            qs = qs.filter(**{column: value})
-        elif item.operator == "neq":
-            qs = qs.exclude(**{column: value})
-        elif item.operator == "contains":
-            qs = qs.filter(**{f"{column}__icontains": value})
-        elif item.operator == "not_contains":
-            qs = qs.exclude(**{f"{column}__icontains": value})
-        elif item.operator == "starts_with":
-            qs = qs.filter(**{f"{column}__istartswith": value})
-        elif item.operator == "not_starts_with":
-            qs = qs.exclude(**{f"{column}__istartswith": value})
+    for column_qs in grouped.values():
+        combined = column_qs[0]
+        for extra in column_qs[1:]:
+            combined |= extra
+        qs = qs.filter(combined)
     return qs
 
 

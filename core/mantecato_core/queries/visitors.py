@@ -120,6 +120,7 @@ def read_scope_visitors(
     scope: str,
     scope_values: list[str],
     filters: list[Any] | None = None,
+    depth: int = 2,
 ) -> dict[str, int]:
     """Return exact unique visitors per ``scope_value`` — **filterable** at read time.
 
@@ -156,7 +157,7 @@ def read_scope_visitors(
 
         seen: dict[str, set[str]] = defaultdict(set)
         for url_path, vkey in ev_qs.values_list("url_path", "visitor_key").iterator():
-            sec = _normalize_url(section_for_path(url_path or "/"), "smart")
+            sec = _normalize_url(section_for_path(url_path or "/", depth=depth), "smart")
             if sec in want:
                 seen[sec].add(vkey)
         for sec, keys in seen.items():

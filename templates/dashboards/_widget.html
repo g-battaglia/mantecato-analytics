@@ -1,0 +1,95 @@
+{% load i18n %}
+{% comment %}
+One rendered dashboard widget. `w` is the context produced by
+apps.dashboards.widgets.render_widget — never raises, so `w.error` short-circuits.
+{% endcomment %}
+{% if w.error %}
+  <div class="flex h-full min-h-[8rem] flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+    <p class="text-sm font-semibold text-foreground">{{ w.title|default:"Widget" }}</p>
+    <p class="text-xs text-destructive">{{ w.error }}</p>
+  </div>
+
+{% elif w.kind == "kpi" %}
+  <div class="flex h-full flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{{ w.title|default:w.metric_label }}</p>
+    {% if w.stat %}
+    <div class="flex items-end justify-between gap-2">
+      <div class="text-[28px] font-medium leading-none tracking-tight tabular-nums text-foreground">{{ w.stat.value }}</div>
+      {% if w.stat.change %}
+      <span class="flex items-center gap-0.5 font-mono text-[11px] font-medium
+                   {% if w.stat.change.trend == 'up' %}text-green-500{% elif w.stat.change.trend == 'down' %}text-red-500{% else %}text-muted-foreground{% endif %}">
+        {% if w.stat.change.trend == 'up' %}<i data-lucide="trending-up" class="size-3"></i>
+        {% elif w.stat.change.trend == 'down' %}<i data-lucide="trending-down" class="size-3"></i>
+        {% else %}<i data-lucide="minus" class="size-3"></i>{% endif %}{{ w.stat.change.value }}
+      </span>
+      {% endif %}
+    </div>
+    <p class="text-[11px] text-muted-foreground">{{ w.metric_label }}</p>
+    {% else %}
+    <div class="text-[28px] font-medium tabular-nums text-muted-foreground">N/A</div>
+    {% endif %}
+  </div>
+
+{% elif w.kind == "timeseries" %}
+  {% with cid="wts-"|add:w.id %}
+  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{{ w.title|default:"Trend" }}</h2>
+    <div class="relative h-48 sm:h-64"><canvas id="{{ cid }}-canvas" data-chart-src="{{ cid }}" data-chart-kind="timeseries"></canvas></div>
+    {{ w.chart|json_script:cid }}
+  </div>
+  {% endwith %}
+
+{% elif w.kind == "breakdown" %}
+  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    {% include "components/_chart_card.html" with key="wbk-"|add:w.id title=w.title chart_data=w.chart default=w.chart_kind %}
+    {% if w.rows %}
+    <div class="mt-3 overflow-x-auto">
+      <table class="min-w-full divide-y divide-border text-sm">
+        <tbody class="divide-y divide-border/60">
+          {% for r in w.rows|slice:":12" %}
+          <tr>
+            <td class="py-1.5 pr-2">
+              <div class="truncate font-mono text-xs text-foreground" title="{{ r.label }}">{{ r.label }}</div>
+              <div class="mt-1 h-1 rounded-full bg-primary/15"><div class="h-1 rounded-full bg-primary" style="width: {{ r.pct }}%"></div></div>
+            </td>
+            <td class="whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-foreground">{{ r.value }}</td>
+            {% if r.visitors is not None %}
+            <td class="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums text-muted-foreground" title="{% trans 'Unique visitors' %}">{{ r.visitors }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="mt-3 text-xs text-muted-foreground">{% trans "No data for this period / filter." %}</p>
+    {% endif %}
+  </div>
+
+{% elif w.kind == "heatmap" %}
+  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{{ w.title|default:"Heatmap" }}</h2>
+    <div class="overflow-x-auto">
+      <table class="border-separate" style="border-spacing: 2px;">
+        <tbody>
+          {% for row in w.grid %}
+          <tr>
+            <td class="pr-1 text-right font-mono text-[9px] text-muted-foreground">{{ forloop.counter0|stringformat:"d" }}</td>
+            {% for cell in row %}
+            <td class="size-3 rounded-[2px] bg-primary"
+                style="opacity: {% if w.max_val %}{% widthratio cell w.max_val 100 %}{% else %}0{% endif %}%;"
+                title="{{ cell }}"></td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-2 font-mono text-[9px] text-muted-foreground">{% trans "Rows = day of week (0=Mon), columns = hour (0–23)" %}</p>
+  </div>
+
+{% else %}
+  <div class="flex h-full min-h-[8rem] items-center justify-center rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground">
+    {% trans "Unsupported widget" %}
+  </div>
+{% endif %}

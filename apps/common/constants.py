@@ -318,8 +318,12 @@ COUNTRY_CHOICES_SORTED: tuple[tuple[str, str], ...] = tuple(
 # ---------------------------------------------------------------------------
 
 DASHBOARD_DEFAULT_CONFIG: dict[str, object] = {
-    "version": 1,
-    "columns": 2,
-    "widgets": [],
+    "version": 2,
+    # 12-column responsive grid (gridstack); widgets carry their own grid box.
+    "layout": {"columns": 12},
     "dateRange": "30d",
+    # Dashboard-level filters cascade onto every widget (e.g. a "Pro" dashboard
+    # sets ["url_path:starts_with:/pro/"]).
+    "filters": [],
+    "widgets": [],
 }
