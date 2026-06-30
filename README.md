@@ -1,18 +1,11 @@
 <h1 align="center">📊 Mantecato</h1>
 <p align="center">
-  <img src="https://img.shields.io/badge/Django-6.x-092E20?logo=django&logoColor=white" alt="Django 6">
-  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
-  <img src="https://img.shields.io/badge/HTMX-2.x-3366CC?logo=htmx&logoColor=white" alt="HTMX">
-  <img src="https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
-  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache 2.0 License">
-  <img src="https://visitor-badge.laobi.icu/badge?page_id=g-battaglia.mantecato-analytics&left_text=Repo%20views" alt="Repo views">
-</p>
-<p align="center">
   <img src="https://img.shields.io/badge/Made_in-Italy_%F0%9F%87%AE%F0%9F%87%B9-008C45?labelColor=CD212A" alt="Made in Italy">
   <img src="https://img.shields.io/badge/GDPR-compliant_by_design-008C45" alt="GDPR compliant by design">
   <img src="https://img.shields.io/badge/Cookie_banner-not_required-2ea44f" alt="No cookie banner required">
   <img src="https://img.shields.io/badge/Consent_Mode-not_needed-2ea44f" alt="No consent mode needed">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache 2.0 License">
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=g-battaglia.mantecato-analytics&left_text=Repo%20views" alt="Repo views">
 </p>
 <p align="center">
   <strong>The ethical web analytics platform — for agents and humans. Proudly 🇮🇹 Made in Italy.</strong><br>
