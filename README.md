@@ -1,3 +1,4 @@
+<h1 align="center">📊 Mantecato</h1>
 <p align="center">
   <img src="https://img.shields.io/badge/Django-6.x-092E20?logo=django&logoColor=white" alt="Django 6">
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
@@ -13,9 +14,6 @@
   <img src="https://img.shields.io/badge/Cookie_banner-not_required-2ea44f" alt="No cookie banner required">
   <img src="https://img.shields.io/badge/Consent_Mode-not_needed-2ea44f" alt="No consent mode needed">
 </p>
-
-<h1 align="center">📊 Mantecato</h1>
-
 <p align="center">
   <strong>The ethical web analytics platform — for agents and humans. Proudly 🇮🇹 Made in Italy.</strong><br>
   Cookieless aggregate analytics. No consent banner, no Consent Mode, no CMP.<br>
