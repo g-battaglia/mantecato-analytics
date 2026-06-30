@@ -17,6 +17,8 @@ Removed pages (require persistent identifiers):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
 
@@ -52,11 +54,46 @@ from apps.common.mixins import (
     WebsiteContextMixin,
 )
 
+if TYPE_CHECKING:
+    from django.http import HttpRequest
+
 
 class OverviewView(AnalyticsBase):
-    """Default analytics landing page with pageview stats, charts, and HTMX tabs."""
+    """Default analytics landing page with pageview stats, charts, and HTMX tabs.
+
+    On the bare root (``/`` with no ``?website=``) the page behaves differently
+    depending on how many sites the principal can access:
+
+    - 0 or 1 site → render the overview directly (the single site, or the
+      empty "no data" state).
+    - more than 1 site → render a dedicated site picker so the user explicitly
+      chooses which site to open, instead of silently defaulting to the first
+      site by name (see :class:`apps.common.mixins.WebsiteContextMixin`).
+    """
 
     template_name = "analytics/overview.html"
+    site_picker_template = "analytics/site_picker.html"
+
+    def setup(self, request: HttpRequest, *args: object, **kwargs: object) -> None:
+        super().setup(request, *args, **kwargs)
+        # Bare root + multiple sites + no explicit selection → show the picker
+        # instead of silently defaulting to the first accessible site.
+        self.show_site_picker = (
+            not request.GET.get("website") and len(self.websites) > 1
+        )
+
+    @property
+    def has_data(self) -> bool:
+        # Force the no-data branch so the expensive overview services are
+        # skipped while the site picker is shown.
+        if getattr(self, "show_site_picker", False):
+            return False
+        return super().has_data
+
+    def get_template_names(self) -> list[str]:
+        if getattr(self, "show_site_picker", False):
+            return [self.site_picker_template]
+        return super().get_template_names()
 
     def get_service_data(self) -> dict:
         data = get_overview_data(
