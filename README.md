@@ -1,4 +1,11 @@
 <p align="center">
+  <img src="https://img.shields.io/badge/Made_in-Italy_%F0%9F%87%AE%F0%9F%87%B9-008C45?labelColor=CD212A" alt="Made in Italy">
+  <img src="https://img.shields.io/badge/GDPR-compliant_by_design-008C45" alt="GDPR compliant by design">
+  <img src="https://img.shields.io/badge/Cookie_banner-not_required-2ea44f" alt="No cookie banner required">
+  <img src="https://img.shields.io/badge/Consent_Mode-not_needed-2ea44f" alt="No consent mode needed">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Django-6.x-092E20?logo=django&logoColor=white" alt="Django 6">
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/HTMX-2.x-3366CC?logo=htmx&logoColor=white" alt="HTMX">
@@ -11,9 +18,9 @@
 <h1 align="center">📊 Mantecato</h1>
 
 <p align="center">
-  <strong>The ethical web analytics platform — for agents and humans.</strong><br>
-  Cookieless aggregate analytics. No analytics consent banners. No third-party tracking.<br>
-  Self-hosted, privacy-first, AI-native — built with Django + HTMX.
+  <strong>The ethical web analytics platform — for agents and humans. Proudly 🇮🇹 Made in Italy.</strong><br>
+  Cookieless aggregate analytics. No consent banner, no Consent Mode, no CMP.<br>
+  <strong>GDPR-compliant by design</strong> · no third-party tracking · self-hosted, privacy-first, AI-native — built with Django + HTMX.
 </p>
 
 <p align="center">
@@ -50,7 +57,8 @@ Every metric available in the dashboard is also available through the CLI, the R
 
 | | |
 |---|---|
-| 🔒 **Privacy-first** | Cookieless, no browser storage, no persistent or cross-site identifier, no third-party tracking — runs without a consent banner |
+| 🔒 **GDPR-compliant by design** | Cookieless, no browser storage, no persistent or cross-site identifier, no third-party tracking — runs without a consent banner, Consent Mode or CMP ([legal details](docs/privacy.md)) |
+| 🇮🇹 **Made in Italy** | Designed and built in Italy with European privacy law as the starting point, not an afterthought |
 | 🎯 **Exact, not estimated** | Exact daily unique visitors, visits and bounce rate via a compute-and-discard scheme — no cookies, no stored identifier ([how](docs/privacy.md)) |
 | 🪶 **Lightweight tracker** | ~2 KB JavaScript — your site stays fast, your Lighthouse score stays high |
 | 🏠 **Self-hosted** | Your analytics infrastructure can run on your own server. Hosted or third-party deployments may require appropriate agreements |
@@ -74,7 +82,7 @@ Add one script tag to your site:
         data-website-id="your-website-id"></script>
 ```
 
-That's it. Aggregate pageview data starts flowing into your dashboard instantly. No build step, no npm install, no configuration files.
+That's it. Aggregate pageview data starts flowing into your dashboard instantly. No build step, no npm install, no configuration files — and **no consent banner, Consent Mode or CMP to wire up**.
 
 Want to track custom events?
 
@@ -97,20 +105,35 @@ privacy opt-outs and dodge ad-blockers via first-party proxying — see
 
 ---
 
-## 🔒 Privacy & Compliance
+## 🔒 Privacy & Compliance — GDPR-compliant by design 🇮🇹
 
-Mantecato is built to run **without a cookie/consent banner** and to fit the major
-privacy regimes **by construction**. _Engineering-for-compliance, not legal advice —
-have counsel confirm for your specific deployment._
+Mantecato is **engineered in Italy to be GDPR-compliant by design**: it runs
+**without a cookie/consent banner** and fits the major privacy regimes **by
+construction**, not by configuration. The privacy-critical parameters are **fixed and
+non-configurable**, so the compliant posture cannot be accidentally turned off.
+_Engineering-for-compliance, not legal advice — have counsel confirm for your specific
+deployment._
+
+> 📚 **Read the legal details:** [docs/privacy.md](docs/privacy.md) — legal basis, what
+> is and isn't collected, and a model privacy notice you can adapt · 
+> [docs/data-processing-record.md](docs/data-processing-record.md) — an
+> authority-ready, field-by-field data inventory to hand to a GDPR / Garante / CNIL /
+> ICO enquiry.
+
+**No consent banner, no Consent Mode, no CMP — nothing to wire up.** Coming from
+Google Analytics or a cookie-based tool, you normally need a Consent Management
+Platform, Google **Consent Mode v2**, and a banner that blocks tracking until the
+visitor clicks "Accept". With Mantecato **none of that applies**: there is no consent
+signal to gate, no `consent` API to call, no CMP to integrate. You drop in the
+script tag and you're done — measurement starts immediately, for **100% of visitors**.
 
 **Why there's no banner.** The banner trigger (ePrivacy **Art. 5(3)** / UK PECR) is
 about *storing or accessing information on the device*. Mantecato uses **no cookies
 and no browser storage** (`credentials: "omit"`), so it never does that — regardless
-of anything done server-side.
+of anything done server-side. No storage access → no Art. 5(3) trigger → no consent
+required.
 
-**Optimised for GDPR and the consent-exempt audience-measurement frameworks.** The
-privacy-critical parameters are **fixed and non-configurable**, so the posture cannot
-be misconfigured:
+**What's hardcoded for GDPR and the consent-exempt audience-measurement frameworks:**
 
 - **first-party / single-site** — no cross-site or cross-day tracking, no fingerprinting
 - client **IP masked to `/24` (IPv4) · `/48` (IPv6)** and **never stored** (used transiently, then discarded)
