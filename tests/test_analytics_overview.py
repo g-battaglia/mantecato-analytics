@@ -445,6 +445,128 @@ class TestOverviewViewRendered:
 
 
 # ---------------------------------------------------------------------------
+# Root site picker (landing page when more than one site is accessible)
+# ---------------------------------------------------------------------------
+
+SECOND_WEBSITE_ID = "a0000000-0000-0000-0000-000000000002"
+
+
+def _fake_overview_data() -> dict:
+    """Minimal-but-complete payload so overview.html renders without errors."""
+    return {
+        "stats": {
+            "pageviews": {"value": "1.2K", "change": None},
+            "visitors": {"value": "567", "change": None},
+            "visits": {"value": "890", "change": None},
+            "bounce_rate": {"value": 45.2, "change": None},
+            "avg_duration": {"value": "2m 30s", "change": None},
+            "pages_per_visit": {"value": 1.4, "change": None},
+        },
+        "timeseries": [],
+        "prev_timeseries": [],
+        "sections": [],
+        "top_pages": [],
+        "top_referrers": [],
+        "top_events": [],
+        "browser": [],
+        "os": [],
+        "device": [],
+        "language": [],
+        "country": [],
+        "geo": [],
+        "channels": [],
+        "referrer_metrics": [],
+        "realtime": {"count": 3, "visitors": []},
+        "recent_events": [],
+        "current_pages": [],
+        "heatmap": [],
+        "event_metrics": [],
+        "date_range": MagicMock(),
+        "granularity": "day",
+    }
+
+
+class TestSitePicker:
+    def _setup_client(self, client: Client) -> None:
+        _login_as_admin(client)
+        self._patcher = _patch_middleware_user(client)
+
+    def teardown_method(self) -> None:
+        if hasattr(self, "_patcher"):
+            self._patcher.stop()
+
+    @patch("apps.analytics.views.get_overview_data")
+    @patch("apps.analytics.views.resolve_websites_for_user")
+    def test_multiple_sites_root_shows_picker(
+        self,
+        mock_websites: MagicMock,
+        mock_data: MagicMock,
+        client: Client,
+    ) -> None:
+        self._setup_client(client)
+        mock_websites.return_value = [
+            {"id": WEBSITE_ID, "name": "Alpha Site", "domain": "alpha.com"},
+            {"id": SECOND_WEBSITE_ID, "name": "Beta Site", "domain": "beta.com"},
+        ]
+
+        response = client.get("/")
+        content = response.content.decode()
+
+        template_names = [t.name for t in response.templates]
+        assert "analytics/site_picker.html" in template_names
+        assert "Alpha Site" in content
+        assert "Beta Site" in content
+        # Both site links target the overview with an explicit ?website=.
+        assert "?website=" + WEBSITE_ID in content
+        assert "?website=" + SECOND_WEBSITE_ID in content
+        # The expensive overview services must be skipped on the picker.
+        mock_data.assert_not_called()
+
+    @patch("apps.analytics.views.get_overview_data")
+    @patch("apps.analytics.views.resolve_websites_for_user")
+    def test_multiple_sites_explicit_website_shows_overview(
+        self,
+        mock_websites: MagicMock,
+        mock_data: MagicMock,
+        client: Client,
+    ) -> None:
+        self._setup_client(client)
+        mock_websites.return_value = [
+            {"id": WEBSITE_ID, "name": "Alpha Site", "domain": "alpha.com"},
+            {"id": SECOND_WEBSITE_ID, "name": "Beta Site", "domain": "beta.com"},
+        ]
+        mock_data.return_value = _fake_overview_data()
+
+        response = client.get("/?website=" + WEBSITE_ID)
+
+        template_names = [t.name for t in response.templates]
+        assert "analytics/site_picker.html" not in template_names
+        assert "analytics/overview.html" in template_names
+        mock_data.assert_called_once()
+
+    @patch("apps.analytics.views.get_overview_data")
+    @patch("apps.analytics.views.resolve_websites_for_user")
+    def test_single_site_root_shows_overview(
+        self,
+        mock_websites: MagicMock,
+        mock_data: MagicMock,
+        client: Client,
+    ) -> None:
+        self._setup_client(client)
+        mock_websites.return_value = [
+            {"id": WEBSITE_ID, "name": "Only Site", "domain": "only.com"},
+        ]
+        mock_data.return_value = _fake_overview_data()
+
+        response = client.get("/")
+
+        template_names = [t.name for t in response.templates]
+        assert "analytics/site_picker.html" not in template_names
+        assert "analytics/overview.html" in template_names
+        mock_data.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Service helper functions
 # ---------------------------------------------------------------------------
 
