@@ -1,4 +1,4 @@
-<h1 align="center">📊 Mantecato - Ethical Analytics</h1>
+<h1 align="center">Mantecato - Ethical Analytics</h1>
 <p align="center">
   <img src="https://img.shields.io/badge/Made_in-Italy_%F0%9F%87%AE%F0%9F%87%B9-008C45?labelColor=CD212A" alt="Made in Italy">
   <img src="https://img.shields.io/badge/GDPR-compliant_by_design-008C45" alt="GDPR compliant by design">
