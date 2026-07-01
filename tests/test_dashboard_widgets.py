@@ -316,6 +316,28 @@ def test_dashboard_list_links_to_detail(authenticated_client, db):
     assert f"/dashboards/{dashboard['id']}/".encode() in resp.content
 
 
+def test_seed_dashboards_command_is_idempotent(db):
+    from django.core.management import call_command
+
+    from apps.core.models import Dashboard, MantecatoUser
+
+    user = MantecatoUser(username="seedadmin", role="admin")
+    user.set_password("x")
+    user.save()
+
+    app_site = "a0000000-0000-0000-0000-0000000000a1"
+    www_site = "a0000000-0000-0000-0000-0000000000b2"
+    args = ["--user-id", str(user.id), "--app-website", app_site, "--www-website", www_site]
+
+    call_command("seed_dashboards", *args)
+    first = Dashboard.objects.filter(user_id=user.id).count()
+    assert first == 6  # www overview + app overview + 4 tier cohorts
+
+    # Re-running updates in place — no duplicates.
+    call_command("seed_dashboards", *args)
+    assert Dashboard.objects.filter(user_id=user.id).count() == 6
+
+
 def test_api_rejects_invalid_config(api_auth, client):
     from tests.conftest import API_TOKEN
 
