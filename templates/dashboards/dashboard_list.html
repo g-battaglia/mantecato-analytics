@@ -31,12 +31,17 @@
     <tbody class="divide-y divide-border">
       {% for dashboard in dashboards %}
       <tr class="hover:bg-muted/50">
-        <td class="px-4 py-3 text-sm font-medium text-foreground">{{ dashboard.name }}</td>
+        <td class="px-4 py-3 text-sm font-medium">
+          <a href="{% url 'dashboard_detail' dashboard.id %}"
+             class="text-foreground hover:text-primary hover:underline">{{ dashboard.name }}</a>
+        </td>
         <td class="px-4 py-3 text-sm text-muted-foreground">{{ dashboard.description|default:"—" }}</td>
         <td class="px-4 py-3 text-sm text-muted-foreground">{{ dashboard.updatedAt|date:"M d, Y H:i" }}</td>
         <td class="px-4 py-3 text-right text-sm">
+          <a href="{% url 'dashboard_detail' dashboard.id %}"
+             class="text-primary hover:text-primary/80">{% trans "Open" %}</a>
           <a href="{% url 'dashboard_edit' dashboard.id %}"
-             class="text-primary hover:text-primary/80">{% trans "Edit" %}</a>
+             class="ml-3 text-primary hover:text-primary/80">{% trans "Edit" %}</a>
           <form method="post" action="{% url 'dashboard_delete' dashboard.id %}" class="inline ml-3">
             {% csrf_token %}
             <button type="submit" class="text-destructive hover:text-destructive/80"

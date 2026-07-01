@@ -305,6 +305,17 @@ def test_create_blank_config_applies_default_scaffold(authenticated_client, db):
     assert cfg.get("version") == 2 and "widgets" in cfg
 
 
+def test_dashboard_list_links_to_detail(authenticated_client, db):
+    from apps.core.models import Website
+
+    Website.objects.create(id=WEBSITE_ID, user_id=ADMIN_USER_ID, name="S", is_deleted=False)
+    dashboard = create_new_dashboard(ADMIN_USER_ID, WEBSITE_ID, "Openable", config={"version": 2})
+    resp = authenticated_client.get("/dashboards/")
+    assert resp.status_code == 200
+    # The list must link each dashboard to its rendered detail view (name + Open).
+    assert f"/dashboards/{dashboard['id']}/".encode() in resp.content
+
+
 def test_api_rejects_invalid_config(api_auth, client):
     from tests.conftest import API_TOKEN
 
