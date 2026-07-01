@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{{ dashboard.name }}{% endblock %}
+{% block page_title %}{{ dashboard.name }}{% endblock %}
+
+{# The dashboard is pinned to its own website — replace the site switcher. #}
+{% block site_selector %}
+  <div class="truncate rounded-md border border-sidebar-border bg-sidebar px-3 py-2 text-[13px] text-sidebar-foreground" title="{{ dashboard.name }}">
+    <i data-lucide="layout-dashboard" class="mr-1.5 inline size-3.5 align-[-2px] text-sidebar-primary"></i>{{ dashboard.name }}
+  </div>
+{% endblock %}
+
+{# Runtime filter bar — its filters add on top of the dashboard's configured ones. #}
+{% block filter_bar %}{% include "components/_filter_bar.html" %}{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      {% if dashboard.description %}<p class="text-sm text-muted-foreground">{{ dashboard.description }}</p>{% endif %}
+    </div>
+    <a href="{% url 'dashboard_edit' dashboard.id %}"
+       class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+      <i data-lucide="pencil" class="size-3.5"></i>{% trans "Edit" %}
+    </a>
+  </div>
+
+  {% if widgets %}
+  <div class="grid grid-cols-12 gap-4">
+    {% for w in widgets %}
+    {% if w.id %}
+    {% with span=w.grid.w|default:6 %}
+    <div style="grid-column: span {{ span }} / span {{ span }};"
+         hx-get="{% url 'dashboard_widget' dashboard.id w.id %}?{{ request.GET.urlencode }}"
+         hx-trigger="load" hx-target="this" hx-swap="innerHTML">
+      <div class="flex h-32 items-center justify-center rounded-lg border border-border bg-card text-xs text-muted-foreground">
+        <span class="animate-pulse">{% trans "Loading…" %}</span>
+      </div>
+    </div>
+    {% endwith %}
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
+    <i data-lucide="layout-dashboard" class="size-8 text-muted-foreground"></i>
+    <p class="text-sm text-muted-foreground">{% trans "This dashboard has no widgets yet." %}</p>
+    <a href="{% url 'dashboard_edit' dashboard.id %}"
+       class="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+      <i data-lucide="plus" class="size-3.5"></i>{% trans "Open builder" %}
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

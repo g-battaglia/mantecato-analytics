@@ -15,10 +15,11 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.db import connection
-from django.db.models import Count, Max, QuerySet
+from django.db.models import Count, Max, Q, QuerySet
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
+from core.mantecato_core.filters import POSITIVE_OPERATORS, VALID_FILTER_COLUMNS
 from core.mantecato_core.visitor_counting import section_for_path
 
 if TYPE_CHECKING:
@@ -39,11 +40,44 @@ def _parse_bot_config(value: str) -> dict[str, Any]:
     return cfg if isinstance(cfg, dict) else {}
 
 
+def _filter_q(column: str, operator: str, value: str) -> Q | None:
+    """Translate one Filter into a Django ``Q`` (mirrors build_filter_sql)."""
+    if operator == "eq":
+        return Q(**{column: value})
+    if operator == "neq":
+        return ~Q(**{column: value})
+    if operator == "contains":
+        return Q(**{f"{column}__icontains": value})
+    if operator == "not_contains":
+        return ~Q(**{f"{column}__icontains": value})
+    if operator == "starts_with":
+        return Q(**{f"{column}__istartswith": value})
+    if operator == "not_starts_with":
+        return ~Q(**{f"{column}__istartswith": value})
+    if operator in ("in", "not_in"):
+        values = [v.strip() for v in (value.split(",") if value else []) if v.strip()]
+        if not values:
+            # Mirror build_filter_sql: empty `in` matches nothing (never drop →
+            # match-all); empty `not_in` excludes nothing (no-op).
+            return Q(pk__in=[]) if operator == "in" else None
+        q = Q(**{f"{column}__in": values})
+        # Mirror build_filter_sql's not_in (``col IS NULL OR col <> ALL(...)``),
+        # which keeps NULL rows — ``~Q(col__in=...)`` alone would drop them.
+        return q if operator == "in" else (Q(**{f"{column}__isnull": True}) | ~q)
+    return None
+
+
 def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
-    """Apply privacy-first filters to a WebsiteEvent queryset."""
+    """Apply privacy-first filters to a WebsiteEvent queryset.
+
+    Mirrors ``build_filter_sql``: within a column, **positive** filters OR
+    together ("/trial/ OR /pro/") while **negated** filters AND together
+    (exclude BOTH /admin/ AND /login/ — OR-ing negations would match every row).
+    Different columns are AND-ed.
+    """
+    grouped: dict[str, list[tuple[str, Q]]] = defaultdict(list)
     for item in filters or []:
-        column = item.column
-        if column == "__bot_filter__":
+        if item.column == "__bot_filter__":
             cfg = _parse_bot_config(item.value)
             reasons: list[str] = []
             if cfg.get("knownBots", True):
@@ -63,32 +97,24 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
                 qs = qs.exclude(country__in=countries)
             continue
 
-        if column not in {
-            "url_path",
-            "page_title",
-            "hostname",
-            "browser",
-            "os",
-            "device",
-            "country",
-            "event_name",
-            "referrer_domain",
-        }:
+        if item.column not in VALID_FILTER_COLUMNS:
             continue
+        q = _filter_q(item.column, item.operator, item.value)
+        if q is not None:
+            grouped[item.column].append((item.operator, q))
 
-        value = item.value
-        if item.operator == "eq":
-            qs = qs.filter(**{column: value})
-        elif item.operator == "neq":
-            qs = qs.exclude(**{column: value})
-        elif item.operator == "contains":
-            qs = qs.filter(**{f"{column}__icontains": value})
-        elif item.operator == "not_contains":
-            qs = qs.exclude(**{f"{column}__icontains": value})
-        elif item.operator == "starts_with":
-            qs = qs.filter(**{f"{column}__istartswith": value})
-        elif item.operator == "not_starts_with":
-            qs = qs.exclude(**{f"{column}__istartswith": value})
+    for column_qs in grouped.values():
+        positives = [q for op, q in column_qs if op in POSITIVE_OPERATORS]
+        negatives = [q for op, q in column_qs if op not in POSITIVE_OPERATORS]
+        combined: Q | None = None
+        if positives:
+            combined = positives[0]
+            for extra in positives[1:]:
+                combined |= extra  # inclusive: /trial/ OR /pro/
+        for nq in negatives:
+            combined = nq if combined is None else (combined & nq)  # exclusions AND
+        if combined is not None:
+            qs = qs.filter(combined)
     return qs
 
 

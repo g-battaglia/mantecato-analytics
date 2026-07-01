@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% load i18n static %}
+
+{% block title %}{% trans "Edit" %} · {{ dashboard.name }}{% endblock %}
+{% block page_title %}{% trans "Dashboard builder" %}{% endblock %}
+{% block site_selector %}
+  <div class="truncate rounded-md border border-sidebar-border bg-sidebar px-3 py-2 text-[13px] text-sidebar-foreground" title="{{ dashboard.name }}">
+    <i data-lucide="layout-dashboard" class="mr-1.5 inline size-3.5 align-[-2px] text-sidebar-primary"></i>{{ dashboard.name }}
+  </div>
+{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10/dist/gridstack.min.css">
+  <style>
+    .grid-stack { background: transparent; }
+    .grid-stack-item-content { inset: 4px !important; width: auto !important; height: auto !important; overflow: hidden; }
+  </style>
+{% endblock %}
+
+{% block content %}
+{# Hidden form that actually persists the dashboard (name/description/config). #}
+<form id="builder-form" method="post" action="{% url 'dashboard_edit' dashboard.id %}" class="hidden">
+  {% csrf_token %}
+  <input type="hidden" name="name" id="f-name">
+  <input type="hidden" name="description" id="f-description">
+  <input type="hidden" name="config" id="f-config">
+</form>
+
+{# Config payload for the JS model. #}
+{{ dashboard.config|json_script:"dash-config" }}
+
+<div class="flex flex-col gap-4 p-4 sm:p-6" id="builder-root"
+     data-description="{{ dashboard.description|default:'' }}"
+     data-preview-url="{% url 'dashboard_widget_preview' dashboard.id %}"
+     data-detail-url="{% url 'dashboard_detail' dashboard.id %}">
+
+  {# ── Toolbar ── #}
+  <div class="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3 shadow-sm">
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Name" %}</span>
+      <input id="b-name" value="{{ dashboard.name }}" class="h-9 w-56 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring/40">
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Default date range" %}</span>
+      <select id="b-dateRange" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring/40">
+        <option value="1h">1h</option><option value="3h">3h</option><option value="24h">24h</option>
+        <option value="7d">7d</option><option value="14d">14d</option><option value="30d" selected>30d</option>
+        <option value="90d">90d</option><option value="12m">12m</option>
+      </select>
+    </label>
+    <div class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Dashboard filters (cascade to all widgets)" %}</span>
+      <div id="b-dash-filters" class="flex min-h-9 flex-wrap items-center gap-1.5"></div>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" id="btn-add-widget" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground hover:bg-muted">
+        <i data-lucide="plus" class="size-3.5"></i>{% trans "Add widget" %}
+      </button>
+      <button type="button" id="btn-advanced" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium text-muted-foreground hover:bg-muted">
+        <i data-lucide="code" class="size-3.5"></i>{% trans "JSON" %}
+      </button>
+      <a href="{% url 'dashboard_detail' dashboard.id %}" class="inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-xs font-medium text-muted-foreground hover:bg-muted">{% trans "View" %}</a>
+      <button type="button" id="btn-save" class="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+        <i data-lucide="save" class="size-3.5"></i>{% trans "Save" %}
+      </button>
+    </div>
+  </div>
+
+  {# ── Advanced raw-JSON (hidden by default) ── #}
+  <div id="advanced-panel" class="hidden">
+    <textarea id="b-json" rows="10" class="w-full rounded-md border border-input bg-background p-3 font-mono text-xs text-foreground outline-none focus:ring-1 focus:ring-ring/40"></textarea>
+    <div class="mt-1 flex gap-2">
+      <button type="button" id="btn-json-apply" class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">{% trans "Apply JSON" %}</button>
+      <span id="json-error" class="self-center text-xs text-destructive"></span>
+    </div>
+  </div>
+
+  {# ── The grid ── #}
+  <div class="grid-stack"></div>
+  <p id="empty-hint" class="hidden rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{% trans "No widgets yet — click “Add widget”." %}</p>
+</div>
+
+{# ── Widget config drawer ── #}
+<div id="cfg-overlay" class="fixed inset-0 z-40 hidden bg-black/40"></div>
+<aside id="cfg-drawer" class="fixed right-0 top-0 z-50 hidden h-full w-[380px] overflow-y-auto border-l border-border bg-card p-4 shadow-xl">
+  <div class="mb-3 flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-foreground">{% trans "Widget" %}</h2>
+    <button type="button" id="cfg-close" class="text-muted-foreground hover:text-foreground"><i data-lucide="x" class="size-4"></i></button>
+  </div>
+  <div class="flex flex-col gap-3 text-sm">
+    <label class="flex flex-col gap-1"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Type" %}</span>
+      <select id="cfg-type" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm">
+        <option value="kpi">KPI</option><option value="timeseries">Time series</option>
+        <option value="breakdown">Breakdown</option><option value="heatmap">Heatmap</option>
+      </select></label>
+    <label class="flex flex-col gap-1"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Title" %}</span>
+      <input id="cfg-title" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm"></label>
+
+    <label class="flex flex-col gap-1" data-when="kpi"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Metric" %}</span>
+      <select id="cfg-metric" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm">
+        <option value="pageviews">Pageviews</option><option value="visitors">Visitors</option><option value="visits">Visits</option>
+        <option value="bounce_rate">Bounce rate</option><option value="avg_duration">Avg duration</option><option value="pages_per_visit">Pages / visit</option>
+      </select></label>
+
+    <label class="flex flex-col gap-1" data-when="breakdown"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Source" %}</span>
+      <select id="cfg-source" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm">
+        <option value="events">Events</option><option value="pages">Pages</option><option value="sections">Sections (tier with depth 1)</option>
+        <option value="browser">Browser</option><option value="os">OS</option><option value="device">Device</option>
+        <option value="country">Country</option><option value="sources">Sources</option><option value="entry">Entry pages</option>
+      </select></label>
+    <label class="flex flex-col gap-1" data-when="breakdown"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Chart" %}</span>
+      <select id="cfg-chart" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm"><option value="bar">Bar</option><option value="pie">Pie</option></select></label>
+    <label class="flex flex-col gap-1" data-when="breakdown-sections"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Section depth (1 = tier)" %}</span>
+      <input id="cfg-depth" type="number" min="1" max="6" value="2" class="h-9 w-20 rounded-md border border-input bg-background px-2.5 text-sm"></label>
+
+    <label class="flex flex-col gap-1"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Date range override (optional)" %}</span>
+      <select id="cfg-dateRange" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm">
+        <option value="">{% trans "Use dashboard default" %}</option>
+        <option value="24h">24h</option><option value="7d">7d</option><option value="30d">30d</option><option value="90d">90d</option><option value="12m">12m</option>
+      </select></label>
+
+    <div class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Widget filters" %}</span>
+      <div id="cfg-filters"></div>
+      <button type="button" id="cfg-add-filter" class="mt-1 inline-flex h-8 items-center gap-1 self-start rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted"><i data-lucide="plus" class="size-3"></i>{% trans "Add filter" %}</button>
+    </div>
+
+    <div class="mt-2 flex gap-2">
+      <button type="button" id="cfg-apply" class="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">{% trans "Apply" %}</button>
+    </div>
+  </div>
+</aside>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@10/dist/gridstack-all.js"></script>
+  <script src="{% static 'js/dashboard_builder.js' %}"></script>
+{% endblock %}

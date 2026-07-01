@@ -94,10 +94,12 @@ class _ReportModelForm(forms.ModelForm):
             **kwargs: Keyword arguments forwarded to ``ModelForm.__init__``.
         """
         super().__init__(*args, **kwargs)
-        if self.instance.pk:
-            # Website is immutable after creation -- disabling the field
-            # prevents both rendering an editable widget and accepting a
-            # changed value in submitted data.
+        # Website is immutable after creation -- disable the field on EXISTING
+        # rows only. The PK is a UUIDField with a uuid4 default, so a brand-new
+        # unsaved instance already carries a truthy ``pk``; ``_state.adding`` is
+        # the reliable "row not yet in the DB" signal (a bare ``self.instance.pk``
+        # check would wrongly disable the field on create and drop the value).
+        if self.instance.pk and not self.instance._state.adding:
             self.fields["website_id"].required = False
             self.fields["website_id"].disabled = True
 
@@ -174,6 +176,22 @@ class DashboardModelForm(_ReportModelForm):
             self.initial["config"] = json.dumps(
                 self.instance.parameters or {}, indent=2, ensure_ascii=False
             )
+
+    def clean_config(self) -> object:
+        """Reject a config whose widget schema would not render.
+
+        Permissive about extra/legacy keys but strict about the v2 widget
+        contract (type/metric/source/filters), so a saved dashboard always
+        renders. Empty/absent config is fine (the default layout is applied).
+        """
+        config = self.cleaned_data.get("config")
+        if config:
+            from apps.dashboards.widgets import validate_dashboard_config
+
+            errors = validate_dashboard_config(config)
+            if errors:
+                raise forms.ValidationError("; ".join(errors[:5]))
+        return config
 
     def save(self, commit: bool = True) -> Dashboard:
         """Persist the dashboard, applying the default layout on create.

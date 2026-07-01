@@ -120,6 +120,7 @@ def read_scope_visitors(
     scope: str,
     scope_values: list[str],
     filters: list[Any] | None = None,
+    depth: int = 2,
 ) -> dict[str, int]:
     """Return exact unique visitors per ``scope_value`` — **filterable** at read time.
 
@@ -156,7 +157,7 @@ def read_scope_visitors(
 
         seen: dict[str, set[str]] = defaultdict(set)
         for url_path, vkey in ev_qs.values_list("url_path", "visitor_key").iterator():
-            sec = _normalize_url(section_for_path(url_path or "/"), "smart")
+            sec = _normalize_url(section_for_path(url_path or "/", depth=depth), "smart")
             if sec in want:
                 seen[sec].add(vkey)
         for sec, keys in seen.items():
@@ -172,7 +173,14 @@ def read_scope_visitors(
             out[r[field]] = r["n"] or 0
 
     # Beyond retention: dimensionless aggregates (cannot be sliced by a filter).
-    if start_date < event_lower and has_only_bot_filter(filters):
+    # ``VisitorPeriod`` section rows are rolled up at the default section depth,
+    # so a non-default depth (e.g. tier grouping, depth=1) can't be matched —
+    # and matching by value would incidentally fold in only the URLs whose
+    # deeper section happens to equal a shallow one. Skip the historical tail for
+    # non-default-depth section requests (honest omission over a wrong partial);
+    # depth-aware rollups would be needed to restore it.
+    section_depth_ok = not (scope == "section" and depth != 2)
+    if start_date < event_lower and has_only_bot_filter(filters) and section_depth_ok:
         for _pk, p_start, _p_end in periods_in_range(
             utc_day(start_date), min(agg_upper_day, utc_day(end_date)), window
         ):

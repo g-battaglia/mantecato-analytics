@@ -24,15 +24,23 @@ Cross-refs:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import ListView
 
+from apps.common.constants import VALID_RANGE_PRESETS
 from apps.common.forms import DashboardModelForm, first_error
+from apps.common.mixins import (
+    _bot_filter_default_enabled,
+    _parse_offset,
+    load_bot_filter_payload,
+)
 from apps.dashboards.services import (
     create_new_dashboard,
     get_dashboard_detail,
@@ -40,9 +48,18 @@ from apps.dashboards.services import (
     remove_dashboard,
     update_existing_dashboard,
 )
+from apps.dashboards.widgets import render_widget
+from core.mantecato_core.date_utils import (
+    VALID_GRANULARITIES,
+    DateRange,
+    resolve_date_range,
+)
+from core.mantecato_core.filters import Filter, parse_filters_from_params
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
+
+_FALLBACK_RANGE = "30d"
 
 
 # ---------------------------------------------------------------------------
@@ -164,21 +181,24 @@ class DashboardCreateView(LoginRequiredMixin, View):
                 {"action": "create", "form_data": _form_data_from_post(request.POST)},
             )
         cleaned = form.cleaned_data
-        create_new_dashboard(
+        created = create_new_dashboard(
             user_id=str(request.user.id),
             website_id=str(cleaned["website_id"]),
             name=cleaned["name"],
             description=cleaned["description"],
-            config=cleaned["config"] or {},
+            # Pass None (not {}) when blank so create_new_dashboard applies the
+            # v2 default scaffold instead of persisting empty parameters.
+            config=cleaned["config"],
         )
-        messages.success(request, "Dashboard created successfully.")
-        return redirect("dashboard_list")
+        messages.success(request, "Dashboard created — add some widgets.")
+        # Straight into the visual builder for the freshly-created dashboard.
+        return redirect("dashboard_edit", report_id=created["id"])
 
 
 class DashboardUpdateView(LoginRequiredMixin, View):
-    """Render and process the edit form for a single owned dashboard."""
+    """Render the visual builder and process its saved config for a single dashboard."""
 
-    template_name = "dashboards/dashboard_form.html"
+    template_name = "dashboards/dashboard_builder.html"
 
     def _render(self, request: HttpRequest, dashboard: dict, form_data: dict) -> HttpResponse:
         """Render the edit template with the dashboard context.
@@ -245,7 +265,22 @@ class DashboardUpdateView(LoginRequiredMixin, View):
         form = DashboardModelForm(data=form_data)
         if not form.is_valid():
             messages.error(request, first_error(form))
-            return self._render(request, dashboard, _form_data_from_post(request.POST))
+            # Re-seed the builder with the user's in-progress edits (submitted
+            # config/name) instead of the last-saved state, so a rejected save
+            # doesn't silently discard their work.
+            try:
+                submitted_config = (
+                    json.loads(form_data["config"]) if form_data["config"] else dashboard.get("config")
+                )
+            except (json.JSONDecodeError, TypeError):
+                submitted_config = dashboard.get("config")
+            preserved = {
+                **dashboard,
+                "name": form_data["name"] or dashboard.get("name"),
+                "description": form_data["description"],
+                "config": submitted_config,
+            }
+            return self._render(request, preserved, _form_data_from_post(request.POST))
         cleaned = form.cleaned_data
         update_existing_dashboard(
             report_id=report_id,
@@ -296,3 +331,191 @@ class DashboardDeleteView(LoginRequiredMixin, View):
         else:
             messages.error(request, "Dashboard not found or already deleted.")
         return redirect("dashboard_list")
+
+
+# ---------------------------------------------------------------------------
+# Rendered dashboard (detail) + per-widget HTMX partial
+# ---------------------------------------------------------------------------
+
+
+def _aware_utc(value: str) -> datetime:
+    """Parse an ISO-8601 string into an aware UTC datetime (naive → assumed UTC)."""
+    dt = datetime.fromisoformat(value)
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _resolve_runtime(request: HttpRequest, default_range_preset: str, website_id: str) -> dict[str, Any]:
+    """Parse the runtime date range + ad-hoc filters from the query string.
+
+    Mirrors the analytics filter bar so a saved dashboard is interactively
+    sliceable. Everything lives in the query string (bookmarkable); the
+    dashboard's own ``dateRange`` is the default when ``?range=`` is absent.
+    """
+    offset = 0
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    if start and end:
+        try:
+            # Normalize to aware UTC — <input type="datetime-local"> values are
+            # naive, and DateRange's contract is aware UTC (USE_TZ=True).
+            date_range: DateRange | None = DateRange(_aware_utc(start), _aware_utc(end))
+        except ValueError:
+            date_range = None
+        range_preset = "custom"
+    else:
+        range_preset = request.GET.get("range") or default_range_preset
+        if range_preset not in VALID_RANGE_PRESETS:
+            range_preset = (
+                default_range_preset if default_range_preset in VALID_RANGE_PRESETS else _FALLBACK_RANGE
+            )
+        date_range = resolve_date_range(range_preset)
+        offset = _parse_offset(request.GET.get("offset"))
+        if offset and date_range is not None:
+            shift = (date_range.end_date - date_range.start_date) * offset
+            date_range = DateRange(date_range.start_date - shift, date_range.end_date - shift)
+    if date_range is None:
+        date_range = resolve_date_range(_FALLBACK_RANGE)
+
+    granularity = request.GET.get("granularity", "auto")
+    if granularity != "auto" and granularity not in VALID_GRANULARITIES:
+        granularity = "auto"
+
+    raw = [*request.GET.getlist("filter"), *request.GET.getlist("f")]
+    active_filters = parse_filters_from_params(raw) if raw else []
+
+    # Match the analytics filter bar (FiltersMixin.bot_filter): an explicit
+    # ?bot_filter=1/0 wins, otherwise fall back to the site's "filter bots by
+    # default" preference — so dashboards don't silently include bot traffic
+    # the analytics pages exclude.
+    bot_param = request.GET.get("bot_filter")
+    if bot_param is not None:
+        bot_filter = bot_param == "1"
+    elif website_id:
+        bot_filter = _bot_filter_default_enabled(str(website_id))
+    else:
+        bot_filter = False
+    filters = list(active_filters)
+    if bot_filter and website_id:
+        payload = load_bot_filter_payload(str(website_id))
+        if payload is not None:
+            filters.append(Filter(column="__bot_filter__", operator="eq", value=payload))
+
+    return {
+        "date_range": date_range,
+        "range_preset": range_preset,
+        "granularity": granularity,
+        "range_offset": offset,
+        "current_range": date_range,
+        "active_filters": active_filters,
+        "filters": filters,
+        "bot_filter": bot_filter,
+    }
+
+
+class DashboardDetailView(LoginRequiredMixin, View):
+    """Render a saved dashboard: filter bar + the widget grid (lazy-loaded by HTMX)."""
+
+    template_name = "dashboards/dashboard_detail.html"
+
+    def get(self, request: HttpRequest, report_id: str) -> HttpResponse:
+        dashboard = get_dashboard_detail(str(report_id), str(request.user.id))
+        if dashboard is None:
+            messages.error(request, "Dashboard not found.")
+            return redirect("dashboard_list")
+        config = dashboard.get("config") or {}
+        website_id = dashboard.get("websiteId") or ""
+        default_range = config.get("dateRange")
+        if not isinstance(default_range, str):
+            default_range = _FALLBACK_RANGE
+        runtime = _resolve_runtime(request, default_range, website_id)
+        widgets = [w for w in config.get("widgets", []) if isinstance(w, dict)]
+        layout = config.get("layout") if isinstance(config.get("layout"), dict) else {}
+        ctx = {
+            "dashboard": dashboard,
+            "website_id": website_id,
+            "selected_website": website_id,
+            "selected_website_name": dashboard.get("name"),
+            "websites": [],
+            "columns": layout.get("columns", 12),
+            "widgets": widgets,
+            "range_preset": runtime["range_preset"],
+            "granularity": runtime["granularity"],
+            "range_offset": runtime["range_offset"],
+            "current_range": runtime["current_range"],
+            "active_filters": runtime["active_filters"],
+            "bot_filter": runtime["bot_filter"],
+        }
+        return render(request, self.template_name, ctx)
+
+
+class DashboardWidgetView(LoginRequiredMixin, View):
+    """HTMX partial: render a single widget's data with the current runtime filters."""
+
+    template_name = "dashboards/_widget.html"
+
+    def get(self, request: HttpRequest, report_id: str, widget_id: str) -> HttpResponse:
+        dashboard = get_dashboard_detail(str(report_id), str(request.user.id))
+        if dashboard is None:
+            raise Http404("Dashboard not found")
+        config = dashboard.get("config") or {}
+        website_id = dashboard.get("websiteId") or ""
+        widget = next(
+            (
+                w
+                for w in config.get("widgets", [])
+                if isinstance(w, dict) and str(w.get("id")) == str(widget_id)
+            ),
+            None,
+        )
+        if widget is None:
+            raise Http404("Widget not found")
+        default_range = config.get("dateRange")
+        if not isinstance(default_range, str):
+            default_range = _FALLBACK_RANGE
+        runtime = _resolve_runtime(request, default_range, website_id)
+        rendered = render_widget(
+            website_id,
+            config,
+            widget,
+            runtime_range=runtime["date_range"],
+            runtime_filters=runtime["filters"],
+            runtime_granularity=runtime["granularity"],
+        )
+        return render(request, self.template_name, {"w": rendered})
+
+
+class DashboardWidgetPreviewView(LoginRequiredMixin, View):
+    """POST an *unsaved* widget config → its rendered partial (builder live preview)."""
+
+    http_method_names = ("post",)
+    template_name = "dashboards/_widget.html"
+
+    def post(self, request: HttpRequest, report_id: str) -> HttpResponse:
+        dashboard = get_dashboard_detail(str(report_id), str(request.user.id))
+        if dashboard is None:
+            raise Http404("Dashboard not found")
+        website_id = dashboard.get("websiteId") or ""
+        try:
+            payload = json.loads(request.body or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {}
+        widget = payload.get("widget") if isinstance(payload, dict) else None
+        if not isinstance(widget, dict):
+            return render(request, self.template_name, {"w": {"error": "Invalid widget config"}})
+        dashboard_cfg = {
+            "filters": payload.get("dashboardFilters") or [],
+            "dateRange": payload.get("dashboardDateRange"),
+        }
+        default_range = dashboard_cfg.get("dateRange")
+        if not isinstance(default_range, str):
+            default_range = _FALLBACK_RANGE
+        runtime = _resolve_runtime(request, default_range, website_id)
+        rendered = render_widget(
+            website_id,
+            dashboard_cfg,
+            widget,
+            runtime_range=runtime["date_range"],
+            runtime_filters=runtime["filters"],
+            runtime_granularity=runtime["granularity"],
+        )
+        return render(request, self.template_name, {"w": rendered})
