@@ -215,6 +215,67 @@ def test_unknown_widget_returns_error(seeded):
     assert "error" in w
 
 
+# ── New widget types (funnel / namespace / ratio / compare) ──────────────────
+
+
+def test_namespace_widget_groups_events_by_prefix(seeded):
+    _ev("/pro/x", event_type=2, event_name="settings/ai/enable")
+    _ev("/pro/x", event_type=2, event_name="settings/preset/save")
+    _ev("/pro/x", event_type=2, event_name="chart/export/pdf")
+    w = render_widget(WEBSITE_ID, {}, {"id": "ns", "type": "namespace", "depth": 1}, runtime_range=_range())
+    assert "error" not in w
+    labels = [r["label"] for r in w["rows"]]
+    assert "settings" in labels and "chart" in labels  # grouped by first slash segment
+
+
+def test_funnel_widget_counts_unique_visitors_per_step(seeded):
+    # Distinct visitor_key per step within the window — aggregate, cookieless.
+    _ev("/pro/x", event_type=2, event_name="funnel/signup/start", visitor_key="v1")
+    _ev("/pro/x", event_type=2, event_name="funnel/signup/start", visitor_key="v2")
+    _ev("/pro/x", event_type=2, event_name="funnel/signup/complete", visitor_key="v1")
+    w = render_widget(
+        WEBSITE_ID, {},
+        {"id": "f", "type": "funnel", "steps": [
+            {"event": "funnel/signup/start", "label": "Start"},
+            {"event": "funnel/signup/complete", "label": "Complete"},
+        ]},
+        runtime_range=_range(),
+    )
+    assert "error" not in w and w["kind"] == "funnel"
+    assert w["rows"][0]["visitors"] == 2 and w["rows"][1]["visitors"] == 1
+    assert w["rows"][1]["pct"] == 50.0
+
+
+def test_ratio_widget_event_over_event(seeded):
+    _ev("/pro/x", event_type=2, event_name="a/win", visitor_key="v1")
+    _ev("/pro/x", event_type=2, event_name="a/win", visitor_key="v2")
+    for vk in ("v1", "v2", "v3"):
+        _ev("/pro/x", event_type=2, event_name="a/try", visitor_key=vk)
+    w = render_widget(
+        WEBSITE_ID, {},
+        {"id": "r", "type": "ratio", "numerator": {"event": "a/win"}, "denominator": {"event": "a/try"}},
+        runtime_range=_range(),
+    )
+    assert "error" not in w and w["kind"] == "ratio"
+    assert w["numerator"] == 2 and w["denominator"] == 3 and w["pct"] == 66.7
+
+
+def test_compare_widget_renders(seeded):
+    w = render_widget(WEBSITE_ID, {}, {"id": "c", "type": "compare"}, runtime_range=_range())
+    assert "error" not in w and w["kind"] == "compare"
+    assert "labels" in w["chart"]
+
+
+def test_validate_new_widget_types():
+    errs = validate_dashboard_config({"widgets": [
+        {"id": "f", "type": "funnel"},                        # missing steps
+        {"id": "r", "type": "ratio"},                         # missing numerator/denominator
+        {"id": "n", "type": "namespace", "depth": 999},       # depth out of range
+        {"id": "c", "type": "compare", "comparison": "bogus"},  # bad mode
+    ]})
+    assert len(errs) >= 4
+
+
 # ── Views ────────────────────────────────────────────────────────────────────
 
 
@@ -250,6 +311,25 @@ def test_heatmap_widget_renders_with_day_labels(authenticated_client, seeded):
     r = authenticated_client.get(f"/dashboards/{did}/widget/hm/?range=30d")
     assert r.status_code == 200
     assert b"Sun" in r.content and b"Sat" in r.content  # DOW labels (0=Sun) render
+
+
+def test_new_widget_types_render_via_view(authenticated_client, seeded):
+    _ev("/pro/x", event_type=2, event_name="funnel/signup/start", visitor_key="v1")
+    dashboard = create_new_dashboard(
+        ADMIN_USER_ID, WEBSITE_ID, "New types",
+        config={"version": 2, "widgets": [
+            {"id": "fn", "type": "funnel", "steps": [{"event": "funnel/signup/start", "label": "Start"}]},
+            {"id": "ns", "type": "namespace", "depth": 1},
+            {"id": "rt", "type": "ratio",
+             "numerator": {"event": "funnel/signup/start"}, "denominator": {"event": "funnel/signup/start"}},
+            {"id": "cmp", "type": "compare"},
+        ]},
+    )
+    did = dashboard["id"]
+    for wid in ("fn", "ns", "rt", "cmp"):
+        resp = authenticated_client.get(f"/dashboards/{did}/widget/{wid}/?range=30d")
+        assert resp.status_code == 200, wid
+        assert b"Could not load this widget" not in resp.content, wid
 
 
 def test_builder_page_and_preview(authenticated_client, seeded):
@@ -325,17 +405,14 @@ def test_seed_dashboards_command_is_idempotent(db):
     user.set_password("x")
     user.save()
 
-    app_site = "a0000000-0000-0000-0000-0000000000a1"
-    www_site = "a0000000-0000-0000-0000-0000000000b2"
-    args = ["--user-id", str(user.id), "--app-website", app_site, "--www-website", www_site]
+    args = ["--user-id", str(user.id), "--website", "a0000000-0000-0000-0000-0000000000a1"]
 
-    call_command("seed_dashboards", *args)
-    first = Dashboard.objects.filter(user_id=user.id).count()
-    assert first == 6  # www overview + app overview + 4 tier cohorts
+    call_command("seed_dashboards", *args)  # built-in generic "Overview"
+    assert Dashboard.objects.filter(user_id=user.id).count() == 1
 
     # Re-running updates in place — no duplicates.
     call_command("seed_dashboards", *args)
-    assert Dashboard.objects.filter(user_id=user.id).count() == 6
+    assert Dashboard.objects.filter(user_id=user.id).count() == 1
 
 
 def test_api_rejects_invalid_config(api_auth, client):

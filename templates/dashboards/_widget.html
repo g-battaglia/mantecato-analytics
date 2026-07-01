@@ -39,6 +39,42 @@ apps.dashboards.widgets.render_widget — never raises, so `w.error` short-circu
   </div>
   {% endwith %}
 
+{% elif w.kind == "funnel" %}
+  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{{ w.title|default:"Funnel" }}</h2>
+    {% if w.rows %}
+    <div class="flex flex-col gap-2.5">
+      {% for r in w.rows %}
+      <div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="truncate text-foreground" title="{{ r.label }}">{{ r.label }}</span>
+          <span class="whitespace-nowrap tabular-nums text-muted-foreground">{{ r.visitors }} · {{ r.pct }}%</span>
+        </div>
+        <div class="mt-1 h-2 rounded bg-primary/15"><div class="h-2 rounded bg-primary" style="width: {{ r.pct }}%"></div></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-muted-foreground">{% trans "No data for this period / filter." %}</p>
+    {% endif %}
+  </div>
+
+{% elif w.kind == "ratio" %}
+  <div class="flex h-full flex-col justify-center gap-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <p class="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{{ w.title|default:"Ratio" }}</p>
+    <div class="text-[28px] font-medium leading-none tabular-nums text-foreground">{% if w.pct is not None %}{{ w.pct }}%{% else %}N/A{% endif %}</div>
+    <p class="text-[11px] text-muted-foreground">{{ w.num_label }} / {{ w.den_label }} · <span class="tabular-nums">{{ w.numerator }} / {{ w.denominator }}</span></p>
+  </div>
+
+{% elif w.kind == "compare" %}
+  {% with cid="wcmp-"|add:w.id %}
+  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-semibold text-foreground">{{ w.title|default:"Compare" }}</h2>
+    <div class="relative h-48 sm:h-64"><canvas id="{{ cid }}-canvas" data-chart-src="{{ cid }}" data-chart-kind="timeseries"></canvas></div>
+    {{ w.chart|json_script:cid }}
+  </div>
+  {% endwith %}
+
 {% elif w.kind == "breakdown" %}
   <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
     {% include "components/_chart_card.html" with key="wbk-"|add:w.id title=w.title chart_data=w.chart default=w.chart_kind %}

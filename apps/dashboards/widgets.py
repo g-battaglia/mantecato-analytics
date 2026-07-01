@@ -60,7 +60,7 @@ if TYPE_CHECKING:
 
 # ── Catalogs ─────────────────────────────────────────────────────────────────
 
-WIDGET_TYPES = {"kpi", "timeseries", "breakdown", "heatmap"}
+WIDGET_TYPES = {"kpi", "timeseries", "breakdown", "heatmap", "funnel", "namespace", "ratio", "compare"}
 
 # Upper bound for the "sections" breakdown grouping depth. Beyond this the
 # breakdown degrades into a near-per-full-URL list, so a hand-edited config
@@ -227,11 +227,118 @@ def _render_heatmap(website_id, widget, date_range, filters, granularity="auto")
     return {"kind": "heatmap", "grid": data["grid"], "max_val": data["max_val"]}
 
 
+def _unique_visitors_for_events(website_id, date_range, filters, names: list[str]) -> dict[str, int]:
+    """Exact unique visitors per event name within the window (cookieless digest).
+
+    Reuses ``read_scope_visitors(scope="event")`` — the same monthly-rotating,
+    IP-coarsened HMAC digest the rest of the app counts with. No per-person
+    cross-time identity.
+    """
+    from core.mantecato_core.queries.visitors import read_scope_visitors
+
+    if not names:
+        return {}
+    return read_scope_visitors(
+        website_id,
+        date_range.start_date,
+        date_range.end_date,
+        scope="event",
+        scope_values=names,
+        filters=filters,
+    )
+
+
+def _render_funnel(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+    # Steps: [{"event": "funnel/signup/start", "label": "Signup"}, ...]. Each step
+    # is the count of distinct visitors (within the window) who fired that event —
+    # an aggregate flow, never a same-person cross-time cohort.
+    steps = [s for s in (widget.get("steps") or []) if isinstance(s, dict) and s.get("event")]
+    if not steps:
+        return {"error": "Funnel needs at least one step with an 'event'."}
+    counts = _unique_visitors_for_events(website_id, date_range, filters, [s["event"] for s in steps])
+    rows = [{"label": s.get("label") or s["event"], "visitors": counts.get(s["event"], 0)} for s in steps]
+    first = rows[0]["visitors"] if rows else 0
+    for r in rows:
+        r["pct"] = round(r["visitors"] / first * 100, 1) if first else 0
+    from apps.analytics.chart_data import build_funnel_chart_data
+
+    return {"kind": "funnel", "chart": build_funnel_chart_data(rows), "rows": rows}
+
+
+def _render_namespace(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+    # Group event names by a slash- (or custom-) delimited prefix depth, mirroring
+    # url_path section grouping but for events. Generic: delimiter is configurable
+    # and it degrades to full names when there is no delimiter.
+    from collections import defaultdict
+
+    from core.mantecato_core.queries.events import get_event_metrics
+
+    delimiter = widget.get("delimiter") or "/"
+    depth = widget.get("depth", 1)
+    if not isinstance(depth, int) or isinstance(depth, bool) or depth < 1:
+        depth = 1
+    depth = min(depth, _MAX_SECTION_DEPTH)
+
+    rows_raw = get_event_metrics(
+        website_id, date_range.start_date, date_range.end_date, limit=1000, filters=filters
+    )
+    groups: dict[str, int] = defaultdict(int)
+    for r in rows_raw:
+        name = r.get("eventName") or r.get("event_name") or ""
+        prefix = delimiter.join(name.split(delimiter)[:depth]) if name else "—"
+        groups[prefix or "—"] += r.get("count") or 0
+
+    rows = [{"label": k, "value": v, "visitors": None} for k, v in sorted(groups.items(), key=lambda x: -x[1])]
+    total = sum(x["value"] for x in rows) or 0
+    for x in rows:
+        x["pct"] = round(x["value"] / total * 100, 1) if total else 0
+    chart_kind = "pie" if widget.get("chart") == "pie" else "bar"
+    chart = _pie_payload(rows) if chart_kind == "pie" else _bar_payload(rows, "Count")
+    # Reuse the breakdown template (same shape).
+    return {"kind": "breakdown", "rows": rows, "value_label": "Count", "chart": chart, "chart_kind": chart_kind}
+
+
+def _render_ratio(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+    # Generic ratio of two event-visitor counts (e.g. upgrade ÷ trial-start).
+    # Both operands are event names → distinct visitors within the window.
+    num, den = widget.get("numerator") or {}, widget.get("denominator") or {}
+    num_event, den_event = num.get("event"), den.get("event")
+    if not num_event or not den_event:
+        return {"error": "Ratio needs numerator.event and denominator.event."}
+    counts = _unique_visitors_for_events(website_id, date_range, filters, [num_event, den_event])
+    num_val, den_val = counts.get(num_event, 0), counts.get(den_event, 0)
+    pct = round(num_val / den_val * 100, 1) if den_val else None
+    return {
+        "kind": "ratio",
+        "pct": pct,
+        "numerator": num_val,
+        "denominator": den_val,
+        "num_label": num.get("label") or num_event,
+        "den_label": den.get("label") or den_event,
+    }
+
+
+def _render_compare(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+    mode = widget.get("comparison")
+    if mode not in ("previous_period", "previous_year"):
+        mode = "previous_period"
+    gran = widget.get("granularity") or granularity or "auto"
+    data = services.get_compare_data(website_id, date_range, filters, mode, granularity=gran)
+    return {
+        "kind": "compare",
+        "chart": build_timeseries_chart_data(data["current_ts"], data["previous_ts"]),
+    }
+
+
 _RENDERERS: dict[str, Callable[..., dict]] = {
     "kpi": _render_kpi,
     "timeseries": _render_timeseries,
     "breakdown": _render_breakdown,
     "heatmap": _render_heatmap,
+    "funnel": _render_funnel,
+    "namespace": _render_namespace,
+    "ratio": _render_ratio,
+    "compare": _render_compare,
 }
 
 
@@ -350,6 +457,27 @@ def validate_dashboard_config(config: Any) -> list[str]:
                 not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= _MAX_SECTION_DEPTH
             ):
                 errors.append(f"{where}: depth must be an integer 1–{_MAX_SECTION_DEPTH}")
+        if wtype == "namespace":
+            depth = w.get("depth")
+            if depth is not None and (
+                not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= _MAX_SECTION_DEPTH
+            ):
+                errors.append(f"{where}: depth must be an integer 1–{_MAX_SECTION_DEPTH}")
+        if wtype == "funnel":
+            steps = w.get("steps")
+            if not isinstance(steps, list) or not steps:
+                errors.append(f"{where}: funnel needs a non-empty 'steps' list")
+            elif not all(isinstance(s, dict) and isinstance(s.get("event"), str) and s.get("event") for s in steps):
+                errors.append(f"{where}: each funnel step needs a string 'event'")
+        if wtype == "ratio":
+            for side in ("numerator", "denominator"):
+                spec = w.get(side)
+                if not isinstance(spec, dict) or not isinstance(spec.get("event"), str) or not spec.get("event"):
+                    errors.append(f"{where}: ratio '{side}' needs an object with a string 'event'")
+        if wtype == "compare":
+            mode = w.get("comparison")
+            if mode is not None and mode not in ("previous_period", "previous_year"):
+                errors.append(f"{where}: comparison must be 'previous_period' or 'previous_year'")
         wr = w.get("dateRange")
         if wr is not None and (not isinstance(wr, str) or wr not in VALID_RANGE_PRESETS):
             errors.append(f"{where}: dateRange '{wr}' is not a valid preset")
