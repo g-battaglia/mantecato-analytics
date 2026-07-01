@@ -74,7 +74,8 @@ apps.dashboards.widgets.render_widget — never raises, so `w.error` short-circu
         <tbody>
           {% for row in w.grid %}
           <tr>
-            <td class="pr-1 text-right font-mono text-[9px] text-muted-foreground">{{ forloop.counter0|stringformat:"d" }}</td>
+            {# Grid is indexed by EXTRACT(DOW): row 0 = Sunday (matches templates/analytics/heatmap.html). #}
+            <td class="pr-1 text-right font-mono text-[9px] text-muted-foreground">{% with d=forloop.counter0 %}{% if d == 0 %}{% trans "Sun" %}{% elif d == 1 %}{% trans "Mon" %}{% elif d == 2 %}{% trans "Tue" %}{% elif d == 3 %}{% trans "Wed" %}{% elif d == 4 %}{% trans "Thu" %}{% elif d == 5 %}{% trans "Fri" %}{% elif d == 6 %}{% trans "Sat" %}{% endif %}{% endwith %}</td>
             {% for cell in row %}
             <td class="size-3 rounded-[2px] bg-primary"
                 style="opacity: {% if w.max_val %}{% widthratio cell w.max_val 100 %}{% else %}0{% endif %}%;"
@@ -85,7 +86,7 @@ apps.dashboards.widgets.render_widget — never raises, so `w.error` short-circu
         </tbody>
       </table>
     </div>
-    <p class="mt-2 font-mono text-[9px] text-muted-foreground">{% trans "Rows = day of week (0=Mon), columns = hour (0–23)" %}</p>
+    <p class="mt-2 font-mono text-[9px] text-muted-foreground">{% trans "Rows = day of week (Sun–Sat), columns = hour (0–23)" %}</p>
   </div>
 
 {% else %}

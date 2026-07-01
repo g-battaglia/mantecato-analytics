@@ -27,12 +27,16 @@ Config schema (v2), stored in ``report.parameters`` and exposed as ``config``::
       "grid": {"x": 0, "y": 0, "w": 6, "h": 2}
     }
 
-Filters cascade as ``dashboard.filters`` + ``widget.filters`` + runtime
-(ad-hoc) filters, all AND-ed together (same-column entries OR within the engine).
+Filters cascade as ``dashboard.filters`` + ``widget.filters`` (the saved scope)
+plus runtime (ad-hoc) filters. The engine OR-s same-column entries and AND-s
+across columns; runtime filters may only add *new* columns (narrowing) — they
+cannot relax a column the saved config already scopes. See :func:`_resolve_filters`.
 """
 
 from __future__ import annotations
 
+import logging
+import re
 from typing import TYPE_CHECKING, Any, Callable
 
 from apps.analytics import services
@@ -44,6 +48,12 @@ from core.mantecato_core.filters import (
     VALID_OPERATORS,
     parse_filters_from_params,
 )
+
+logger = logging.getLogger(__name__)
+
+# A widget id is reversed into ``<str:widget_id>`` (regex ``[^/]+``) for the
+# per-widget HTMX URL, so it must be a safe single URL path segment.
+_WIDGET_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 if TYPE_CHECKING:
     from core.mantecato_core.filters import Filter
@@ -90,11 +100,21 @@ def _resolve_filters(
     widget: dict[str, Any],
     runtime_filters: list[Filter] | None,
 ) -> list[Filter]:
-    """Combine dashboard + widget config filters with runtime (ad-hoc) filters."""
+    """Combine the saved (dashboard + widget) filters with runtime (ad-hoc) filters.
+
+    The engine OR-s same-column entries and AND-s across columns. A configured
+    filter defines the dashboard's intended scope, so a runtime filter may only
+    **narrow** by adding a *new* column — it cannot relax a column the saved
+    config already scopes (which OR-ing on that column would do, e.g. a ``/pro/``
+    dashboard widened to ``/pro/ OR /free/`` by ``?filter=url_path:...``). Runtime
+    filters on already-scoped columns are therefore dropped. The synthetic
+    ``__bot_filter__`` column is never configured, so bot filtering still applies.
+    """
     raw = list(dashboard_cfg.get("filters") or []) + list(widget.get("filters") or [])
     filters = parse_filters_from_params([f for f in raw if isinstance(f, str)])
+    scoped_columns = {f.column for f in filters}
     if runtime_filters:
-        filters.extend(runtime_filters)
+        filters.extend(f for f in runtime_filters if f.column not in scoped_columns)
     return filters
 
 
@@ -233,8 +253,11 @@ def render_widget(
         date_range = _resolve_range(widget, runtime_range)
         filters = _resolve_filters(dashboard_cfg, widget, runtime_filters)
         return {**base, **renderer(website_id, widget, date_range, filters, runtime_granularity)}
-    except Exception as exc:  # noqa: BLE001 — a widget must never break the page
-        return {**base, "error": f"Could not load widget: {exc}"}
+    except Exception:  # noqa: BLE001 — a widget must never break the page
+        # Log the real error (with traceback) but show the viewer a generic
+        # message — don't leak internal detail into the rendered card.
+        logger.exception("Dashboard widget %s (%s) failed to render", base["id"], base["type"])
+        return {**base, "error": "Could not load this widget."}
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -267,8 +290,12 @@ def validate_dashboard_config(config: Any) -> list[str]:
     if not isinstance(config, dict):
         return ["config must be a JSON object"]
 
+    # ``x in <set|dict>`` raises TypeError for an unhashable x (a JSON list /
+    # object), so every membership check first confirms the value is a string —
+    # otherwise a malformed config (e.g. ``dateRange: []``) would 500 instead of
+    # returning a clean validation error.
     date_range = config.get("dateRange")
-    if date_range is not None and date_range not in VALID_RANGE_PRESETS:
+    if date_range is not None and (not isinstance(date_range, str) or date_range not in VALID_RANGE_PRESETS):
         errors.append(f"dateRange '{date_range}' is not a valid preset")
     _validate_filter_strings(config.get("filters"), "dashboard", errors)
 
@@ -282,26 +309,31 @@ def validate_dashboard_config(config: Any) -> list[str]:
         if not isinstance(w, dict):
             errors.append(f"{where}: must be an object")
             continue
-        # A stable, unique id is required: it is reversed into the per-widget
-        # HTMX URL ({% url 'dashboard_widget' %}) — an empty id 500s the page.
+        # A stable, unique, url-safe id is required: it is reversed into the
+        # per-widget HTMX URL ({% url 'dashboard_widget' %}, a ``[^/]+`` segment),
+        # so an empty id or one containing '/' 500s the page (NoReverseMatch).
         wid = w.get("id")
-        if not isinstance(wid, str) or not wid.strip():
-            errors.append(f"{where}: a non-empty string 'id' is required")
+        if not isinstance(wid, str) or not _WIDGET_ID_RE.match(wid):
+            errors.append(f"{where}: 'id' must be a non-empty url-safe string ([A-Za-z0-9_-]+)")
         elif wid in seen_ids:
             errors.append(f"{where}: duplicate id '{wid}'")
         else:
             seen_ids.add(wid)
         wtype = w.get("type")
-        if wtype not in WIDGET_TYPES:
+        if not isinstance(wtype, str) or wtype not in WIDGET_TYPES:
             errors.append(f"{where}: type '{wtype}' must be one of {sorted(WIDGET_TYPES)}")
-        if wtype == "kpi" and w.get("metric") not in KPI_METRICS:
-            errors.append(f"{where}: kpi metric '{w.get('metric')}' must be one of {sorted(KPI_METRICS)}")
-        if wtype == "breakdown" and w.get("source") not in BREAKDOWN_SOURCES:
-            errors.append(
-                f"{where}: breakdown source '{w.get('source')}' must be one of {sorted(BREAKDOWN_SOURCES)}"
-            )
+        if wtype == "kpi":
+            metric = w.get("metric")
+            if not isinstance(metric, str) or metric not in KPI_METRICS:
+                errors.append(f"{where}: kpi metric '{metric}' must be one of {sorted(KPI_METRICS)}")
+        if wtype == "breakdown":
+            source = w.get("source")
+            if not isinstance(source, str) or source not in BREAKDOWN_SOURCES:
+                errors.append(
+                    f"{where}: breakdown source '{source}' must be one of {sorted(BREAKDOWN_SOURCES)}"
+                )
         wr = w.get("dateRange")
-        if wr is not None and wr not in VALID_RANGE_PRESETS:
+        if wr is not None and (not isinstance(wr, str) or wr not in VALID_RANGE_PRESETS):
             errors.append(f"{where}: dateRange '{wr}' is not a valid preset")
         _validate_filter_strings(w.get("filters"), where, errors)
 

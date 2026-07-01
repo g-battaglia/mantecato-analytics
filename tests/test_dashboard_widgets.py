@@ -74,6 +74,21 @@ def test_validate_requires_unique_widget_ids():
     assert any("duplicate" in e for e in dup)
 
 
+def test_validate_rejects_url_unsafe_id():
+    # An id with '/' would 500 the detail page (NoReverseMatch on <str:widget_id>).
+    errs = validate_dashboard_config({"widgets": [{"id": "a/b", "type": "timeseries"}]})
+    assert any("url-safe" in e for e in errs)
+
+
+def test_validate_survives_non_string_fields():
+    # Unhashable JSON values in membership-checked fields must yield errors, not
+    # a TypeError (which would 500 create/update).
+    errs = validate_dashboard_config(
+        {"dateRange": [], "widgets": [{"id": "x", "type": [], "metric": {}}]}
+    )
+    assert errs
+
+
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
 
@@ -103,6 +118,21 @@ def test_dashboard_filter_cascades_to_widget(seeded):
     labels = [r["label"] for r in w["rows"]]
     assert "/pro" in labels
     assert "/free" not in labels
+
+
+def test_runtime_filter_cannot_relax_saved_scope(seeded):
+    from core.mantecato_core.filters import Filter
+
+    w = render_widget(
+        WEBSITE_ID,
+        {"filters": ["url_path:starts_with:/pro/"]},
+        {"id": "w", "type": "breakdown", "source": "sections", "depth": 1},
+        runtime_range=_range(),
+        runtime_filters=[Filter(column="url_path", operator="starts_with", value="/free/")],
+    )
+    labels = [r["label"] for r in w["rows"]]
+    assert "/pro" in labels
+    assert "/free" not in labels  # runtime url_path dropped — saved scope wins
 
 
 def test_widget_filter_event(seeded):
@@ -170,6 +200,17 @@ def test_detail_and_widget_views(authenticated_client, seeded):
     assert widget.status_code == 200
     assert b"/pro" in widget.content  # tier section rendered, scoped by the dashboard filter
     assert b"/free" not in widget.content
+
+
+def test_heatmap_widget_renders_with_day_labels(authenticated_client, seeded):
+    dashboard = create_new_dashboard(
+        ADMIN_USER_ID, WEBSITE_ID, "HM",
+        config={"version": 2, "widgets": [{"id": "hm", "type": "heatmap", "grid": {"w": 12}}]},
+    )
+    did = dashboard["id"]
+    r = authenticated_client.get(f"/dashboards/{did}/widget/hm/?range=30d")
+    assert r.status_code == 200
+    assert b"Sun" in r.content and b"Sat" in r.content  # DOW labels (0=Sun) render
 
 
 def test_builder_page_and_preview(authenticated_client, seeded):

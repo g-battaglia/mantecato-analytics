@@ -33,8 +33,13 @@
     var i = document.querySelector("#builder-form [name=csrfmiddlewaretoken]");
     return i ? i.value : "";
   }
+  var _uidSeq = 0;
   function uid() {
-    return "w" + Math.random().toString(36).slice(2, 8) + (state.widgets.length + 1);
+    // Must not read `state` — uid() is first called while `state` is still
+    // being constructed (the initial widgets .map()), so a monotonic counter
+    // is used instead of state.widgets.length.
+    _uidSeq += 1;
+    return "w" + Math.random().toString(36).slice(2, 8) + _uidSeq;
   }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -144,7 +149,7 @@
     row.innerHTML =
       '<select class="f-col h-8 rounded-md border border-input bg-background px-1.5 text-xs">' + colOpts + "</select>" +
       '<select class="f-op h-8 rounded-md border border-input bg-background px-1 text-xs">' + opOpts + "</select>" +
-      '<input class="f-val h-8 w-full rounded-md border border-input bg-background px-1.5 text-xs" value="' + (parts.slice(2).join(":") || "") + '">' +
+      '<input class="f-val h-8 w-full rounded-md border border-input bg-background px-1.5 text-xs" value="' + esc(parts.slice(2).join(":")) + '">' +
       '<button type="button" class="f-del shrink-0 text-muted-foreground hover:text-destructive"><i data-lucide="x" class="size-3.5"></i></button>';
     row.querySelector(".f-del").addEventListener("click", function () { row.remove(); });
     container.appendChild(row);

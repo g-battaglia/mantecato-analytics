@@ -36,7 +36,11 @@ from django.views.generic import ListView
 
 from apps.common.constants import VALID_RANGE_PRESETS
 from apps.common.forms import DashboardModelForm, first_error
-from apps.common.mixins import load_bot_filter_payload
+from apps.common.mixins import (
+    _bot_filter_default_enabled,
+    _parse_offset,
+    load_bot_filter_payload,
+)
 from apps.dashboards.services import (
     create_new_dashboard,
     get_dashboard_detail,
@@ -259,7 +263,22 @@ class DashboardUpdateView(LoginRequiredMixin, View):
         form = DashboardModelForm(data=form_data)
         if not form.is_valid():
             messages.error(request, first_error(form))
-            return self._render(request, dashboard, _form_data_from_post(request.POST))
+            # Re-seed the builder with the user's in-progress edits (submitted
+            # config/name) instead of the last-saved state, so a rejected save
+            # doesn't silently discard their work.
+            try:
+                submitted_config = (
+                    json.loads(form_data["config"]) if form_data["config"] else dashboard.get("config")
+                )
+            except (json.JSONDecodeError, TypeError):
+                submitted_config = dashboard.get("config")
+            preserved = {
+                **dashboard,
+                "name": form_data["name"] or dashboard.get("name"),
+                "description": form_data["description"],
+                "config": submitted_config,
+            }
+            return self._render(request, preserved, _form_data_from_post(request.POST))
         cleaned = form.cleaned_data
         update_existing_dashboard(
             report_id=report_id,
@@ -317,13 +336,6 @@ class DashboardDeleteView(LoginRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-def _parse_offset(raw: str | None) -> int:
-    try:
-        return max(0, int(raw or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
 def _resolve_runtime(request: HttpRequest, default_range_preset: str, website_id: str) -> dict[str, Any]:
     """Parse the runtime date range + ad-hoc filters from the query string.
 
@@ -363,7 +375,17 @@ def _resolve_runtime(request: HttpRequest, default_range_preset: str, website_id
     raw = [*request.GET.getlist("filter"), *request.GET.getlist("f")]
     active_filters = parse_filters_from_params(raw) if raw else []
 
-    bot_filter = request.GET.get("bot_filter") == "1"
+    # Match the analytics filter bar (FiltersMixin.bot_filter): an explicit
+    # ?bot_filter=1/0 wins, otherwise fall back to the site's "filter bots by
+    # default" preference — so dashboards don't silently include bot traffic
+    # the analytics pages exclude.
+    bot_param = request.GET.get("bot_filter")
+    if bot_param is not None:
+        bot_filter = bot_param == "1"
+    elif website_id:
+        bot_filter = _bot_filter_default_enabled(str(website_id))
+    else:
+        bot_filter = False
     filters = list(active_filters)
     if bot_filter and website_id:
         payload = load_bot_filter_payload(str(website_id))
