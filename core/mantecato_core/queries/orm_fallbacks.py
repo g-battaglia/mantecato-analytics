@@ -80,12 +80,14 @@ def _filter_q(column: str, operator: str, value: str) -> Q | None:
 def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
     """Apply privacy-first filters to a WebsiteEvent queryset.
 
-    Mirrors the raw-SQL semantics of ``build_filter_sql``: filters on the **same
-    column are OR-ed**, different columns are **AND-ed** — so e.g. two
-    ``url_path:starts_with`` filters mean "/trial/ OR /pro/", not an impossible
-    "both at once".
+    Mirrors ``build_filter_sql``: within a column, **positive** filters OR
+    together ("/trial/ OR /pro/") while **negated** filters AND together
+    (exclude BOTH /admin/ AND /login/ — OR-ing negations would match every row).
+    Different columns are AND-ed.
     """
-    grouped: dict[str, list[Q]] = defaultdict(list)
+    from core.mantecato_core.filters import POSITIVE_OPERATORS
+
+    grouped: dict[str, list[tuple[str, Q]]] = defaultdict(list)
     for item in filters or []:
         if item.column == "__bot_filter__":
             cfg = _parse_bot_config(item.value)
@@ -111,13 +113,20 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
             continue
         q = _filter_q(item.column, item.operator, item.value)
         if q is not None:
-            grouped[item.column].append(q)
+            grouped[item.column].append((item.operator, q))
 
     for column_qs in grouped.values():
-        combined = column_qs[0]
-        for extra in column_qs[1:]:
-            combined |= extra
-        qs = qs.filter(combined)
+        positives = [q for op, q in column_qs if op in POSITIVE_OPERATORS]
+        negatives = [q for op, q in column_qs if op not in POSITIVE_OPERATORS]
+        combined: Q | None = None
+        if positives:
+            combined = positives[0]
+            for extra in positives[1:]:
+                combined |= extra  # inclusive: /trial/ OR /pro/
+        for nq in negatives:
+            combined = nq if combined is None else (combined & nq)  # exclusions AND
+        if combined is not None:
+            qs = qs.filter(combined)
     return qs
 
 

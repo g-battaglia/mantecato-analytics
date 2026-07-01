@@ -37,6 +37,12 @@ VALID_OPERATORS = {
     "not_in",
 }
 
+# Positive (inclusive) operators. Within one column these OR together
+# ("/trial/ OR /pro/"); the negated operators instead AND ("exclude BOTH
+# /admin/ AND /login/") — OR-ing negations would be a tautology. Both the raw
+# SQL (build_filter_sql) and the ORM fallback (apply_filters_to_qs) honour this.
+POSITIVE_OPERATORS = frozenset({"eq", "contains", "starts_with", "in"})
+
 GRANULARITIES = ("minute", "hour", "day", "week", "month")
 
 # Bot detection is event-level only. The tracker stores a coarse bot flag and
@@ -138,29 +144,33 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
     and_clauses: list[str] = []
 
     for entries in grouped.values():
-        or_clauses: list[str] = []
+        # Positive (inclusive) clauses OR together; negated clauses AND together
+        # (OR-ing negations would match everything). See POSITIVE_OPERATORS.
+        pos_clauses: list[str] = []
+        neg_clauses: list[str] = []
 
         for f, index in entries:
             param_name = f"f{index}"
             prefix = "we"  # All columns are on website_event
+            bucket = pos_clauses if f.operator in POSITIVE_OPERATORS else neg_clauses
 
             if f.operator == "eq":
-                or_clauses.append(f"{prefix}.{f.column} = {{{{{param_name}}}}}")
+                bucket.append(f"{prefix}.{f.column} = {{{{{param_name}}}}}")
                 params[param_name] = f.value
             elif f.operator == "neq":
-                or_clauses.append(f"{prefix}.{f.column} != {{{{{param_name}}}}}")
+                bucket.append(f"{prefix}.{f.column} != {{{{{param_name}}}}}")
                 params[param_name] = f.value
             elif f.operator == "contains":
-                or_clauses.append(f"{prefix}.{f.column} ILIKE {{{{{param_name}}}}}")
+                bucket.append(f"{prefix}.{f.column} ILIKE {{{{{param_name}}}}}")
                 params[param_name] = f"%{f.value}%"
             elif f.operator == "not_contains":
-                or_clauses.append(f"{prefix}.{f.column} NOT ILIKE {{{{{param_name}}}}}")
+                bucket.append(f"{prefix}.{f.column} NOT ILIKE {{{{{param_name}}}}}")
                 params[param_name] = f"%{f.value}%"
             elif f.operator == "starts_with":
-                or_clauses.append(f"{prefix}.{f.column} ILIKE {{{{{param_name}}}}}")
+                bucket.append(f"{prefix}.{f.column} ILIKE {{{{{param_name}}}}}")
                 params[param_name] = f"{f.value}%"
             elif f.operator == "not_starts_with":
-                or_clauses.append(f"{prefix}.{f.column} NOT ILIKE {{{{{param_name}}}}}")
+                bucket.append(f"{prefix}.{f.column} NOT ILIKE {{{{{param_name}}}}}")
                 params[param_name] = f"{f.value}%"
             elif f.operator in ("in", "not_in"):
                 # Comma-separated multi-value membership, bound as a text[] param
@@ -169,18 +179,26 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
                 if not values:
                     continue
                 if f.operator == "in":
-                    or_clauses.append(f"{prefix}.{f.column} = ANY({{{{{param_name}::text[]}}}})")
+                    bucket.append(f"{prefix}.{f.column} = ANY({{{{{param_name}::text[]}}}})")
                 else:
-                    or_clauses.append(
+                    bucket.append(
                         f"({prefix}.{f.column} IS NULL "
                         f"OR {prefix}.{f.column} <> ALL({{{{{param_name}::text[]}}}}))"
                     )
                 params[param_name] = values
 
-        if len(or_clauses) == 1:
-            and_clauses.append(or_clauses[0])
-        elif len(or_clauses) > 1:
-            and_clauses.append(f"({' OR '.join(or_clauses)})")
+        # column clause = (pos1 OR pos2 …) AND neg1 AND neg2 …
+        column_parts: list[str] = []
+        if len(pos_clauses) == 1:
+            column_parts.append(pos_clauses[0])
+        elif len(pos_clauses) > 1:
+            column_parts.append(f"({' OR '.join(pos_clauses)})")
+        column_parts.extend(neg_clauses)
+
+        if len(column_parts) == 1:
+            and_clauses.append(column_parts[0])
+        elif len(column_parts) > 1:
+            and_clauses.append(f"({' AND '.join(column_parts)})")
 
     where = f"AND {' AND '.join(and_clauses)}" if and_clauses else ""
     if bot_sql.get("where"):

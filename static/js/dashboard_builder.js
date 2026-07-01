@@ -102,7 +102,12 @@
       headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
       body: JSON.stringify({ widget: w, dashboardFilters: state.filters, dashboardDateRange: state.dateRange }),
     })
-      .then(function (r) { return r.text(); })
+      .then(function (r) {
+        // A followed auth redirect (session expired) resolves 200 with the
+        // login page — treat redirected/non-OK as failure, don't inject it.
+        if (!r.ok || r.redirected) throw new Error("preview unavailable");
+        return r.text();
+      })
       .then(function (html) {
         host.innerHTML = html;
         if (window.lucide) lucide.createIcons();
@@ -294,9 +299,9 @@
       cfg = parsed;
       state.dateRange = typeof parsed.dateRange === "string" ? parsed.dateRange : "30d";
       state.filters = Array.isArray(parsed.filters) ? parsed.filters.slice() : [];
-      state.widgets = (Array.isArray(parsed.widgets) ? parsed.widgets : []).map(function (w) {
-        return Object.assign({}, w, { id: w.id || uid() });
-      });
+      state.widgets = (Array.isArray(parsed.widgets) ? parsed.widgets : [])
+        .filter(function (w) { return w && typeof w === "object"; })
+        .map(function (w) { return Object.assign({}, w, { id: w.id || uid() }); });
       grid.removeAll();
       state.widgets.forEach(addGridItem);
       renderDashFilters();

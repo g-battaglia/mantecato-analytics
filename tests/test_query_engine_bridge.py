@@ -410,6 +410,27 @@ class TestBuildFilterSql:
         assert "f0" in result["params"]
         assert "f1" in result["params"]
 
+    def test_same_column_negations_and_grouping(self) -> None:
+        # Two same-column exclusions must AND (exclude BOTH), not OR (which would
+        # be a tautology matching every row).
+        filters = [
+            Filter(column="url_path", operator="neq", value="/admin/"),
+            Filter(column="url_path", operator="neq", value="/login/"),
+        ]
+        where = build_filter_sql(filters)["where"]
+        assert " AND " in where
+        assert " OR " not in where
+
+    def test_mixed_positive_and_negation_same_column(self) -> None:
+        # (positive OR positive) AND negation.
+        filters = [
+            Filter(column="url_path", operator="starts_with", value="/pro/"),
+            Filter(column="url_path", operator="not_contains", value="/chart/"),
+        ]
+        where = build_filter_sql(filters)["where"]
+        assert "ILIKE" in where and "NOT ILIKE" in where
+        assert " AND " in where
+
     def test_bot_filter(self) -> None:
         filters = [
             Filter(

@@ -62,6 +62,11 @@ if TYPE_CHECKING:
 
 WIDGET_TYPES = {"kpi", "timeseries", "breakdown", "heatmap"}
 
+# Upper bound for the "sections" breakdown grouping depth. Beyond this the
+# breakdown degrades into a near-per-full-URL list, so a hand-edited config
+# with an absurd depth is both clamped (dispatcher) and rejected (validation).
+_MAX_SECTION_DEPTH = 6
+
 #: KPI metric → human label. Keys index into the ``stats`` card dict.
 KPI_METRICS: dict[str, str] = {
     "pageviews": "Pageviews",
@@ -102,19 +107,25 @@ def _resolve_filters(
 ) -> list[Filter]:
     """Combine the saved (dashboard + widget) filters with runtime (ad-hoc) filters.
 
-    The engine OR-s same-column entries and AND-s across columns. A configured
-    filter defines the dashboard's intended scope, so a runtime filter may only
-    **narrow** by adding a *new* column — it cannot relax a column the saved
-    config already scopes (which OR-ing on that column would do, e.g. a ``/pro/``
-    dashboard widened to ``/pro/ OR /free/`` by ``?filter=url_path:...``). Runtime
-    filters on already-scoped columns are therefore dropped. The synthetic
+    Within a column the engine OR-s positive filters and AND-s negated ones;
+    columns AND together. A configured filter defines the dashboard's scope, so
+    a runtime **positive** filter on a column already scoped by a positive would
+    OR — *widening* the saved scope (a ``/pro/`` dashboard relaxed to
+    ``/pro/ OR /free/``); those are dropped. Runtime **negated** filters (and any
+    filter on a new column) only ever *narrow*, so they are kept. The synthetic
     ``__bot_filter__`` column is never configured, so bot filtering still applies.
     """
+    from core.mantecato_core.filters import POSITIVE_OPERATORS
+
     raw = list(dashboard_cfg.get("filters") or []) + list(widget.get("filters") or [])
     filters = parse_filters_from_params([f for f in raw if isinstance(f, str)])
-    scoped_columns = {f.column for f in filters}
+    scoped_positive_cols = {f.column for f in filters if f.operator in POSITIVE_OPERATORS}
     if runtime_filters:
-        filters.extend(f for f in runtime_filters if f.column not in scoped_columns)
+        filters.extend(
+            f
+            for f in runtime_filters
+            if not (f.operator in POSITIVE_OPERATORS and f.column in scoped_positive_cols)
+        )
     return filters
 
 
@@ -192,7 +203,9 @@ def _render_breakdown(website_id, widget, date_range, filters, granularity="auto
 
     if source == "sections":
         depth = widget.get("depth", 2)
-        depth = depth if isinstance(depth, int) and depth >= 1 else 2
+        if not isinstance(depth, int) or isinstance(depth, bool) or depth < 1:
+            depth = 2
+        depth = min(depth, _MAX_SECTION_DEPTH)  # avoid degrading into per-full-URL
         data = fn(website_id, date_range, filters, depth=depth)
     else:
         data = fn(website_id, date_range, filters)
@@ -332,6 +345,11 @@ def validate_dashboard_config(config: Any) -> list[str]:
                 errors.append(
                     f"{where}: breakdown source '{source}' must be one of {sorted(BREAKDOWN_SOURCES)}"
                 )
+            depth = w.get("depth")
+            if depth is not None and (
+                not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= _MAX_SECTION_DEPTH
+            ):
+                errors.append(f"{where}: depth must be an integer 1–{_MAX_SECTION_DEPTH}")
         wr = w.get("dateRange")
         if wr is not None and (not isinstance(wr, str) or wr not in VALID_RANGE_PRESETS):
             errors.append(f"{where}: dateRange '{wr}' is not a valid preset")

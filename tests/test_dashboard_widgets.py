@@ -120,7 +120,7 @@ def test_dashboard_filter_cascades_to_widget(seeded):
     assert "/free" not in labels
 
 
-def test_runtime_filter_cannot_relax_saved_scope(seeded):
+def test_runtime_positive_filter_cannot_relax_saved_scope(seeded):
     from core.mantecato_core.filters import Filter
 
     w = render_widget(
@@ -132,7 +132,46 @@ def test_runtime_filter_cannot_relax_saved_scope(seeded):
     )
     labels = [r["label"] for r in w["rows"]]
     assert "/pro" in labels
-    assert "/free" not in labels  # runtime url_path dropped — saved scope wins
+    assert "/free" not in labels  # widening runtime url_path dropped — scope wins
+
+
+def test_runtime_negative_filter_narrows_scoped_column(seeded):
+    # A negated runtime filter on a scoped column must survive (it AND-narrows).
+    from core.mantecato_core.filters import Filter
+
+    _ev("/pro/keep")
+    w = render_widget(
+        WEBSITE_ID,
+        {"filters": ["url_path:starts_with:/pro/"]},
+        {"id": "w", "type": "breakdown", "source": "pages"},
+        runtime_range=_range(),
+        runtime_filters=[Filter(column="url_path", operator="not_contains", value="/chart/")],
+    )
+    labels = [r["label"] for r in w["rows"]]
+    assert "/pro/keep" in labels
+    assert not any("/chart/" in lbl for lbl in labels)  # narrowing runtime kept
+
+
+def test_stacked_negation_filters_exclude_both(seeded):
+    # Regression: same-column negations must AND (exclude both), not OR (tautology).
+    _ev("/pro/keep")
+    w = render_widget(
+        WEBSITE_ID,
+        {"filters": ["url_path:neq:/pro/chart/natal", "url_path:not_contains:/free/"]},
+        {"id": "p", "type": "breakdown", "source": "pages"},
+        runtime_range=_range(),
+    )
+    labels = [r["label"] for r in w["rows"]]
+    assert "/pro/keep" in labels
+    assert "/pro/chart/natal" not in labels  # excluded by neq
+    assert not any("/free/" in lbl for lbl in labels)  # excluded by not_contains
+
+
+def test_validate_rejects_out_of_range_depth():
+    errs = validate_dashboard_config(
+        {"widgets": [{"id": "s", "type": "breakdown", "source": "sections", "depth": 999999}]}
+    )
+    assert any("depth" in e for e in errs)
 
 
 def test_widget_filter_event(seeded):
