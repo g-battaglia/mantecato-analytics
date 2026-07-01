@@ -41,6 +41,7 @@
         <td class="px-4 py-3 text-sm text-muted-foreground">{{ site.created_at|date:"M d, Y" }}</td>
         <td class="px-4 py-3 text-right text-sm space-x-3">
           <a href="/?website={{ site.id }}" class="text-primary hover:text-primary/80">{% trans "View analytics" %}</a>
+          <a href="{% url 'site_badge' site.id %}" class="text-primary hover:text-primary/80">{% trans "Badge" %}</a>
           <button type="button"
                   class="text-amber-600 hover:text-amber-500"
                   onclick="openPurgeModal('{{ site.id }}', '{{ site.name|escapejs }}')">
