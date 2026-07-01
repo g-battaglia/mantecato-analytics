@@ -92,7 +92,12 @@
       <select id="cfg-type" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm">
         <option value="kpi">KPI</option><option value="timeseries">Time series</option>
         <option value="breakdown">Breakdown</option><option value="heatmap">Heatmap</option>
-      </select></label>
+        <option value="funnel">Funnel</option><option value="namespace">Event namespace</option>
+        <option value="ratio">Ratio</option><option value="compare">Compare</option>
+      </select>
+      <span class="mt-1 text-[10px] text-muted-foreground" data-when="funnel">{% trans "Configure steps via the JSON editor." %}</span>
+      <span class="mt-1 text-[10px] text-muted-foreground" data-when="ratio">{% trans "Configure numerator/denominator via the JSON editor." %}</span>
+      </label>
     <label class="flex flex-col gap-1"><span class="text-[11px] font-medium text-muted-foreground">{% trans "Title" %}</span>
       <input id="cfg-title" class="h-9 rounded-md border border-input bg-background px-2.5 text-sm"></label>
 
