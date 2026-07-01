@@ -19,6 +19,7 @@ from django.db.models import Count, Max, Q, QuerySet
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
+from core.mantecato_core.filters import POSITIVE_OPERATORS, VALID_FILTER_COLUMNS
 from core.mantecato_core.visitor_counting import section_for_path
 
 if TYPE_CHECKING:
@@ -39,19 +40,6 @@ def _parse_bot_config(value: str) -> dict[str, Any]:
     return cfg if isinstance(cfg, dict) else {}
 
 
-_FILTERABLE_COLUMNS = {
-    "url_path",
-    "page_title",
-    "hostname",
-    "browser",
-    "os",
-    "device",
-    "country",
-    "event_name",
-    "referrer_domain",
-}
-
-
 def _filter_q(column: str, operator: str, value: str) -> Q | None:
     """Translate one Filter into a Django ``Q`` (mirrors build_filter_sql)."""
     if operator == "eq":
@@ -67,9 +55,11 @@ def _filter_q(column: str, operator: str, value: str) -> Q | None:
     if operator == "not_starts_with":
         return ~Q(**{f"{column}__istartswith": value})
     if operator in ("in", "not_in"):
-        values = [v for v in (value.split(",") if value else []) if v != ""]
+        values = [v.strip() for v in (value.split(",") if value else []) if v.strip()]
         if not values:
-            return None
+            # Mirror build_filter_sql: empty `in` matches nothing (never drop →
+            # match-all); empty `not_in` excludes nothing (no-op).
+            return Q(pk__in=[]) if operator == "in" else None
         q = Q(**{f"{column}__in": values})
         # Mirror build_filter_sql's not_in (``col IS NULL OR col <> ALL(...)``),
         # which keeps NULL rows — ``~Q(col__in=...)`` alone would drop them.
@@ -85,8 +75,6 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
     (exclude BOTH /admin/ AND /login/ — OR-ing negations would match every row).
     Different columns are AND-ed.
     """
-    from core.mantecato_core.filters import POSITIVE_OPERATORS
-
     grouped: dict[str, list[tuple[str, Q]]] = defaultdict(list)
     for item in filters or []:
         if item.column == "__bot_filter__":
@@ -109,7 +97,7 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
                 qs = qs.exclude(country__in=countries)
             continue
 
-        if item.column not in _FILTERABLE_COLUMNS:
+        if item.column not in VALID_FILTER_COLUMNS:
             continue
         q = _filter_q(item.column, item.operator, item.value)
         if q is not None:

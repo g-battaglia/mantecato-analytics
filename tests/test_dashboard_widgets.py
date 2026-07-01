@@ -291,6 +291,20 @@ def test_create_redirects_to_builder(authenticated_client, db):
     assert "/edit/" in resp.headers["Location"]
 
 
+def test_create_blank_config_applies_default_scaffold(authenticated_client, db):
+    from apps.core.models import Website
+    from apps.dashboards.services import get_dashboards_for_user
+
+    Website.objects.create(id=WEBSITE_ID, user_id=ADMIN_USER_ID, name="S", is_deleted=False)
+    authenticated_client.post(
+        "/dashboards/create/",
+        data={"name": "Scaffold", "description": "", "website_id": WEBSITE_ID, "config": ""},
+    )
+    cfg = get_dashboards_for_user(ADMIN_USER_ID)[0]["config"]
+    # Blank config must persist the v2 default scaffold, not an empty {}.
+    assert cfg.get("version") == 2 and "widgets" in cfg
+
+
 def test_api_rejects_invalid_config(api_auth, client):
     from tests.conftest import API_TOKEN
 

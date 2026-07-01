@@ -175,8 +175,13 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
             elif f.operator in ("in", "not_in"):
                 # Comma-separated multi-value membership, bound as a text[] param
                 # (same {{name::type}} array pattern used by the bot filter).
-                values = [v for v in (f.value.split(",") if f.value else []) if v != ""]
+                # Values are trimmed so "US, CA" works.
+                values = [v.strip() for v in (f.value.split(",") if f.value else []) if v.strip()]
                 if not values:
+                    # Empty membership: `in ()` matches nothing (don't silently
+                    # drop → match-all); `not_in ()` excludes nothing (no-op).
+                    if f.operator == "in":
+                        bucket.append("1 = 0")
                     continue
                 if f.operator == "in":
                     bucket.append(f"{prefix}.{f.column} = ANY({{{{{param_name}::text[]}}}})")

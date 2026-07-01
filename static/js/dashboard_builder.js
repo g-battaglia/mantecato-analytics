@@ -94,9 +94,14 @@
     return null;
   }
 
+  var _previewSeq = {};
   function preview(w) {
     var host = root.querySelector('[data-wid="' + w.id + '"] .wpreview');
     if (!host) return;
+    // Per-widget request sequencing: rapid changes (date range / filters) fire
+    // overlapping fetches — apply only the latest so a slow earlier response
+    // can't overwrite a newer one with stale content.
+    var seq = _previewSeq[w.id] = (_previewSeq[w.id] || 0) + 1;
     fetch(PREVIEW_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
@@ -109,13 +114,17 @@
         return r.text();
       })
       .then(function (html) {
+        if (_previewSeq[w.id] !== seq) return; // superseded by a newer request
         host.innerHTML = html;
         if (window.lucide) lucide.createIcons();
         if (typeof window.htmx !== "undefined") window.htmx.process(host);
         // Re-init any chart payloads that arrived in the preview.
         document.dispatchEvent(new CustomEvent("htmx:afterSwap", { detail: { target: host } }));
       })
-      .catch(function () { host.innerHTML = '<div class="p-4 text-xs text-destructive">Preview failed</div>'; });
+      .catch(function () {
+        if (_previewSeq[w.id] !== seq) return;
+        host.innerHTML = '<div class="p-4 text-xs text-destructive">Preview failed</div>';
+      });
   }
 
   function syncPositions() {
@@ -216,7 +225,8 @@
     }
     if (editingId) {
       var existing = findWidget(editingId);
-      w.grid = existing ? existing.grid : undefined;
+      if (!existing) { closeDrawer(); return; }
+      w.grid = existing.grid;
       Object.keys(existing).forEach(function (k) { delete existing[k]; });
       Object.assign(existing, w);
       // Refresh the header (title/type may have changed), then preview once

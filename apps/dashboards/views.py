@@ -24,7 +24,7 @@ Cross-refs:
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import messages
@@ -186,7 +186,9 @@ class DashboardCreateView(LoginRequiredMixin, View):
             website_id=str(cleaned["website_id"]),
             name=cleaned["name"],
             description=cleaned["description"],
-            config=cleaned["config"] or {},
+            # Pass None (not {}) when blank so create_new_dashboard applies the
+            # v2 default scaffold instead of persisting empty parameters.
+            config=cleaned["config"],
         )
         messages.success(request, "Dashboard created — add some widgets.")
         # Straight into the visual builder for the freshly-created dashboard.
@@ -336,6 +338,12 @@ class DashboardDeleteView(LoginRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
+def _aware_utc(value: str) -> datetime:
+    """Parse an ISO-8601 string into an aware UTC datetime (naive → assumed UTC)."""
+    dt = datetime.fromisoformat(value)
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
 def _resolve_runtime(request: HttpRequest, default_range_preset: str, website_id: str) -> dict[str, Any]:
     """Parse the runtime date range + ad-hoc filters from the query string.
 
@@ -348,9 +356,9 @@ def _resolve_runtime(request: HttpRequest, default_range_preset: str, website_id
     end = request.GET.get("end")
     if start and end:
         try:
-            date_range: DateRange | None = DateRange(
-                datetime.fromisoformat(start), datetime.fromisoformat(end)
-            )
+            # Normalize to aware UTC — <input type="datetime-local"> values are
+            # naive, and DateRange's contract is aware UTC (USE_TZ=True).
+            date_range: DateRange | None = DateRange(_aware_utc(start), _aware_utc(end))
         except ValueError:
             date_range = None
         range_preset = "custom"

@@ -425,11 +425,25 @@ class TestBuildFilterSql:
         # (positive OR positive) AND negation.
         filters = [
             Filter(column="url_path", operator="starts_with", value="/pro/"),
+            Filter(column="url_path", operator="starts_with", value="/trial/"),
             Filter(column="url_path", operator="not_contains", value="/chart/"),
         ]
         where = build_filter_sql(filters)["where"]
         assert "ILIKE" in where and "NOT ILIKE" in where
-        assert " AND " in where
+        assert " OR " in where and " AND " in where
+
+    def test_empty_in_matches_nothing(self) -> None:
+        # An empty `in ()` must match nothing, never silently drop → match-all.
+        where = build_filter_sql([Filter(column="country", operator="in", value="")])["where"]
+        assert "1 = 0" in where
+
+    def test_empty_not_in_is_noop(self) -> None:
+        where = build_filter_sql([Filter(column="country", operator="not_in", value="")])["where"]
+        assert where == ""
+
+    def test_in_values_are_trimmed(self) -> None:
+        result = build_filter_sql([Filter(column="country", operator="in", value="US, CA")])
+        assert result["params"]["f0"] == ["US", "CA"]
 
     def test_bot_filter(self) -> None:
         filters = [
