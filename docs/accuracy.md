@@ -103,7 +103,49 @@ with the proxy mapping `/assets/m.js → /api/script` and `/collect → /api/sen
   users on some VPNs/carriers. If you filter bots and see legit users vanish,
   disable it (`DETECT_DATACENTER_IPS=false`) or tune `DATACENTER_CIDRS`.
 
-## 4. How returning visitors are deduplicated (fixed monthly window)
+## 4. Why another tool may report *more* visitors than Mantecato
+
+A lower number is not automatically a *lost* number. When Mantecato shows fewer
+visitors than a tool you're migrating from (Umami, GA, a naive full-IP counter),
+most of the gap is usually **bot traffic the other tool inflates and Mantecato
+deflates** — not real people Mantecato dropped. Two mechanisms dominate, both
+confirmed on production data:
+
+- **JS-executing crawlers that pass a user-agent bot filter.** Many tools only
+  screen bots *at ingest* by User-Agent and then count everything that got
+  through, forever, in every dashboard. A search-engine/rendering crawler that
+  isn't on the UA blocklist therefore lands in the "human" numbers (in Umami these
+  are the stored `browser='searchbot'` rows — a steady trickle plus occasional
+  waves of 1,500–2,000 pageviews/day). Mantecato usually never even receives them:
+  the tracker refuses to send when `navigator.webdriver === true`, so headless
+  browsers self-exclude on the client.
+- **Rotating-IP headless pools counted as one-visitor-per-IP.** A tool that keys a
+  session on the **full** client IP treats every IP a datacenter crawler rotates
+  through as a brand-new visitor. Measured example: a single content scraper
+  (Chrome/Linux, 945 distinct `/content/…` pages crawled in 3 hours) showed up as
+  **~457 "visitors"** in a full-IP tool but **1** in Mantecato; a datacenter pool
+  produced **1,360 "visitors" for 1,411 pageviews** (1.04 pv/visitor — nobody
+  browses like that). Mantecato's `/24` truncation (§5) collapses each pool into a
+  single visitor key, and `DETECT_DATACENTER_IPS` flags known ranges outright.
+
+So Mantecato trades a small, honest under-count of privacy-opt-out humans (§1,
+GPC) for **not** carrying a large bot over-count in the visitor line. Segment by
+country and the two systems agree within a few percent on real human cohorts; the
+big divergences concentrate in datacenter geographies (US/SG crawler pools).
+
+**Known limitation.** Some headless-Chrome pools pass *every* default heuristic —
+real-looking UA, not on any datacenter list, `navigator.webdriver` spoofed to
+`false`. Those still reach Mantecato and inflate **pageviews** (though the `/24`
+collapse keeps them near one **visitor**). If pageview precision matters, extend
+`DATACENTER_CIDRS`/bot rules, or filter obvious offenders (e.g. one key crawling
+hundreds of unique paths in an hour) at read time.
+
+**When reconciling with Umami specifically:** exclude its ingest-passed bots before
+comparing, or a correct Mantecato number will read as a loss. The searchbot rows
+live on the `session` table, so `JOIN session s … WHERE s.browser <> 'searchbot'`;
+after that filter the residual pageview gap is the expected ~2–9 %/day GPC cohort.
+
+## 5. How returning visitors are deduplicated (fixed monthly window)
 
 The visitor digest salt rotates **once per calendar month** — a fixed,
 non-configurable window chosen so the privacy posture cannot be misconfigured. A
@@ -119,9 +161,11 @@ Precision trade-off: because the IP is always truncated to `/24` (+ `/48` for
 IPv6) before hashing — the CNIL/Garante minimisation condition — distinct visitors
 who share a `/24` subnet **and** an identical User-Agent in the same month merge
 into one. This is the deliberate, fixed cost of needing no consent banner; see
-[privacy.md](privacy.md).
+[privacy.md](privacy.md). The **same** truncation is what collapses rotating-IP
+bot pools into a single visitor key (§4), so on real deployments its net effect on
+the visitor line is usually accuracy-positive, not negative.
 
-## 5. Operational notes
+## 6. Operational notes
 
 - **Deploy propagation:** `/api/script` is served with `Cache-Control:
   max-age=86400`, so tracker changes take up to **24h** to fully roll out as

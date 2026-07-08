@@ -27,6 +27,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   posture — no device storage/access (no ePrivacy trigger) + consent-exempt
   audience measurement (first-party, IP masked, ≤13-month identifier, ≤25-month
   retention, transparency + GPC), all satisfied by construction.
+- Docs (`docs/accuracy.md` §4): explain why another analytics tool may report
+  *more* visitors — ingest-passed search crawlers it keeps counting, and
+  rotating-IP headless pools it counts one-visitor-per-IP — both of which
+  Mantecato deflates via `navigator.webdriver` refusal, `/24` collapse, and
+  datacenter detection, so a lower visitor count is usually more accurate, not
+  lost data. Includes the known limitation (spoofed-`webdriver` pools still
+  inflate pageviews) and how to reconcile fairly with Umami.
 
 ### Fixed
 - IPv4-mapped IPv6 client addresses (`::ffff:a.b.c.d`) are now unwrapped to IPv4
