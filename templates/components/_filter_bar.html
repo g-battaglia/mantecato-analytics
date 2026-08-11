@@ -151,10 +151,36 @@
 
 <script>
   (function () {
-    // Visual feedback while the bot-filter toggle triggers a full page reload.
+    // Remember the bot-filter choice across visits. An explicit ?bot_filter in
+    // the URL always wins and re-syncs storage; when it's absent we fall back to
+    // the remembered value, redirecting once (replace, so no back-button noise)
+    // so the server applies it — the filter is enforced server-side, so the
+    // param has to reach the request.
+    var BOT_FILTER_KEY = "mantecato:bot_filter";
+    try {
+      var botUrl = new URL(window.location.href);
+      var botParam = botUrl.searchParams.get("bot_filter"); // "1" | "0" | null
+      if (botParam !== null) {
+        localStorage.setItem(BOT_FILTER_KEY, botParam);
+      } else {
+        var remembered = localStorage.getItem(BOT_FILTER_KEY);
+        if (remembered !== null) {
+          botUrl.searchParams.set("bot_filter", remembered);
+          window.location.replace(botUrl.toString());
+          return; // page is reloading — skip wiring on this (transient) load
+        }
+      }
+    } catch (e) {
+      /* localStorage unavailable — carry on without persistence */
+    }
+
+    // Visual feedback while the bot-filter toggle triggers a full page reload,
+    // and remember the value we're navigating towards (toggled from current).
     document.querySelectorAll('[data-bot-filter-toggle]').forEach(function (el) {
       el.addEventListener('click', function () {
         el.setAttribute('aria-busy', 'true');
+        var next = "{{ bot_filter|yesno:'0,1' }}";
+        try { localStorage.setItem(BOT_FILTER_KEY, next); } catch (e) {}
       });
     });
 

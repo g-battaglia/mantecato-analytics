@@ -578,11 +578,114 @@ function _savedTimeseriesMode(key) {
   }
 }
 
+// Per-chart display options remembered across visits: whether the previous
+// period is shown (``prev``) and which series are visible (``series`` keyed by
+// dataset label). Stored separately from the line/column mode key.
+var CHART_TS_OPTS_PREFIX = "mantecato:tsopts:";
+
+function _savedTimeseriesOptions(key) {
+  if (!key) return null;
+  try {
+    var raw = localStorage.getItem(CHART_TS_OPTS_PREFIX + key);
+    if (!raw) return null;
+    var o = JSON.parse(raw);
+    return o && typeof o === "object" ? o : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function _saveTimeseriesOptions(key, opts) {
+  if (!key) return;
+  try {
+    localStorage.setItem(CHART_TS_OPTS_PREFIX + key, JSON.stringify(opts));
+  } catch (e) {
+    /* storage unavailable — choices just won't persist */
+  }
+}
+
+function _isPrevSeries(ds) {
+  return !!(ds && ds.label && String(ds.label).indexOf("Prev ") === 0);
+}
+
+function _hasPrevDataset(data) {
+  return ((data && data.datasets) || []).some(_isPrevSeries);
+}
+
+// Snapshot the non-Prev series visibility from a rendered chart.
+function _seriesVisibility(chart) {
+  var series = {};
+  (chart.data.datasets || []).forEach(function (ds) {
+    if (!_isPrevSeries(ds) && ds.label) series[ds.label] = !ds.hidden;
+  });
+  return series;
+}
+
+function _syncPrevToggle(btn, on) {
+  btn.classList.toggle("bg-primary", on);
+  btn.classList.toggle("text-primary-foreground", on);
+  btn.classList.toggle("border-primary/40", on);
+  btn.classList.toggle("bg-primary/10", on);
+  btn.classList.toggle("border-input", !on);
+  btn.classList.toggle("bg-background", !on);
+  btn.classList.toggle("text-muted-foreground", !on);
+}
+
+// Apply remembered display options (previous period + per-series visibility) to
+// a freshly rendered chart, wire the legend click to persist series toggles,
+// and bind the optional "Previous period" button in the container.
+function _wireTimeseriesOptions(chart, cid, data) {
+  if (!chart || !cid) return chart;
+  var opts = _savedTimeseriesOptions(cid) || {};
+  var prevOn = opts.prev !== false; // default: show the previous period when present
+
+  (chart.data.datasets || []).forEach(function (ds) {
+    if (_isPrevSeries(ds)) {
+      ds.hidden = !prevOn;
+    } else if (ds.label && opts.series && opts.series[ds.label] === false) {
+      ds.hidden = true;
+    }
+  });
+  chart.update();
+
+  // Persist series visibility whenever the user toggles a legend item.
+  var legendOpts = chart.options.plugins && chart.options.plugins.legend;
+  if (legendOpts) {
+    var origOnClick = legendOpts.onClick;
+    legendOpts.onClick = function (e, item, el) {
+      if (origOnClick) origOnClick.call(this, e, item, el);
+      _saveTimeseriesOptions(cid, { prev: prevOn, series: _seriesVisibility(chart) });
+    };
+  }
+
+  // Bind the "Previous period" button; hide it when there is no prev data.
+  var box = chart.canvas && chart.canvas.closest ? chart.canvas.closest("[data-ts-chart]") : null;
+  var prevBtn = box ? box.querySelector("[data-ts-prev-toggle]") : null;
+  if (prevBtn) {
+    prevBtn.classList.toggle("hidden", !_hasPrevDataset(data));
+    _syncPrevToggle(prevBtn, prevOn && _hasPrevDataset(data));
+    if (!prevBtn._tsPrevWired) {
+      prevBtn._tsPrevWired = true;
+      prevBtn.addEventListener("click", function () {
+        prevOn = !prevOn;
+        (chart.data.datasets || []).forEach(function (ds) {
+          if (_isPrevSeries(ds)) ds.hidden = !prevOn;
+        });
+        chart.update();
+        _syncPrevToggle(prevBtn, prevOn);
+        _saveTimeseriesOptions(cid, { prev: prevOn, series: _seriesVisibility(chart) });
+      });
+    }
+  }
+  return chart;
+}
+
 // Render `data` as a line or column chart from a single time-series payload.
-function initToggleableTimeseries(canvasId, data, mode) {
-  return mode === "column"
+function initToggleableTimeseries(canvasId, data, mode, cid) {
+  var chart = mode === "column"
     ? initTimeseriesBarChart(canvasId, _stripSeriesColors(data || {}))
     : initTimeSeriesChart(canvasId, data);
+  return _wireTimeseriesOptions(chart, cid, data);
 }
 
 // Apply a mode to a time-series container: re-render, sync button styles, persist.
@@ -590,7 +693,7 @@ function _selectTimeseriesMode(box, cid, mode, persist) {
   var canvas = box.querySelector("canvas[data-chart-kind='timeseries']");
   if (canvas) {
     var data = _readJSON(canvas.getAttribute("data-chart-src"));
-    if (data) initToggleableTimeseries(canvas.id, data, mode);
+    if (data) initToggleableTimeseries(canvas.id, data, mode, cid);
   }
 
   box.querySelectorAll("[data-ts-toggle]").forEach(function (btn) {
@@ -648,7 +751,14 @@ function _reinitAllCharts() {
     if (!canvas._chartData) return;
     var type = canvas._chartType;
     var data = canvas._chartData;
-    if (type === "timeseries") initTimeSeriesChart(canvas.id, data);
+    var tsBox = canvas.closest ? canvas.closest("[data-ts-chart]") : null;
+    if (tsBox && (type === "timeseries" || type === "timeseries-bar")) {
+      // Re-render through the toggle path so remembered display options
+      // (previous period, per-series visibility) are re-applied after a
+      // theme change, not just the bare chart type.
+      var mode = type === "timeseries-bar" ? "column" : "line";
+      initToggleableTimeseries(canvas.id, data, mode, tsBox.getAttribute("data-ts-chart"));
+    } else if (type === "timeseries") initTimeSeriesChart(canvas.id, data);
     else if (type === "timeseries-bar") initTimeseriesBarChart(canvas.id, data);
     else if (type === "bar") initBarChart(canvas.id, data);
     else if (type === "pie") initPieChart(canvas.id, data);

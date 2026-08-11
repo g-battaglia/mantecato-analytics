@@ -3,6 +3,13 @@
 {# Time series chart — Card wrapper matching legacy style #}
 <div data-ts-chart="overview-ts" class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
   <div class="flex items-center justify-end gap-2">
+    <button type="button" data-ts-prev-toggle
+            class="hidden items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-pressed="true"
+            aria-label="{% trans 'Toggle previous period' %}">
+      <i data-lucide="git-compare" class="size-3.5"></i>
+      <span class="hidden sm:inline">{% trans "Previous period" %}</span>
+    </button>
     <div class="flex gap-1">
       <button type="button" data-ts-toggle data-type="line"
               class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
