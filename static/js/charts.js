@@ -621,27 +621,30 @@ function _seriesVisibility(chart) {
   return series;
 }
 
+// Sync the "Previous period" button styles — same active/inactive classes as
+// the Line/Column toggle so the two controls read as one group.
 function _syncPrevToggle(btn, on) {
   btn.classList.toggle("bg-primary", on);
   btn.classList.toggle("text-primary-foreground", on);
-  btn.classList.toggle("border-primary/40", on);
-  btn.classList.toggle("bg-primary/10", on);
-  btn.classList.toggle("border-input", !on);
-  btn.classList.toggle("bg-background", !on);
+  btn.classList.toggle("bg-muted", !on);
   btn.classList.toggle("text-muted-foreground", !on);
+  btn.classList.toggle("hover:text-foreground", !on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
 }
 
 // Apply remembered display options (previous period + per-series visibility) to
-// a freshly rendered chart, wire the legend click to persist series toggles,
-// and bind the optional "Previous period" button in the container.
+// a freshly rendered chart, and wire the legend click to persist series toggles.
+// The "Previous period" button itself is handled by delegation (see the
+// data-ts-prev-toggle click handler) so it stays bound to the live chart.
 function _wireTimeseriesOptions(chart, cid, data) {
   if (!chart || !cid) return chart;
   var opts = _savedTimeseriesOptions(cid) || {};
   var prevOn = opts.prev !== false; // default: show the previous period when present
+  var hasPrev = _hasPrevDataset(data);
 
   (chart.data.datasets || []).forEach(function (ds) {
     if (_isPrevSeries(ds)) {
-      ds.hidden = !prevOn;
+      ds.hidden = !(hasPrev && prevOn);
     } else if (ds.label && opts.series && opts.series[ds.label] === false) {
       ds.hidden = true;
     }
@@ -654,28 +657,18 @@ function _wireTimeseriesOptions(chart, cid, data) {
     var origOnClick = legendOpts.onClick;
     legendOpts.onClick = function (e, item, el) {
       if (origOnClick) origOnClick.call(this, e, item, el);
-      _saveTimeseriesOptions(cid, { prev: prevOn, series: _seriesVisibility(chart) });
+      var o = _savedTimeseriesOptions(cid) || {};
+      o.series = _seriesVisibility(chart);
+      _saveTimeseriesOptions(cid, o);
     };
   }
 
-  // Bind the "Previous period" button; hide it when there is no prev data.
+  // Show/hide the "Previous period" button and reflect the current state.
   var box = chart.canvas && chart.canvas.closest ? chart.canvas.closest("[data-ts-chart]") : null;
   var prevBtn = box ? box.querySelector("[data-ts-prev-toggle]") : null;
   if (prevBtn) {
-    prevBtn.classList.toggle("hidden", !_hasPrevDataset(data));
-    _syncPrevToggle(prevBtn, prevOn && _hasPrevDataset(data));
-    if (!prevBtn._tsPrevWired) {
-      prevBtn._tsPrevWired = true;
-      prevBtn.addEventListener("click", function () {
-        prevOn = !prevOn;
-        (chart.data.datasets || []).forEach(function (ds) {
-          if (_isPrevSeries(ds)) ds.hidden = !prevOn;
-        });
-        chart.update();
-        _syncPrevToggle(prevBtn, prevOn);
-        _saveTimeseriesOptions(cid, { prev: prevOn, series: _seriesVisibility(chart) });
-      });
-    }
+    prevBtn.classList.toggle("hidden", !hasPrev);
+    _syncPrevToggle(prevBtn, hasPrev && prevOn);
   }
   return chart;
 }
@@ -736,6 +729,29 @@ document.addEventListener("click", function (e) {
   var box = btn.closest("[data-ts-chart]");
   if (!box) return;
   _selectTimeseriesMode(box, box.getAttribute("data-ts-chart"), btn.getAttribute("data-type"), true);
+});
+
+// Delegated "Previous period" toggle-button handler. Reads the live chart via
+// Chart.getChart so it keeps working after line/column switches and re-renders
+// (the canvas is destroyed and recreated, but the button isn't re-bound).
+document.addEventListener("click", function (e) {
+  var btn = e.target.closest("[data-ts-prev-toggle]");
+  if (!btn) return;
+  var box = btn.closest("[data-ts-chart]");
+  var canvas = box ? box.querySelector("canvas[data-chart-kind='timeseries']") : null;
+  var chart = canvas ? Chart.getChart(canvas) : null;
+  if (!chart) return;
+  var cid = box.getAttribute("data-ts-chart");
+  var prevDs = (chart.data.datasets || []).filter(_isPrevSeries);
+  if (!prevDs.length) return;
+  var nowOn = !prevDs.some(function (ds) { return !ds.hidden; });
+  prevDs.forEach(function (ds) { ds.hidden = !nowOn; });
+  chart.update();
+  _syncPrevToggle(btn, nowOn);
+  var opts = _savedTimeseriesOptions(cid) || {};
+  opts.prev = nowOn;
+  opts.series = _seriesVisibility(chart);
+  _saveTimeseriesOptions(cid, opts);
 });
 
 /* ── Re-render charts after HTMX swaps and theme changes ──── */
