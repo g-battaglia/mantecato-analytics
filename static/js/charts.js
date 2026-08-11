@@ -208,6 +208,83 @@ function initBarChart(canvasId, data) {
   });
 }
 
+/* ── Time series as vertical bars (Column mode) ───────────── */
+/*
+ * A time series has 2–3 datasets (Pageviews / Visitors / Visits), so unlike the
+ * categorical ``initBarChart`` this variant keeps the legend on and shows a
+ * value-only tooltip — the "share of total %" is meaningless over time. Series
+ * colors are stripped so each dataset takes a solid swatch from CHART_COLORS.
+ */
+function initTimeseriesBarChart(canvasId, data) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  // Distinct type so the theme-change rebuild (see _reinitAllCharts) keeps the
+  // legend + value tooltip of this variant instead of the categorical initBarChart.
+  _register(canvas, "timeseries-bar", data);
+  applyChartDefaults();
+  var t = chartTheme();
+  var existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
+
+  return new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: localizeLabels(data.labels || []),
+      datasets: (data.datasets || []).map(function (ds, i) {
+        var color = CHART_COLORS[i % CHART_COLORS.length];
+        var copy = Object.assign({ borderRadius: 4, maxBarThickness: 32 }, ds);
+        copy.backgroundColor = color;
+        return copy;
+      }),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: "top",
+          align: "end",
+          labels: { boxWidth: 8, boxHeight: 8, usePointStyle: true, padding: 16, filter: function (item) { return !item.text.startsWith("Prev"); } },
+        },
+        tooltip: {
+          backgroundColor: t.tooltipBg,
+          titleColor: t.tooltipFg,
+          bodyColor: t.tooltipFg,
+          borderColor: t.grid,
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 8,
+          displayColors: true,
+          usePointStyle: true,
+          callbacks: {
+            label: function (ctx) {
+              var raw = ctx.parsed;
+              var v = Number(raw && typeof raw === "object" ? raw.y : raw) || 0;
+              var name = (ctx.dataset && ctx.dataset.label) || "";
+              return (name ? name + ": " : "") + v.toLocaleString();
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: { font: { size: 11 }, maxRotation: 0, autoSkip: true },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: t.grid, drawTicks: false },
+          border: { display: false },
+          ticks: { font: { size: 11 }, padding: 8 },
+        },
+      },
+    },
+  });
+}
+
 /* ── Pie / doughnut chart ─────────────────────────────────── */
 
 function initPieChart(canvasId, data) {
@@ -404,6 +481,7 @@ function autoInitCharts(scope) {
   var root = scope && scope.querySelectorAll ? scope : document;
   root.querySelectorAll("canvas[data-chart-src]").forEach(function (canvas) {
     if (canvas.closest("[data-chart-card]")) return; // handled by initChartCards
+    if (canvas.closest("[data-ts-chart]")) return; // handled by initTimeseriesToggles
     var data = _readJSON(canvas.getAttribute("data-chart-src"));
     if (!data) return;
     var kind = canvas.getAttribute("data-chart-kind") || "categorical";
@@ -478,11 +556,87 @@ document.addEventListener("click", function (e) {
   _selectChartView(card, card.getAttribute("data-chart-card"), btn.getAttribute("data-type"), true);
 });
 
+/* ── Toggleable time-series chart (line ⇄ column) ─────────── */
+/*
+ * A "time-series chart" container carries ``data-ts-chart="<cid>"``. It holds a
+ * single canvas (``data-chart-kind="timeseries"``) that can render as a line OR
+ * as vertical bars from the *same* payload. Toggle buttons (``data-ts-toggle``
+ * with ``data-type="line"|"column"``) switch the mode; the choice is remembered
+ * per cid in localStorage. Line keeps the original area-chart payload; column
+ * strips series colors so each dataset takes a solid CHART_COLORS swatch.
+ */
+
+var CHART_TS_PREFIX = "mantecato:tstype:";
+
+function _savedTimeseriesMode(key) {
+  if (!key) return null;
+  try {
+    var v = localStorage.getItem(CHART_TS_PREFIX + key);
+    return v === "line" || v === "column" ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Render `data` as a line or column chart from a single time-series payload.
+function initToggleableTimeseries(canvasId, data, mode) {
+  return mode === "column"
+    ? initTimeseriesBarChart(canvasId, _stripSeriesColors(data || {}))
+    : initTimeSeriesChart(canvasId, data);
+}
+
+// Apply a mode to a time-series container: re-render, sync button styles, persist.
+function _selectTimeseriesMode(box, cid, mode, persist) {
+  var canvas = box.querySelector("canvas[data-chart-kind='timeseries']");
+  if (canvas) {
+    var data = _readJSON(canvas.getAttribute("data-chart-src"));
+    if (data) initToggleableTimeseries(canvas.id, data, mode);
+  }
+
+  box.querySelectorAll("[data-ts-toggle]").forEach(function (btn) {
+    var active = btn.getAttribute("data-type") === mode;
+    btn.classList.toggle("bg-primary", active);
+    btn.classList.toggle("text-primary-foreground", active);
+    btn.classList.toggle("bg-muted", !active);
+    btn.classList.toggle("text-muted-foreground", !active);
+    btn.classList.toggle("hover:text-foreground", !active);
+  });
+
+  if (persist && cid) {
+    try {
+      localStorage.setItem(CHART_TS_PREFIX + cid, mode);
+    } catch (e) {
+      /* storage unavailable — choice just won't persist */
+    }
+  }
+}
+
+// Initialize every time-series toggle container within `scope`.
+function initTimeseriesToggles(scope) {
+  var root = scope && scope.querySelectorAll ? scope : document;
+  root.querySelectorAll("[data-ts-chart]").forEach(function (box) {
+    if (box._tsToggleReady) return;
+    box._tsToggleReady = true;
+    var cid = box.getAttribute("data-ts-chart");
+    _selectTimeseriesMode(box, cid, _savedTimeseriesMode(cid) || "line", false);
+  });
+}
+
+// Delegated time-series toggle-button handler.
+document.addEventListener("click", function (e) {
+  var btn = e.target.closest("[data-ts-toggle]");
+  if (!btn) return;
+  var box = btn.closest("[data-ts-chart]");
+  if (!box) return;
+  _selectTimeseriesMode(box, box.getAttribute("data-ts-chart"), btn.getAttribute("data-type"), true);
+});
+
 /* ── Re-render charts after HTMX swaps and theme changes ──── */
 
 function _initAllCharts(scope) {
   autoInitCharts(scope);
   initChartCards(scope);
+  initTimeseriesToggles(scope);
 }
 
 function _reinitAllCharts() {
@@ -491,6 +645,7 @@ function _reinitAllCharts() {
     var type = canvas._chartType;
     var data = canvas._chartData;
     if (type === "timeseries") initTimeSeriesChart(canvas.id, data);
+    else if (type === "timeseries-bar") initTimeseriesBarChart(canvas.id, data);
     else if (type === "bar") initBarChart(canvas.id, data);
     else if (type === "pie") initPieChart(canvas.id, data);
     else if (type === "sparkline") initSparkline(canvas.id, data);

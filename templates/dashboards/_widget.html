@@ -32,8 +32,18 @@ apps.dashboards.widgets.render_widget — never raises, so `w.error` short-circu
 
 {% elif w.kind == "timeseries" %}
   {% with cid="wts-"|add:w.id %}
-  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
-    <h2 class="mb-3 text-sm font-semibold text-foreground">{{ w.title|default:"Trend" }}</h2>
+  <div class="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm" data-ts-chart="{{ cid }}">
+    <div class="mb-3 flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold text-foreground">{{ w.title|default:"Trend" }}</h2>
+      <div class="flex gap-1">
+        <button type="button" data-ts-toggle data-type="line"
+                class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+                aria-label="{% trans 'Line chart' %}">{% trans "Line" %}</button>
+        <button type="button" data-ts-toggle data-type="column"
+                class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+                aria-label="{% trans 'Column chart' %}">{% trans "Column" %}</button>
+      </div>
+    </div>
     <div class="relative h-48 sm:h-64"><canvas id="{{ cid }}-canvas" data-chart-src="{{ cid }}" data-chart-kind="timeseries"></canvas></div>
     {{ w.chart|json_script:cid }}
   </div>
