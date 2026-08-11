@@ -12,11 +12,11 @@
 {# ── Comparison mode selector ───────────────────────────────── #}
 <div class="mb-6 flex items-center gap-3">
   <span class="text-sm font-medium text-foreground">{% trans "Compare with" %}:</span>
-  <a href="?mode=previous_period&website={{ selected_website }}&range={{ range_preset }}"
+  <a href="?{% view_query %}&mode=previous_period"
      class="rounded-md px-3 py-1 text-sm {% if comparison_mode == 'previous_period' %}bg-secondary text-secondary-foreground font-medium{% else %}text-muted-foreground hover:bg-muted{% endif %}">
     {% trans "Previous period" %}
   </a>
-  <a href="?mode=previous_year&website={{ selected_website }}&range={{ range_preset }}"
+  <a href="?{% view_query %}&mode=previous_year"
      class="rounded-md px-3 py-1 text-sm {% if comparison_mode == 'previous_year' %}bg-secondary text-secondary-foreground font-medium{% else %}text-muted-foreground hover:bg-muted{% endif %}">
     {% trans "Previous year" %}
   </a>

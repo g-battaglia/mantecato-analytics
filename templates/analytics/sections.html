@@ -30,7 +30,7 @@
         </div>
       </div>
       {% for s in sections %}
-      <a href="{% url 'analytics_pages' %}?website={{ selected_website }}&range={{ range_preset }}&filter=url_path:starts_with:{{ s.section }}"
+      <a href="{% url 'analytics_pages' %}?{% view_query %}&filter=url_path:starts_with:{{ s.section }}"
          class="relative flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
         <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {{ s.pct }}%"></div>
         <div class="relative flex-1 min-w-0 pr-4">

@@ -313,6 +313,9 @@
       var rangeSelector = document.getElementById("range-selector");
       if (rangeSelector) {
         rangeSelector.addEventListener("change", function () {
+          // "Custom…" opens the date-range popover in the filter bar instead
+          // of reloading — don't let it leak into the URL as ?range=custom.
+          if (this.value === "custom") return;
           var u = new URL(window.location.href);
           u.searchParams.set("range", this.value);
           // Picking a new preset resets prev/next navigation to the most
