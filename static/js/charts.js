@@ -614,7 +614,11 @@ function _selectTimeseriesMode(box, cid, mode, persist) {
 // Initialize every time-series toggle container within `scope`.
 function initTimeseriesToggles(scope) {
   var root = scope && scope.querySelectorAll ? scope : document;
-  root.querySelectorAll("[data-ts-chart]").forEach(function (box) {
+  var boxes = Array.prototype.slice.call(root.querySelectorAll("[data-ts-chart]"));
+  // When the swapped target *is* the chart container, it won't appear among its
+  // own descendants — include it explicitly so HTMX swaps still re-init.
+  if (root.matches && root.matches("[data-ts-chart]")) boxes.push(root);
+  boxes.forEach(function (box) {
     if (box._tsToggleReady) return;
     box._tsToggleReady = true;
     var cid = box.getAttribute("data-ts-chart");

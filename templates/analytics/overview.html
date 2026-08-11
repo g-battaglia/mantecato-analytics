@@ -62,11 +62,8 @@
 <script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>
 <script>
   (function () {
-    {# ── Initialize time series chart ── #}
-    var tsEl = document.getElementById('ts-data');
-    if (tsEl) {
-      initTimeSeriesChart('timeseries-canvas', JSON.parse(tsEl.textContent));
-    }
+    {# ── Initialize time series chart (toggleable line/column) ── #}
+    initTimeseriesToggles(document);
 
     {# ── Initialize world map ── #}
     var geoEl = document.getElementById('geo-data');
@@ -160,14 +157,6 @@
       svg += '</g></svg>';
       hmContainer.innerHTML = svg;
     }
-
-    {# ── HTMX re-init after swap ── #}
-    document.addEventListener('htmx:afterSwap', function () {
-      var newTsEl = document.getElementById('ts-data');
-      if (newTsEl) {
-        initTimeSeriesChart('timeseries-canvas', JSON.parse(newTsEl.textContent));
-      }
-    });
   })();
 </script>
 {% endblock %}

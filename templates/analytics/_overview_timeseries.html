@@ -1,10 +1,20 @@
 {% load i18n %}
 
 {# Time series chart — Card wrapper matching legacy style #}
-<div class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+<div data-ts-chart="overview-ts" class="flex flex-col gap-2.5 overflow-hidden rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
+  <div class="flex items-center justify-end gap-2">
+    <div class="flex gap-1">
+      <button type="button" data-ts-toggle data-type="line"
+              class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="{% trans 'Line chart' %}">{% trans "Line" %}</button>
+      <button type="button" data-ts-toggle data-type="column"
+              class="rounded-md px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="{% trans 'Column chart' %}">{% trans "Column" %}</button>
+    </div>
+  </div>
   <div>
     <div class="relative h-48 sm:h-64 lg:h-80">
-      <canvas id="timeseries-canvas"></canvas>
+      <canvas id="timeseries-canvas" data-chart-src="ts-data" data-chart-kind="timeseries"></canvas>
     </div>
   </div>
   {{ timeseries_data|json_script:"ts-data" }}
