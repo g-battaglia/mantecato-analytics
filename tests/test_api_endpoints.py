@@ -22,6 +22,7 @@ import pytest
 from django.test import Client
 
 from apps.api.serializers import sanitize_for_json
+from core.mantecato_core.date_utils import DateRange
 
 _USER_ID = "a0000000-0000-0000-0000-000000000001"
 _WEBSITE_ID = "b0000000-0000-0000-0000-000000000002"
@@ -162,7 +163,15 @@ class TestAnalyticsOverview:
     ) -> None:
         mock_validate.return_value = {"userId": _USER_ID, "scopes": ["read"]}
         mock_resolve.return_value = [{"id": _WEBSITE_ID, "name": "Test", "domain": "x.com"}]
-        mock_overview.return_value = {"stats": {"pageviews": 100}, "timeseries": []}
+        mock_overview.return_value = {
+            "stats": {"pageviews": 100},
+            "timeseries": [],
+            # The real service echoes the resolved range back in the payload.
+            "date_range": DateRange(
+                datetime(2026, 5, 1, tzinfo=UTC),
+                datetime(2026, 5, 31, tzinfo=UTC),
+            ),
+        }
 
         response = client.get(
             f"/api/analytics/overview/?website={_WEBSITE_ID}",
@@ -171,6 +180,7 @@ class TestAnalyticsOverview:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert "stats" in data
+        assert data["date_range"]["start_date"] == "2026-05-01T00:00:00+00:00"
         mock_overview.assert_called_once()
 
 
@@ -439,6 +449,14 @@ class TestJsonSerialization:
         assert isinstance(result["items"][0]["id"], str)
         assert isinstance(result["items"][0]["val"], float)
         assert isinstance(result["created"], str)
+
+    def test_sanitize_date_range(self) -> None:
+        dr = DateRange(datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 5, 31, tzinfo=UTC))
+        result = sanitize_for_json({"date_range": dr})
+        assert result["date_range"] == {
+            "start_date": "2026-05-01T00:00:00+00:00",
+            "end_date": "2026-05-31T00:00:00+00:00",
+        }
 
     def test_passthrough_primitives(self) -> None:
         assert sanitize_for_json(42) == 42

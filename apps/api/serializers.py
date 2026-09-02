@@ -1,7 +1,7 @@
 """JSON serialization helpers for API responses.
 
 Handles types that Django's JsonResponse cannot natively encode:
-datetime, date, time, Decimal, UUID, bytes.
+datetime, date, time, Decimal, UUID, bytes, DateRange.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ import decimal
 import uuid
 from datetime import date, datetime, time
 from typing import Any
+
+from core.mantecato_core.date_utils import DateRange
 
 
 def sanitize_for_json(obj: Any) -> Any:
@@ -30,4 +32,12 @@ def sanitize_for_json(obj: Any) -> Any:
         return str(obj)
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
+    if isinstance(obj, DateRange):
+        # ``get_overview_data`` echoes the resolved range back in its payload;
+        # without this the /api/analytics/overview/ and /realtime/ endpoints
+        # crash with "Object of type DateRange is not JSON serializable".
+        return {
+            "start_date": obj.start_date.isoformat(),
+            "end_date": obj.end_date.isoformat(),
+        }
     return obj
