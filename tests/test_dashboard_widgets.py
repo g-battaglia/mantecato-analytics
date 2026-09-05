@@ -367,6 +367,7 @@ def test_builder_page_and_preview(authenticated_client, seeded):
     assert builder.status_code == 200
     assert b"grid-stack" in builder.content
     assert b"dashboard_builder.js" in builder.content
+    assert b'<option value="groups">Content groups</option>' in builder.content
 
     # Live preview of an unsaved widget config.
     preview = authenticated_client.post(

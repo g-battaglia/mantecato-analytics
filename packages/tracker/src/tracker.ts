@@ -61,6 +61,8 @@ export interface EventPayload {
   url?: string;
   /** Override page title */
   title?: string;
+  /** Override content groups for this page or event. An empty list clears configured groups. */
+  groups?: string[];
 }
 
 export interface UmamiPayload {
@@ -87,9 +89,9 @@ export type TrackCallback = (props: UmamiPayload) => UmamiPayload;
 
 export interface Tracker {
   /** Track a pageview for the current URL (or override with options) */
-  pageview: (options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+  pageview: (options?: EventPayload) => Promise<void>;
   /** Track a custom event name without event properties */
-  event: (name: string, options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+  event: (name: string, options?: EventPayload) => Promise<void>;
   /** Umami-compatible track() — no args = pageview, string = event name, object/function = sanitized payload */
   track: {
     (): Promise<void>;
@@ -236,6 +238,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     const url = normalize(eventPayload.url || getUrl());
     const title = eventPayload.title || getTitle();
     const referrer = getReferrer();
+    const payloadGroups = eventPayload.groups === undefined ? groups : eventPayload.groups;
 
     return {
       website: websiteId,
@@ -244,14 +247,23 @@ export function createTracker(config: TrackerConfig): Tracker {
       url,
       ...(referrer ? { referrer } : {}),
       ...(tag ? { tag } : {}),
-      ...(groups?.length ? { groups } : {}),
+      ...(payloadGroups?.length ? { groups: payloadGroups } : {}),
     };
   }
 
-  function sanitizePayload(payload: Partial<UmamiPayload>): UmamiPayload {
+  function sanitizePayload(
+    payload: Partial<UmamiPayload>,
+    applyConfiguredGroups = true,
+  ): UmamiPayload {
+    const payloadGroups = Array.isArray(payload.groups)
+      ? payload.groups
+      : applyConfiguredGroups
+        ? groups
+        : [];
     const base = buildPayload({
       url: payload.url,
       title: payload.title,
+      groups: payloadGroups,
     });
     const name = typeof payload.name === "string" ? payload.name.trim().slice(0, 100) : "";
     return {
@@ -259,7 +271,6 @@ export function createTracker(config: TrackerConfig): Tracker {
       hostname: payload.hostname || base.hostname,
       ...(name ? { name } : {}),
       ...(tag ? { tag } : {}),
-      ...(groups?.length ? { groups } : {}),
     };
   }
 
@@ -273,7 +284,7 @@ export function createTracker(config: TrackerConfig): Tracker {
     }
 
     const apiUrl = `${baseUrl}${endpoint}`;
-    const body: SendBody = { type: "event", payload: sanitizePayload(finalPayload) };
+    const body: SendBody = { type: "event", payload: sanitizePayload(finalPayload, false) };
 
     try {
       await fetch(apiUrl, {
@@ -433,13 +444,13 @@ export function createTracker(config: TrackerConfig): Tracker {
       const url = normalize(options?.url || getUrl());
       if (url !== currentUrl) nextPage();
       currentUrl = url;
-      return send(buildPayload({ url, title: options?.title }));
+      return send(buildPayload({ url, title: options?.title, groups: options?.groups }));
     },
 
     event(name, options) {
       const url = normalize(options?.url || getUrl());
       currentUrl = url;
-      return send({ ...buildPayload({ url, title: options?.title }), name });
+      return send({ ...buildPayload({ url, title: options?.title, groups: options?.groups }), name });
     },
 
     track(payloadOrFn?: string | Partial<UmamiPayload> | TrackCallback) {

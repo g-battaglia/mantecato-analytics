@@ -25,6 +25,7 @@ from apps.tracker.services import (
     content_groups_from,
 )
 from core.mantecato_core.filters import Filter, build_filter_sql
+from core.mantecato_core.queries.filter_values import get_filter_values
 from core.mantecato_core.queries.groups import get_top_groups
 from tests.conftest import WEBSITE_ID, make_admin_user
 
@@ -80,13 +81,19 @@ class TestContentGroupsFrom:
 # ---------------------------------------------------------------------------
 
 
-def _event(groups: list[str] | None, path: str = "/a", visitor: str | None = None) -> None:
+def _event(
+    groups: list[str] | None,
+    path: str = "/a",
+    visitor: str | None = None,
+    **fields: object,
+) -> None:
     event = WebsiteEvent.objects.create(
         website_id=WEBSITE_ID,
         url_path=path,
         event_type=1,
         content_groups=groups,
         visitor_key=visitor,
+        **fields,
     )
     WebsiteEvent.objects.filter(pk=event.pk).update(created_at=NOW)
 
@@ -125,6 +132,37 @@ class TestGroupAggregation:
         _event("not-a-list")  # type: ignore[arg-type]
         _event(["ok"])
         assert [r["group"] for r in get_top_groups(WEBSITE_ID, *WINDOW)] == ["ok"]
+
+    def test_percentage_is_share_of_all_pageviews(self) -> None:
+        _event(["guides", "python"], "/labelled")
+        _event(None, "/unlabelled")
+
+        rows = get_groups_data(WEBSITE_ID, _range())["groups"]
+        assert {row["group"]: row["pct"] for row in rows} == {
+            "guides": 50.0,
+            "python": 50.0,
+        }
+
+    def test_overlapping_groups_can_each_be_one_hundred_percent(self) -> None:
+        _event(["guides", "python"], "/labelled")
+
+        rows = get_groups_data(WEBSITE_ID, _range())["groups"]
+        assert {row["group"]: row["pct"] for row in rows} == {
+            "guides": 100.0,
+            "python": 100.0,
+        }
+
+    def test_percentage_denominator_uses_active_filters(self) -> None:
+        _event(["guides"], "/it", country="IT")
+        _event(None, "/it-unlabelled", country="IT")
+        _event(["guides"], "/us", country="US")
+
+        rows = get_groups_data(
+            WEBSITE_ID,
+            _range(),
+            filters=[Filter("country", "eq", "IT")],
+        )["groups"]
+        assert rows[0]["pct"] == 50.0
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +225,35 @@ class TestContentGroupFilterORM:
         # The unlabelled pageview survives the filter but contributes no group.
         assert rows == []
         assert WebsiteEvent.objects.count() == 2
+
+    def test_typeahead_extracts_distinct_group_labels(self) -> None:
+        _event(["guides", "python"])
+        _event(["guides", "pricing"])
+        _event(None)
+
+        assert get_filter_values(WEBSITE_ID, "content_group", *WINDOW) == [
+            "guides",
+            "pricing",
+            "python",
+        ]
+        assert get_filter_values(
+            WEBSITE_ID, "content_group", *WINDOW, search="pri"
+        ) == ["pricing"]
+
+    @patch("core.mantecato_core.queries.filter_values.should_use_orm_fallback", return_value=False)
+    @patch("core.mantecato_core.queries.filter_values.raw_query")
+    def test_typeahead_uses_json_array_expansion_on_postgres(
+        self, mock_query: MagicMock, _mock_fallback: MagicMock
+    ) -> None:
+        mock_query.return_value = [{"value": "guides"}]
+
+        assert get_filter_values(
+            WEBSITE_ID, "content_group", *WINDOW, search="guide"
+        ) == ["guides"]
+        sql, params = mock_query.call_args.args
+        assert "jsonb_array_elements_text" in sql
+        assert "grp.value ILIKE" in sql
+        assert params["search"] == "%guide%"
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +324,7 @@ class TestSectionsGroupMode:
         assert "42" in content
         # Drilldown links filter the Pages view by label, not by URL prefix.
         assert "content_group%3Aeq%3Aguides" in content
+        assert 'value="content_group"' in content
 
     @patch("apps.analytics.views.get_sections_data")
     @patch("apps.analytics.views.resolve_websites_for_user")

@@ -46,6 +46,7 @@ from core.mantecato_core.queries.stats import (
     get_pageview_time_series_comparison,
     get_top_pages,
     get_top_sections,
+    get_website_stats,
     get_website_stats_comparison,
 )
 from core.mantecato_core.queries.visitors import (
@@ -127,11 +128,12 @@ def _add_percentage(
     rows: list[dict],
     value_key: str,
     target_key: str = "pct",
+    total: int | None = None,
 ) -> None:
     """Mutate *rows* in place, adding a percentage-of-total field."""
-    total = sum(r[value_key] for r in rows) if rows else 0
+    denominator = total if total is not None else sum(r[value_key] for r in rows)
     for r in rows:
-        r[target_key] = round(r[value_key] / total * 100, 1) if total else 0
+        r[target_key] = round(r[value_key] / denominator * 100, 1) if denominator else 0
 
 
 def _attach_scope_visitors(
@@ -564,7 +566,8 @@ def get_groups_data(
         value_key="group",
         filters=filters,
     )
-    _add_percentage(groups, "views")
+    pageview_total = get_website_stats(website_id, start, end, filters)["pageviews"]
+    _add_percentage(groups, "views", total=pageview_total)
 
     return {"groups": groups}
 

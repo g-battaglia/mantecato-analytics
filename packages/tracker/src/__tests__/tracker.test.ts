@@ -340,4 +340,34 @@ describe("content groups", () => {
     expect(payload.url).toContain("/other");
     expect(payload.groups).toEqual(["guides"]);
   });
+
+  it("accepts route-specific groups in pageview and event options", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["default"] }));
+
+    await tracker.pageview({ groups: ["guides"] });
+    expect(lastPayload().payload.groups).toEqual(["guides"]);
+
+    await tracker.event("signup", { groups: ["pricing"] });
+    expect(lastPayload().payload.groups).toEqual(["pricing"]);
+  });
+
+  it("preserves groups supplied by track() and beforeSend", async () => {
+    const routeTracker = createTracker(makeConfig({ groups: ["default"] }));
+    await routeTracker.track({ url: "/route", groups: ["from-route"] });
+    expect(lastPayload().payload.groups).toEqual(["from-route"]);
+
+    const hookTracker = createTracker(makeConfig({
+      groups: ["default"],
+      beforeSend: (_type, payload) => ({ ...payload, groups: ["from-hook"] }),
+    }));
+    await hookTracker.pageview();
+    expect(lastPayload().payload.groups).toEqual(["from-hook"]);
+  });
+
+  it("lets a route clear configured groups", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["default"] }));
+    await tracker.pageview({ groups: [] });
+
+    expect(lastPayload().payload).not.toHaveProperty("groups");
+  });
 });

@@ -57,6 +57,8 @@ interface EventPayload {
     url?: string;
     /** Override page title */
     title?: string;
+    /** Override content groups for this page or event. An empty list clears configured groups. */
+    groups?: string[];
 }
 interface UmamiPayload {
     website: string;
@@ -75,9 +77,9 @@ interface UmamiPayload {
 type TrackCallback = (props: UmamiPayload) => UmamiPayload;
 interface Tracker {
     /** Track a pageview for the current URL (or override with options) */
-    pageview: (options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+    pageview: (options?: EventPayload) => Promise<void>;
     /** Track a custom event name without event properties */
-    event: (name: string, options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+    event: (name: string, options?: EventPayload) => Promise<void>;
     /** Umami-compatible track() — no args = pageview, string = event name, object/function = sanitized payload */
     track: {
         (): Promise<void>;

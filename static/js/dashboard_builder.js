@@ -13,7 +13,7 @@
 
   var PREVIEW_URL = root.getAttribute("data-preview-url");
   var COLUMNS = [
-    "url_path", "page_title", "hostname", "country",
+    "url_path", "content_group", "page_title", "hostname", "country",
     "browser", "os", "device", "event_name", "referrer_domain",
   ];
   var OPERATORS = [
