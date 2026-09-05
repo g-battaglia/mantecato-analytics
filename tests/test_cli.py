@@ -178,6 +178,28 @@ class TestPagesCommand:
         assert len(data["pages"]) == 1
 
 
+class TestTopGroupsCommand:
+    @patch("core.mantecato_core.queries.groups.get_top_groups")
+    @patch("core.mantecato_core.date_utils.resolve_date_range")
+    @patch("cli.mantecato_cli.main.setup_django")
+    def test_top_groups_json(
+        self,
+        mock_setup: MagicMock,
+        mock_resolve: MagicMock,
+        mock_groups: MagicMock,
+    ) -> None:
+        mock_resolve.return_value = MagicMock()
+        mock_groups.return_value = [{"group": "guides", "views": 12, "pages": 3}]
+
+        result = runner.invoke(
+            app,
+            ["top-groups", "--website", _WEBSITE_ID, "--format", "json"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["group"] == "guides"
+
+
 class TestRealtimeCommand:
     @patch("apps.analytics.services.get_realtime_data")
     @patch("cli.mantecato_cli.main.setup_django")

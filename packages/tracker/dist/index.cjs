@@ -68,6 +68,7 @@ function createTracker(config) {
     domains,
     hostname: customHostname,
     tag,
+    groups,
     excludeSearch = false,
     excludeHash = false,
     beforeSend,
@@ -136,7 +137,8 @@ function createTracker(config) {
       title,
       url,
       ...referrer ? { referrer } : {},
-      ...tag ? { tag } : {}
+      ...tag ? { tag } : {},
+      ...groups?.length ? { groups } : {}
     };
   }
   function sanitizePayload(payload) {
@@ -149,7 +151,8 @@ function createTracker(config) {
       ...base,
       hostname: payload.hostname || base.hostname,
       ...name ? { name } : {},
-      ...tag ? { tag } : {}
+      ...tag ? { tag } : {},
+      ...groups?.length ? { groups } : {}
     };
   }
   async function send(payload) {

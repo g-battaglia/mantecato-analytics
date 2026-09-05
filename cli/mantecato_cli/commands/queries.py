@@ -113,6 +113,25 @@ def top_sections_cmd(
     )
 
 
+@app.command("top-groups")
+def top_groups_cmd(
+    website: str = WEBSITE_ALIAS_OPT,
+    range: str = RANGE_ALIAS_OPT,
+    limit: int = LIMIT_OPT,
+    filter: list[str] = FILTER_OPTION,
+    format: str = FORMAT_OPTION,
+) -> None:
+    """Top content groups by views (labels the site declares on the tracker tag)."""
+    bootstrap()
+    from core.mantecato_core.queries.groups import get_top_groups
+
+    dr = resolve_range(range)
+    emit(
+        get_top_groups(website, dr.start_date, dr.end_date, limit, parse_filters(filter)),
+        format,
+    )
+
+
 @app.command("event-timeseries")
 def event_timeseries_cmd(
     website: str = WEBSITE_ALIAS_OPT,

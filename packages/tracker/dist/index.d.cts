@@ -32,6 +32,13 @@ interface TrackerConfig {
     hostname?: string;
     /** Tag to identify this tracker instance */
     tag?: string;
+    /**
+     * Content groups for this page — what it is *about* ("guides", "pricing").
+     * Declared by the site, never derived from the visitor: page metadata, like
+     * the title. Lets sites whose URLs carry no taxonomy still get a per-section
+     * breakdown. Server-side they are lowercased, de-duplicated and capped at 5.
+     */
+    groups?: string[];
     /** Strip query string from tracked URLs (default: false) */
     excludeSearch?: boolean;
     /** Strip hash from tracked URLs (default: false) */
@@ -59,6 +66,8 @@ interface UmamiPayload {
     /** Custom event name. Omitted for pageviews. */
     name?: string;
     tag?: string;
+    /** Site-declared page labels — see TrackerConfig.groups. */
+    groups?: string[];
     /** Referring URL (reduced to its domain server-side; same-site dropped). */
     referrer?: string;
 }

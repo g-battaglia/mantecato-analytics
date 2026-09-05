@@ -36,6 +36,8 @@ def seeded(db) -> None:
     for _ in range(3):
         _ev("/free/chart/natal")
     _ev("/pro/chart/natal", event_type=2, event_name="ai-generate-success")
+    _ev("/p/a", content_groups=["guides", "python"])
+    _ev("/p/b", content_groups=["guides"])
 
 
 def _range():
@@ -106,6 +108,28 @@ def test_breakdown_sections_groups_by_tier(seeded):
     assert "error" not in w
     labels = [r["label"] for r in w["rows"]]
     assert "/pro" in labels and "/free" in labels
+
+
+def test_breakdown_groups_uses_content_groups(seeded):
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "wg", "type": "breakdown", "source": "groups"},
+        runtime_range=_range(),
+    )
+    assert "error" not in w
+    rows = {r["label"]: r["value"] for r in w["rows"]}
+    # "guides" is on both labelled pages, "python" on one; the URL-only
+    # pageviews contribute to neither.
+    assert rows == {"guides": 2, "python": 1}
+
+
+def test_content_group_filter_cascades_to_widget(seeded):
+    w = render_widget(
+        WEBSITE_ID,
+        {"filters": ["content_group:eq:python"]},
+        {"id": "wgf", "type": "breakdown", "source": "pages"},
+        runtime_range=_range(),
+    )
+    assert [r["label"] for r in w["rows"]] == ["/p/a"]
 
 
 def test_dashboard_filter_cascades_to_widget(seeded):

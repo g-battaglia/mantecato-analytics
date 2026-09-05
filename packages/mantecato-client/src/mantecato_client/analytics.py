@@ -137,6 +137,44 @@ class AnalyticsEndpoints:
             params["page"] = page
         return self._client._get("/api/analytics/pages/", params)
 
+    def groups(
+        self,
+        website_id: str,
+        *,
+        date_range: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        filters: list[str] | None = None,
+        bot_filter: bool = False,
+    ) -> dict[str, Any]:
+        """Fetch content-group metrics — pageviews by site-declared page label.
+
+        The counterpart of :meth:`sections` for sites whose URLs carry no
+        taxonomy: the site labels its pages on the tracker tag
+        (``data-groups="guides,pricing"``) and this breaks traffic down by
+        those labels.
+
+        Args:
+            website_id: UUID of the tracked website.
+            date_range: Shorthand range (e.g. ``"7d"``).
+            start: ISO start date.
+            end: ISO end date.
+            filters: Column-level filter expressions (``content_group`` included).
+            bot_filter: Exclude bot traffic if ``True``.
+
+        Returns:
+            ``{"groups": [{"group", "views", "pages", "visitors", "pct"}, ...]}``.
+            A page may declare several groups, so rows overlap and views do not
+            sum to the site total.
+
+        Example::
+
+            groups = client.analytics.groups("uuid", date_range="30d")
+            print(groups["groups"][0]["group"])
+        """
+        params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
+        return self._client._get("/api/analytics/groups/", params)
+
     def events(
         self,
         website_id: str,

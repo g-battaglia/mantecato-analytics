@@ -8,6 +8,7 @@
  *     data-endpoint="/api/send"
  *     data-domains="example.com,www.example.com"
  *     data-tag="production"
+ *     data-groups="guides,pricing"
  *     data-auto-track="true"
  *     data-respect-gpc="false"
  *     data-do-not-track="true"
@@ -75,6 +76,13 @@ import { createTracker, type Tracker } from "./tracker";
   const respectGPC = script.getAttribute("data-respect-gpc") !== "false";
   const respectDNT = script.getAttribute("data-do-not-track") === "true";
   const tag = script.getAttribute("data-tag") || undefined;
+  // Content groups: what this page is *about*, declared by the site (never
+  // derived from the visitor). Lets a site whose URLs carry no taxonomy still
+  // get a per-section breakdown. Same comma-separated shape as data-domains.
+  const groups = script.getAttribute("data-groups")
+    ?.split(",")
+    .map((g) => g.trim())
+    .filter(Boolean);
   const excludeSearch = script.getAttribute("data-exclude-search") === "true";
   const excludeHash = script.getAttribute("data-exclude-hash") === "true";
   const beforeSendAttr = script.getAttribute("data-before-send") || undefined;
@@ -98,6 +106,7 @@ import { createTracker, type Tracker } from "./tracker";
     respectDNT,
     domains,
     tag,
+    groups,
     excludeSearch,
     excludeHash,
     beforeSend,

@@ -19,7 +19,7 @@ Config schema (v2), stored in ``report.parameters`` and exposed as ``config``::
       "type": "kpi" | "timeseries" | "breakdown" | "heatmap",
       "title": "Pro — AI generations",
       "metric": "visitors" | ...,        # kpi
-      "source": "events" | "sections" | ..., # breakdown
+      "source": "events" | "sections" | "groups" | ..., # breakdown
       "depth": 1,                        # breakdown source=sections (1 = tier)
       "chart": "bar" | "pie",            # breakdown viz
       "dateRange": "7d",                 # optional per-widget override
@@ -82,6 +82,7 @@ BREAKDOWN_SOURCES: dict[str, tuple[str, str, str, str, str]] = {
     "pages": ("get_pages_data", "pages", "urlPath", "views", "Views"),
     "sections": ("get_sections_data", "sections", "section", "views", "Views"),
     "events": ("get_events_data", "events", "eventName", "count", "Count"),
+    "groups": ("get_groups_data", "groups", "group", "views", "Views"),
     "browser": ("get_devices_data", "browser", "value", "pageviews", "Views"),
     "os": ("get_devices_data", "os", "value", "pageviews", "Views"),
     "device": ("get_devices_data", "device", "value", "pageviews", "Views"),
