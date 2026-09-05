@@ -50,6 +50,7 @@ Pageviews are tracked automatically, including SPA route changes.
 | `data-respect-gpc` | No | `true` | Respect Global Privacy Control (GPC) — legally-recognised opt-out |
 | `data-do-not-track` | No | `false` | Respect the legacy Do Not Track header (not legally binding) |
 | `data-tag` | No | - | Deployment tag |
+| `data-groups` | No | - | Comma-separated content groups for this page (`guides,pricing`) — site-declared page labels, max 5 |
 
 ### HTML Events
 
@@ -105,6 +106,8 @@ interface TrackerConfig {
   domains?: string[];
   hostname?: string;
   tag?: string;
+  /** Content groups for this page — site-declared labels, never visitor data */
+  groups?: string[];
   excludeSearch?: boolean;
   excludeHash?: boolean;
   beforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload | false | null | undefined;

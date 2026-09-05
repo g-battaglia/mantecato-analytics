@@ -53,7 +53,7 @@ Every metric available in the dashboard is also available through the CLI, the R
 | 🪶 **Lightweight tracker** | ~2 KB JavaScript — your site stays fast, your Lighthouse score stays high |
 | 🏠 **Self-hosted** | Your analytics infrastructure can run on your own server. Hosted or third-party deployments may require appropriate agreements |
 | ⚡ **Real-time** | See aggregate pageviews happening right now and which pages are active |
-| 📈 **Analytics views** | Overview, pages, sections, events, devices, geo maps, compare, heatmap, custom dashboards |
+| 📈 **Analytics views** | Overview, pages, sections, content groups, events, devices, geo maps, compare, heatmap, custom dashboards |
 | 🤖 **AI-native** | MCP server, REST API, Python SDK, CLI with JSON output — every interface an agent needs to work autonomously |
 | 💻 **CLI** | Query everything from the terminal — output in table, JSON, or CSV |
 | 🔌 **Full REST API** | 25+ endpoints with API key auth — integrate analytics into any workflow |
@@ -84,6 +84,23 @@ Want to track custom events?
 Custom events record an **event name only**. By design there is no event
 payload, no revenue tracking, and no visitor identification — Mantecato is
 cookieless and aggregate, so there is nothing to attach a person to.
+
+Want your traffic broken down by topic when your URLs don't carry one?
+
+```html
+<!-- 🏷️ Label what this page is about -->
+<script defer src="https://your-mantecato.com/api/script"
+        data-website-id="your-website-id"
+        data-groups="guides,pricing"></script>
+```
+
+**Content groups** are labels *you* declare for a page — page metadata, like the
+title, never anything observed about the visitor. Sections group by URL prefix,
+which says nothing when every article lives at `/p/<slug>`; groups let you break
+the same traffic down by whatever dimension you actually care about. A page can
+carry several (up to 5), so the rows overlap like a tag cloud. Find them under
+**Sections → Content group**, as a `content_group` filter on every other view,
+and on the API, CLI, SDK and custom dashboards.
 
 The tracker automatically handles SPA route changes, **respects Global Privacy
 Control (GPC) by default** (the legacy Do Not Track header is opt-in), and can be
@@ -351,6 +368,7 @@ Lightweight JavaScript tracker (~2 KB minified). Cookie-free, Umami-compatible.
 - ✅ Automatic pageview tracking
 - ✅ SPA route change detection
 - ✅ Custom event tracking (event **name only** — no event properties)
+- ✅ Content groups via `data-groups` — site-declared page labels, no visitor data
 - ✅ Click tracking via `data-mantecato-event` attributes (with `data-umami-event` fallback)
 - ✅ Global Privacy Control (GPC) respected **by default** (legacy DNT opt-in)
 - ✅ Client-side bot filtering

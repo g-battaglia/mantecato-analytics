@@ -53,6 +53,7 @@ and filters.
 | `GET` | `/api/analytics/overview/` | Aggregate metrics, charts, events, devices, geo, heatmap |
 | `GET` | `/api/analytics/pages/` | Per-page pageview metrics (paginated, `page` param) |
 | `GET` | `/api/analytics/events/` | Custom event-name counts and timelines |
+| `GET` | `/api/analytics/groups/` | Pageviews by content group (site-declared page labels) |
 | `GET` | `/api/analytics/devices/` | Breakdown by browser, OS, device |
 | `GET` | `/api/analytics/geo/` | Country-level pageview distribution |
 | `GET` | `/api/analytics/compare/` | Current vs previous period comparison (`mode` param) |

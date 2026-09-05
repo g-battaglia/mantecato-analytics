@@ -11,6 +11,8 @@ This module receives anonymous analytics events from `@mantecato/tracker` via
 - Coarse browser, OS, and device labels parsed from the User-Agent
 - Country code
 - Event-level bot flag and bot reason
+- Content groups: page labels the site declares (`data-groups`), normalised to
+  at most 5 lowercase labels of 64 characters
 
 It does not store sessions, visit IDs, raw IPs, raw User-Agents, query strings,
 UTM parameters, click IDs, screen size, language, event payload/properties,
@@ -31,10 +33,17 @@ The endpoint accepts the Umami-compatible `type: "event"` envelope.
     "website": "<uuid>",
     "url": "/page",
     "title": "Page Title",
-    "hostname": "example.com"
+    "hostname": "example.com",
+    "groups": ["guides", "pricing"]
   }
 }
 ```
+
+`groups` is optional: labels describing **the page**, declared by the site owner
+(a list, or a comma-separated string). They are lowercased, de-duplicated and
+capped at 5 labels of 64 characters. The Umami `tag` field is accepted as a
+single group. Nothing about the visitor is read to produce them — they are page
+metadata like the title, which is why they carry no consent implication.
 
 ### Custom Event
 
