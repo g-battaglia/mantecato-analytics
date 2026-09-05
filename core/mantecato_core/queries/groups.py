@@ -68,11 +68,18 @@ def get_top_groups(
       COUNT(*)::bigint AS views,
       COUNT(DISTINCT we.url_path)::bigint AS pages
     FROM website_event we
-    CROSS JOIN LATERAL jsonb_array_elements_text(we.content_groups) AS grp(value)
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+      -- The column is an unconstrained JSONField, so a scalar can reach here.
+      -- The guard has to live inside the lateral: a jsonb_typeof() predicate in
+      -- WHERE is not ordered before the FROM clause that expands the value, so
+      -- jsonb_array_elements_text() would raise on a non-array and abort the
+      -- whole query. Mirrors get_filter_values().
+      CASE WHEN jsonb_typeof(we.content_groups) = 'array'
+           THEN we.content_groups ELSE '[]'::jsonb END
+    ) AS grp(value)
     WHERE we.website_id = {{{{websiteId::uuid}}}}
       AND we.created_at BETWEEN {{{{startDate::timestamptz}}}} AND {{{{endDate::timestamptz}}}}
       AND we.event_type = 1
-      AND jsonb_typeof(we.content_groups) = 'array'
       {filter_where}
     GROUP BY 1
     ORDER BY views DESC, 1

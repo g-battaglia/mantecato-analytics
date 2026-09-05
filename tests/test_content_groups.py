@@ -165,6 +165,50 @@ class TestGroupAggregation:
         assert rows[0]["pct"] == 50.0
 
 
+class TestMalformedStoredValues:
+    """`content_groups` is an unconstrained JSONField — anything can be in there.
+
+    The tracker normalises what it writes, but a backfill script, a fixture or a
+    direct DB write can store a scalar or a nested value. Neither may take the
+    group queries down.
+    """
+
+    @pytest.mark.django_db
+    def test_non_string_members_do_not_break_visitor_counting(self) -> None:
+        # A dict/list member is unhashable: an unguarded `in` against the wanted
+        # set raises TypeError instead of simply not matching.
+        _event(["guides", {"nested": 1}, ["deep"], 42], "/a", visitor="v1")
+        rows = get_groups_data(WEBSITE_ID, _range())["groups"]
+        assert [row["group"] for row in rows] == ["guides"]
+        assert rows[0]["visitors"] == 1
+
+    def test_postgres_expansion_is_guarded_inside_the_lateral(self) -> None:
+        """A scalar row must not abort the whole aggregation on PostgreSQL.
+
+        `jsonb_array_elements_text()` raises on a non-array, and a WHERE
+        predicate is not ordered before the FROM clause that expands the value,
+        so the guard has to sit inside the lateral. SQLite cannot execute this
+        branch, so the generated SQL is asserted instead.
+        """
+        captured: dict[str, str] = {}
+
+        def fake_raw_query(sql: str, params: dict) -> list:
+            captured["sql"] = sql
+            return []
+
+        with (
+            patch("core.mantecato_core.queries.groups.should_use_orm_fallback", return_value=False),
+            patch("core.mantecato_core.queries.groups.raw_query", side_effect=fake_raw_query),
+        ):
+            get_top_groups(WEBSITE_ID, *WINDOW)
+
+        sql = " ".join(captured["sql"].split())
+        assert "CASE WHEN jsonb_typeof(we.content_groups) = 'array'" in sql
+        assert "ELSE '[]'::jsonb END" in sql
+        # The bare expansion (unguarded) must not survive anywhere.
+        assert "jsonb_array_elements_text( we.content_groups" not in sql
+
+
 # ---------------------------------------------------------------------------
 # Filtering
 # ---------------------------------------------------------------------------
@@ -236,9 +280,7 @@ class TestContentGroupFilterORM:
             "pricing",
             "python",
         ]
-        assert get_filter_values(
-            WEBSITE_ID, "content_group", *WINDOW, search="pri"
-        ) == ["pricing"]
+        assert get_filter_values(WEBSITE_ID, "content_group", *WINDOW, search="pri") == ["pricing"]
 
     @patch("core.mantecato_core.queries.filter_values.should_use_orm_fallback", return_value=False)
     @patch("core.mantecato_core.queries.filter_values.raw_query")
@@ -247,9 +289,7 @@ class TestContentGroupFilterORM:
     ) -> None:
         mock_query.return_value = [{"value": "guides"}]
 
-        assert get_filter_values(
-            WEBSITE_ID, "content_group", *WINDOW, search="guide"
-        ) == ["guides"]
+        assert get_filter_values(WEBSITE_ID, "content_group", *WINDOW, search="guide") == ["guides"]
         sql, params = mock_query.call_args.args
         assert "jsonb_array_elements_text" in sql
         assert "grp.value ILIKE" in sql

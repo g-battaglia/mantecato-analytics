@@ -171,7 +171,10 @@ def read_scope_visitors(
             if not isinstance(groups, list):
                 continue
             for group in groups:
-                if group in want:
+                # `want` is a set: an unhashable member (a dict or list stored
+                # by something other than the tracker) would raise TypeError
+                # rather than simply not matching.
+                if isinstance(group, str) and group in want:
                     seen_groups[group].add(vkey)
         for group, keys in seen_groups.items():
             out[group] = len(keys)
