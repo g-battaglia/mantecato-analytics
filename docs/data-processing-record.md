@@ -78,7 +78,7 @@ an IP/UA (forward secrecy).
 | `country` | `IT` | No | ISO 3166-1 alpha-2 **only** (no region/city/coords) |
 | `is_bot` / `bot_reason` | `false` / `null` | No | Aggregate bot classification |
 | `referrer_domain` | `google.com` | No | Domain only; no full URL, no UTM/click IDs |
-| `content_groups` | `["guides","pricing"]` | No | Optional page labels **declared by the site owner** on the tracker tag (`data-groups`), fixed per page at build time; ≤ 5 labels of ≤ 64 chars. Describes the page, not the visitor — nothing about the visitor is read to produce it |
+| `content_groups` | `["guides","pricing"]` | No | Optional page labels **declared by the site owner** on the tracker tag (`data-groups`), fixed per page at build time; ≤ 12 labels of ≤ 64 chars. Describes the page, not the visitor — nothing about the visitor is read to produce it |
 | `visitor_key` | 64-hex HMAC | **Pseudonymous** while the month's salt lives; **anonymous** once NULLed (≤13 months) | The only per-person field; a salted dedup digest, not an IP/UA, not reversible without the salt |
 
 ### 4.2 Supporting tables

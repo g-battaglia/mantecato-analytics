@@ -87,6 +87,13 @@ def _containment_q(json_column: str, operator: str, value: str) -> Q | None:
     """
     if operator not in CONTAINMENT_OPERATORS:
         return None
+    text_column = f"{json_column}_text"
+    if operator in ("starts_with", "not_starts_with"):
+        # A member always starts right after its opening quote, so searching for
+        # '"cat:' anchors the prefix to the start of a label — it cannot match
+        # mid-label the way a bare substring would.
+        match = Q(**{f"{text_column}__contains": f'"{value}'})
+        return match if operator == "starts_with" else ~match
     values = (
         [v.strip() for v in (value.split(",") if value else []) if v.strip()]
         if operator in ("in", "not_in")
@@ -94,7 +101,6 @@ def _containment_q(json_column: str, operator: str, value: str) -> Q | None:
     )
     if not values:
         return Q(pk__in=[]) if operator == "in" else None
-    text_column = f"{json_column}_text"
     match = Q()
     for label in values:
         match |= Q(**{f"{text_column}__contains": json.dumps(label)})

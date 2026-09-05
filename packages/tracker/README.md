@@ -14,7 +14,7 @@ Collected payload fields are limited to:
 - `referrer` when available (reduced to a bare domain server-side)
 - `tag` when configured
 - `groups` when the page declares content groups (site-declared page
-  labels; the collector lowercases, de-duplicates and caps them at 5)
+  labels; the collector lowercases, de-duplicates and caps them at 12)
 
 The tracker does not send cookies, persistent identifiers, UTM parameters, screen
 size, language, event properties, identify payloads, revenue data, or session
@@ -52,7 +52,7 @@ Pageviews are tracked automatically, including SPA route changes.
 | `data-respect-gpc` | No | `true` | Respect Global Privacy Control (GPC) — legally-recognised opt-out |
 | `data-do-not-track` | No | `false` | Respect the legacy Do Not Track header (not legally binding) |
 | `data-tag` | No | - | Deployment tag |
-| `data-groups` | No | - | Comma-separated content groups for this page (`guides,pricing`) — site-declared page labels, max 5 |
+| `data-groups` | No | - | Comma-separated content groups for this page (`cat:guides,tag:python`) — site-declared page labels, max 12 |
 
 ### HTML Events
 

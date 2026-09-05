@@ -230,7 +230,7 @@ confirm before making a consent-free claim, especially for Italy.
 5. Keep `SECRET_KEY` secret and set a restrictive `ALLOWED_HOSTS` in production.
 6. If you use **content groups**, label pages by topic only. Ingestion
    lowercases each label, trims surrounding whitespace, drops duplicates, cuts
-   it to 64 characters and keeps at most 5 per page — it does not inspect or
+   it to 64 characters and keeps at most 12 per page — it does not inspect or
    redact what the label *says*, and the normalised value is what appears in the
    dashboard and in exports. So never derive a label from the visitor (their
    plan, cohort, referrer or anything they typed) and never put personal data in

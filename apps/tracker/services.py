@@ -44,9 +44,17 @@ logger = logging.getLogger(__name__)
 # abuse from a tampered client. A genuine long read still accrues up to this.
 _MAX_ENGAGEMENT_S = 3600
 
-# Content-group limits. The cap keeps one pageview's scope-presence writes (and
-# so its ingest cost) bounded; the length cap keeps labels index-friendly.
-MAX_CONTENT_GROUPS = 5
+# Content-group limits. The cap bounds how many labels one page can claim; the
+# length cap keeps labels index-friendly.
+#
+# 12 is deliberate rather than conservative: scope presence is de-duplicated per
+# (visitor, group, period), so a reader browsing a hundred pages of the same
+# group writes one row, not a hundred — measured ingest cost is flat from 5 to
+# 16 labels. What does grow with the count is read time on long windows (a 30-day
+# aggregation roughly doubles between 5 and 16 labels), which is what the cap is
+# really trading against. 12 covers a three-level taxonomy plus a healthy set of
+# tags without pushing that.
+MAX_CONTENT_GROUPS = 12
 MAX_CONTENT_GROUP_LEN = 64
 
 # Throttle for the lazy, scheduler-free rollup piggybacked on ingestion.

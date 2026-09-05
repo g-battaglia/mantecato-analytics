@@ -98,7 +98,10 @@ Want your traffic broken down by topic when your URLs don't carry one?
 title, never anything observed about the visitor. Sections group by URL prefix,
 which says nothing when every article lives at `/p/<slug>`; groups let you break
 the same traffic down by whatever dimension you actually care about. A page can
-carry several (up to 5), so the rows overlap like a tag cloud. Find them under
+carry several (up to 12), so the rows overlap like a tag cloud. Prefix them when
+one page carries more than one taxonomy — `cat:guides,tag:python` keeps a
+category and a tag that share a name apart, and `content_group:starts_with:tag:`
+then scopes a view to one of them. Find them under
 **Sections → Content group**, as a `content_group` filter on every other view,
 and on the API, CLI, SDK and custom dashboards.
 

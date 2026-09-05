@@ -267,10 +267,12 @@ class TestContentGroupFilterSQL:
         where = build_filter_sql([Filter("content_group", "neq", "x")])["where"]
         assert "IS NULL OR NOT" in where
 
-    @pytest.mark.parametrize("operator", ["contains", "starts_with", "not_contains"])
+    @pytest.mark.parametrize("operator", ["contains", "not_contains"])
     def test_substring_operators_are_dropped(self, operator: str) -> None:
-        # A substring test over a list of labels has no meaning; it must not
+        # A substring test over a list of labels has no meaning — "guides"
+        # matching inside "sub-guides-x" answers no real question. It must not
         # silently degrade into "match everything".
+        # (Prefix matching does have a meaning: see TestNamespacedLabels.)
         assert build_filter_sql([Filter("content_group", operator, "x")])["where"] == ""
 
     def test_combines_with_other_columns(self) -> None:
@@ -278,6 +280,37 @@ class TestContentGroupFilterSQL:
             [Filter("content_group", "eq", "g"), Filter("country", "eq", "IT")]
         )["where"]
         assert "content_groups ?|" in where and "country" in where
+
+
+class TestNamespacedLabels:
+    """Prefixed labels ("cat:", "tag:") are how one list carries several taxonomies.
+
+    Without them a category and a tag that share a name collapse into one row —
+    "aspects" is both on this site.
+    """
+
+    def test_prefix_survives_normalisation(self) -> None:
+        assert content_groups_from({"groups": ["Cat:Birth-Chart", "TAG:Aspects"]}) == [
+            "cat:birth-chart",
+            "tag:aspects",
+        ]
+
+    def test_same_name_in_two_taxonomies_stays_distinct(self) -> None:
+        groups = content_groups_from({"groups": ["cat:aspects", "tag:aspects"]})
+        assert groups == ["cat:aspects", "tag:aspects"]
+
+    def test_twelve_labels_fit(self) -> None:
+        # Three category levels + a family + eight tags is the site's shape.
+        payload = {"groups": ["cat:a", "cat:b", "cat:c", "fam:d"] + [f"tag:{i}" for i in range(8)]}
+        assert len(content_groups_from(payload)) == 12
+
+    def test_prefix_filter_is_answerable(self) -> None:
+        where = build_filter_sql([Filter("content_group", "starts_with", "tag:")])["where"]
+        assert "EXISTS" in where and "ILIKE" in where
+
+    def test_negated_prefix_filter_is_answerable(self) -> None:
+        where = build_filter_sql([Filter("content_group", "not_starts_with", "tag:")])["where"]
+        assert where.strip().startswith("AND NOT EXISTS")
 
 
 @pytest.mark.django_db
@@ -298,6 +331,23 @@ class TestContentGroupFilterORM:
             WEBSITE_ID, *WINDOW, filters=[Filter("content_group", "in", "guides,pricing")]
         )
         assert sorted(r["group"] for r in rows) == ["guides", "pricing"]
+
+    def test_prefix_selects_one_taxonomy(self) -> None:
+        _event(["cat:aspects", "tag:aspects", "tag:squares"], "/a")
+        _event(["cat:transits"], "/b")
+        rows = get_top_groups(
+            WEBSITE_ID, *WINDOW, filters=[Filter("content_group", "starts_with", "tag:")]
+        )
+        # The row matched on its tags, so all of its labels are aggregated —
+        # the filter picks rows, not individual labels.
+        assert sorted(r["group"] for r in rows) == ["cat:aspects", "tag:aspects", "tag:squares"]
+
+    def test_prefix_does_not_match_mid_label(self) -> None:
+        _event(["tag:aspects"], "/a")
+        rows = get_top_groups(
+            WEBSITE_ID, *WINDOW, filters=[Filter("content_group", "starts_with", "aspects")]
+        )
+        assert rows == []
 
     def test_negated_keeps_unlabelled_rows(self) -> None:
         _event(["guides"], "/a")
