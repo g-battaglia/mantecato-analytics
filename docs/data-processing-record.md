@@ -33,6 +33,7 @@ sends cookies) and transmits, per pageview/event, only:
 | Website ID | `a0000000-…` | Identifies the operator's site, not the visitor |
 | Page path | `/pricing` | Query string `?…` is **dropped** (may carry tokens); URL fragment `#…` is dropped too, except a token-free SPA route (`#/…`) which is kept as part of the path |
 | Page title | `Pricing` | |
+| Content groups | `guides,pricing` | Optional; set by the site owner on the tracker tag. Same nature as the page title — a property of the page, never of the visitor |
 | Referrer | `https://google.com/…` | Reduced server-side to **domain only**; same-site dropped |
 | Hostname | `example.com` | The tracked site |
 | Engagement seconds | `42` | Active on-page time (heartbeat), for duration/bounce |
@@ -77,6 +78,7 @@ an IP/UA (forward secrecy).
 | `country` | `IT` | No | ISO 3166-1 alpha-2 **only** (no region/city/coords) |
 | `is_bot` / `bot_reason` | `false` / `null` | No | Aggregate bot classification |
 | `referrer_domain` | `google.com` | No | Domain only; no full URL, no UTM/click IDs |
+| `content_groups` | `["guides","pricing"]` | No | Optional page labels **declared by the site owner** on the tracker tag (`data-groups`), fixed per page at build time; ≤ 12 labels of ≤ 64 chars. Describes the page, not the visitor — nothing about the visitor is read to produce it |
 | `visitor_key` | 64-hex HMAC | **Pseudonymous** while the month's salt lives; **anonymous** once NULLed (≤13 months) | The only per-person field; a salted dedup digest, not an IP/UA, not reversible without the salt |
 
 ### 4.2 Supporting tables

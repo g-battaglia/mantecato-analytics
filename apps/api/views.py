@@ -43,6 +43,7 @@ from apps.analytics.services import (
     get_devices_data,  # noqa: F401
     get_events_data,  # noqa: F401
     get_geo_data,  # noqa: F401
+    get_groups_data,  # noqa: F401
     get_landing_data,  # noqa: F401
     get_overview_data,  # noqa: F401
     get_pages_data,  # noqa: F401
@@ -324,6 +325,27 @@ class AnalyticsPagesView(_AnalyticsJSONView):
     def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
         """Extract the ``page`` query param for pagination."""
         return {"page": safe_int(request.GET.get("page"))}
+
+
+class AnalyticsGroupsView(_AnalyticsJSONView):
+    """``GET /api/analytics/groups/`` -- content-group analytics.
+
+    Groups pageviews by the labels the site declares on its tracker tag
+    (``data-groups``), for sites whose URLs carry no taxonomy of their own.
+
+    Authentication:
+        Requires API key with access to the specified website.
+
+    Query params:
+        ``website`` (required), ``start_at``, ``end_at``, plus filter params.
+
+    Response:
+        200 JSON with per-group views, distinct pages, exact unique visitors
+        and share-of-site percentage. A page may declare several groups, so the
+        rows overlap and their views do not sum to the site total.
+    """
+
+    service_name = "get_groups_data"
 
 
 class AnalyticsEventsView(_AnalyticsJSONView):

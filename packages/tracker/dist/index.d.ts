@@ -32,6 +32,13 @@ interface TrackerConfig {
     hostname?: string;
     /** Tag to identify this tracker instance */
     tag?: string;
+    /**
+     * Content groups for this page — what it is *about* ("guides", "pricing").
+     * Declared by the site, never derived from the visitor: page metadata, like
+     * the title. Lets sites whose URLs carry no taxonomy still get a per-section
+     * breakdown. Server-side they are lowercased, de-duplicated and capped at 12.
+     */
+    groups?: string[];
     /** Strip query string from tracked URLs (default: false) */
     excludeSearch?: boolean;
     /** Strip hash from tracked URLs (default: false) */
@@ -50,6 +57,8 @@ interface EventPayload {
     url?: string;
     /** Override page title */
     title?: string;
+    /** Override content groups for this page or event. An empty list clears configured groups. */
+    groups?: string[];
 }
 interface UmamiPayload {
     website: string;
@@ -59,6 +68,8 @@ interface UmamiPayload {
     /** Custom event name. Omitted for pageviews. */
     name?: string;
     tag?: string;
+    /** Site-declared page labels — see TrackerConfig.groups. */
+    groups?: string[];
     /** Referring URL (reduced to its domain server-side; same-site dropped). */
     referrer?: string;
 }
@@ -66,9 +77,9 @@ interface UmamiPayload {
 type TrackCallback = (props: UmamiPayload) => UmamiPayload;
 interface Tracker {
     /** Track a pageview for the current URL (or override with options) */
-    pageview: (options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+    pageview: (options?: EventPayload) => Promise<void>;
     /** Track a custom event name without event properties */
-    event: (name: string, options?: Pick<EventPayload, "url" | "title">) => Promise<void>;
+    event: (name: string, options?: EventPayload) => Promise<void>;
     /** Umami-compatible track() — no args = pageview, string = event name, object/function = sanitized payload */
     track: {
         (): Promise<void>;

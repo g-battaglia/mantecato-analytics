@@ -5,6 +5,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Content groups** — break traffic down by labels the site declares for each
+  page, for sites whose URLs carry no taxonomy of their own (`/p/<slug>`).
+  Set them on the tracker tag (`data-groups="guides,pricing"`) and they show up
+  under **Sections → Content group**, as a `content_group` filter on every other
+  view, and through `GET /api/analytics/groups/`, `mantecato top-groups`,
+  `client.analytics.groups()` and the `groups` breakdown widget. Exact per-group
+  unique visitors come from the existing scope-presence mechanism. A page may
+  declare several groups (max 12, optionally namespaced as `cat:`/`tag:`), so
+  per-group views overlap and do not sum to
+  the site total. The labels are page metadata declared by the site owner —
+  nothing is read from the visitor — so the consent-free posture is unchanged
+  (see `docs/privacy.md`). The Umami-compatible `tag` field, previously sent by
+  the tracker and dropped on ingest, now lands as a single group.
+
 ### Changed
 - **Relicensed from MIT to the Apache License 2.0.** Apache 2.0 keeps the same
   permissive freedoms but adds an explicit patent grant and trademark clause.

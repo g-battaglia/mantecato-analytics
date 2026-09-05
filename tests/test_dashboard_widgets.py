@@ -36,6 +36,8 @@ def seeded(db) -> None:
     for _ in range(3):
         _ev("/free/chart/natal")
     _ev("/pro/chart/natal", event_type=2, event_name="ai-generate-success")
+    _ev("/p/a", content_groups=["guides", "python"])
+    _ev("/p/b", content_groups=["guides"])
 
 
 def _range():
@@ -106,6 +108,44 @@ def test_breakdown_sections_groups_by_tier(seeded):
     assert "error" not in w
     labels = [r["label"] for r in w["rows"]]
     assert "/pro" in labels and "/free" in labels
+
+
+def test_breakdown_groups_uses_content_groups(seeded):
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "wg", "type": "breakdown", "source": "groups"},
+        runtime_range=_range(),
+    )
+    assert "error" not in w
+    rows = {r["label"]: r["value"] for r in w["rows"]}
+    # "guides" is on both labelled pages, "python" on one; the URL-only
+    # pageviews contribute to neither.
+    assert rows == {"guides": 2, "python": 1}
+
+
+def test_breakdown_groups_keeps_site_share_percentages(seeded):
+    """Group rows overlap, so their percentage must stay a share of the site.
+
+    The seed has 10 pageviews, 2 of them labelled `guides`. Re-deriving the
+    percentage from the group rows themselves (2 + 1) would report 67% for
+    `guides` — a partition of the labelled traffic rather than its real weight.
+    """
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "wgp", "type": "breakdown", "source": "groups"},
+        runtime_range=_range(),
+    )
+    pct = {r["label"]: r["pct"] for r in w["rows"]}
+    assert pct == {"guides": 20.0, "python": 10.0}
+    assert sum(pct.values()) != 100.0
+
+
+def test_content_group_filter_cascades_to_widget(seeded):
+    w = render_widget(
+        WEBSITE_ID,
+        {"filters": ["content_group:eq:python"]},
+        {"id": "wgf", "type": "breakdown", "source": "pages"},
+        runtime_range=_range(),
+    )
+    assert [r["label"] for r in w["rows"]] == ["/p/a"]
 
 
 def test_dashboard_filter_cascades_to_widget(seeded):
@@ -343,6 +383,7 @@ def test_builder_page_and_preview(authenticated_client, seeded):
     assert builder.status_code == 200
     assert b"grid-stack" in builder.content
     assert b"dashboard_builder.js" in builder.content
+    assert b'<option value="groups">Content groups</option>' in builder.content
 
     # Live preview of an unsaved widget config.
     preview = authenticated_client.post(

@@ -16,10 +16,16 @@ from typing import TYPE_CHECKING, Any
 
 from django.db import connection
 from django.db.models import Count, Max, Q, QuerySet
+from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
-from core.mantecato_core.filters import POSITIVE_OPERATORS, VALID_FILTER_COLUMNS
+from core.mantecato_core.filters import (
+    CONTAINMENT_COLUMNS,
+    CONTAINMENT_OPERATORS,
+    POSITIVE_OPERATORS,
+    VALID_FILTER_COLUMNS,
+)
 from core.mantecato_core.visitor_counting import section_for_path
 
 if TYPE_CHECKING:
@@ -42,6 +48,8 @@ def _parse_bot_config(value: str) -> dict[str, Any]:
 
 def _filter_q(column: str, operator: str, value: str) -> Q | None:
     """Translate one Filter into a Django ``Q`` (mirrors build_filter_sql)."""
+    if column in CONTAINMENT_COLUMNS:
+        return _containment_q(CONTAINMENT_COLUMNS[column], operator, value)
     if operator == "eq":
         return Q(**{column: value})
     if operator == "neq":
@@ -65,6 +73,66 @@ def _filter_q(column: str, operator: str, value: str) -> Q | None:
         # which keeps NULL rows — ``~Q(col__in=...)`` alone would drop them.
         return q if operator == "in" else (Q(**{f"{column}__isnull": True}) | ~q)
     return None
+
+
+def _containment_q(json_column: str, operator: str, value: str) -> Q | None:
+    """Mirror build_filter_sql's containment for a JSON-list column.
+
+    Despite this module's name, the queryset path runs on **both** backends:
+    ``read_scope_visitors`` counts visitors through the ORM even on PostgreSQL,
+    so this predicate has to speak both dialects.
+
+    Either way the members are expanded and matched one at a time. Substring-
+    matching the serialised document would be simpler but wrong: it cannot tell
+    a top-level label from a string buried in a nested object, so
+    ``[{"nested": "guides"}]`` would answer to ``content_group=guides`` while the
+    aggregation — which counts only top-level string members — never reports that
+    label at all.
+
+    The array guard and the string-type test mirror the aggregation query's, so
+    both backends answer with the same rows.
+    """
+    if operator not in CONTAINMENT_OPERATORS:
+        return None
+
+    prefix_match = operator in ("starts_with", "not_starts_with")
+    if prefix_match:
+        params: list[str] = [f"{value}%"]
+    else:
+        params = (
+            [v.strip() for v in (value.split(",") if value else []) if v.strip()]
+            if operator in ("in", "not_in")
+            else [value]
+        )
+        if not params:
+            return Q(pk__in=[]) if operator == "in" else None
+
+    if connection.vendor == "postgresql":
+        member = "je.v #>> '{}'"
+        source = (
+            f"LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(we.{json_column}) = 'array' "
+            f"THEN we.{json_column} ELSE '[]'::jsonb END) AS je(v)"
+        )
+        type_guard = "jsonb_typeof(je.v) = 'string'"
+    else:
+        member = "je.value"
+        source = f"json_each(we.{json_column}) AS je"
+        type_guard = f"json_type(we.{json_column}) = 'array' AND je.type = 'text'"
+
+    predicate = (
+        f"{member} LIKE %s" if prefix_match else f"{member} IN ({', '.join(['%s'] * len(params))})"
+    )
+    match = Q(
+        pk__in=RawSQL(  # noqa: S611 — no interpolation of user input: values are bound params
+            f"""SELECT we.event_id FROM website_event we, {source}
+                WHERE {type_guard} AND {predicate}""",
+            params,
+        )
+    )
+    if operator in POSITIVE_OPERATORS:
+        return match
+    # Negated: keep rows with no labels at all, like the SQL branch does.
+    return Q(**{f"{json_column}__isnull": True}) | ~match
 
 
 def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
@@ -267,6 +335,31 @@ def top_sections_from_qs(
         for section, views in counter.items()
     ]
     rows.sort(key=lambda row: (-row["views"], row["section"]))
+    return rows[:limit]
+
+
+def top_groups_from_qs(qs: QuerySet, limit: int) -> list[dict[str, Any]]:
+    """SQLite mirror of the ``jsonb_array_elements_text`` group aggregation.
+
+    One row per label; a pageview declaring several labels counts once in each,
+    so the totals overlap by design. Rows with no (or a malformed) group list
+    are skipped rather than bucketed together.
+    """
+    counter: dict[str, int] = defaultdict(int)
+    pages: dict[str, set[str]] = defaultdict(set)
+    for groups, path in qs.values_list("content_groups", "url_path"):
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            if not isinstance(group, str) or not group:
+                continue
+            counter[group] += 1
+            pages[group].add(path or "/")
+    rows = [
+        {"group": group, "views": views, "pages": len(pages[group])}
+        for group, views in counter.items()
+    ]
+    rows.sort(key=lambda row: (-row["views"], row["group"]))
     return rows[:limit]
 
 

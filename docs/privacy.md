@@ -17,6 +17,13 @@ persistence, or cross-site/cross-day tracking.
 For every pageview the server records one anonymous row (`website_event`) with:
 
 - `url_path` (path only — see below), `page_title`, `hostname`
+- `content_groups`: optional labels the **site owner** declares for the page on
+  the tracker tag (`data-groups="cat:guides,tag:python"`). They describe the
+  *page*, exactly like its title, and are fixed at build time by the site:
+  nothing about the visitor is read, inferred or stored to produce them. A site
+  that sets no labels stores none. Capped at 12 labels of 64 characters, which
+  the server enforces. Operators must not put personal data in a label — see "Operator
+  responsibilities"
 - the referrer **domain** only (e.g. `google.com`) — never the full referrer
   URL, its query string, or any UTM/click ID; same-site referrals are dropped
 - coarse device class derived from the User-Agent: `browser`, `os`, `device`
@@ -38,7 +45,8 @@ per-event timing log or scroll map is kept — only the aggregate seconds.
   URL fragments (`#...`) are dropped too, **except** a token-free hash-based SPA
   route (`#/...`, no `=`/`&`), which is kept as part of the page path
 - ❌ Full referrer URLs (only the bare domain is kept), UTM/click IDs,
-  custom-event payloads, `identify()` data
+  custom-event payloads, `identify()` data. Content groups are not an exception:
+  they are page metadata set by the site, not a per-visitor property
 - ❌ Sessions lists, visitor profiles, journeys, session replay, region/city
 - ❌ Any persistent or cross-site visitor/session identifier
 
@@ -220,6 +228,15 @@ confirm before making a consent-free claim, especially for Italy.
    under the tracked site's origin, strip inbound `Cookie` headers before the
    request reaches Mantecato.
 5. Keep `SECRET_KEY` secret and set a restrictive `ALLOWED_HOSTS` in production.
+6. If you use **content groups**, label pages by topic only. Ingestion
+   lowercases each label, trims surrounding whitespace, drops duplicates, cuts
+   it to 64 characters and keeps at most 12 per page — it does not inspect or
+   redact what the label *says*, and the normalised value is what appears in the
+   dashboard and in exports. So never derive a label from the visitor (their
+   plan, cohort, referrer or anything they typed) and never put personal data in
+   one. A label is a property of the page; the moment it varies per person it
+   stops being one, and the consent-free posture described above no longer
+   covers it.
 
 ## Model privacy-notice snippet (for site owners)
 

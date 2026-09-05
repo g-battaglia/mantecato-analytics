@@ -61,6 +61,7 @@ class TestURLResolution:
             ("api_analytics_overview", "/api/analytics/overview/"),
             ("api_analytics_pages", "/api/analytics/pages/"),
             ("api_analytics_events", "/api/analytics/events/"),
+            ("api_analytics_groups", "/api/analytics/groups/"),
             ("api_analytics_devices", "/api/analytics/devices/"),
             ("api_analytics_geo", "/api/analytics/geo/"),
             ("api_analytics_compare", "/api/analytics/compare/"),

@@ -13,6 +13,8 @@ Collected payload fields are limited to:
 - `name` for custom events
 - `referrer` when available (reduced to a bare domain server-side)
 - `tag` when configured
+- `groups` when the page declares content groups (site-declared page
+  labels; the collector lowercases, de-duplicates and caps them at 12)
 
 The tracker does not send cookies, persistent identifiers, UTM parameters, screen
 size, language, event properties, identify payloads, revenue data, or session
@@ -50,6 +52,7 @@ Pageviews are tracked automatically, including SPA route changes.
 | `data-respect-gpc` | No | `true` | Respect Global Privacy Control (GPC) — legally-recognised opt-out |
 | `data-do-not-track` | No | `false` | Respect the legacy Do Not Track header (not legally binding) |
 | `data-tag` | No | - | Deployment tag |
+| `data-groups` | No | - | Comma-separated content groups for this page (`cat:guides,tag:python`) — site-declared page labels, max 12 |
 
 ### HTML Events
 
@@ -105,6 +108,8 @@ interface TrackerConfig {
   domains?: string[];
   hostname?: string;
   tag?: string;
+  /** Content groups for this page — site-declared labels, never visitor data */
+  groups?: string[];
   excludeSearch?: boolean;
   excludeHash?: boolean;
   beforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload | false | null | undefined;
@@ -116,14 +121,17 @@ interface TrackerConfig {
 
 | Method | Description |
 |---|---|
-| `tracker.pageview(options?)` | Track a pageview. Options: `{ url, title }` |
-| `tracker.event(name, options?)` | Track a custom event name. Options: `{ url, title }` |
+| `tracker.pageview(options?)` | Track a pageview. Options: `{ url, title, groups }` |
+| `tracker.event(name, options?)` | Track a custom event name. Options: `{ url, title, groups }` |
 | `tracker.track()` | Umami-compatible pageview |
 | `tracker.track(name)` | Umami-compatible custom event name |
 | `tracker.track(payload)` | Sends only allowed fields from the payload |
 | `tracker.enable()` / `tracker.disable()` | Toggle in-memory tracking |
 | `tracker.isEnabled()` | Check current in-memory tracking state |
 | `tracker.destroy()` | Remove listeners and stop auto-tracking |
+
+`groups` overrides the configured `data-groups` for that call; pass `[]` to
+send none.
 
 ## Frameworks
 

@@ -19,7 +19,7 @@ Config schema (v2), stored in ``report.parameters`` and exposed as ``config``::
       "type": "kpi" | "timeseries" | "breakdown" | "heatmap",
       "title": "Pro — AI generations",
       "metric": "visitors" | ...,        # kpi
-      "source": "events" | "sections" | ..., # breakdown
+      "source": "events" | "sections" | "groups" | ..., # breakdown
       "depth": 1,                        # breakdown source=sections (1 = tier)
       "chart": "bar" | "pie",            # breakdown viz
       "dateRange": "7d",                 # optional per-widget override
@@ -82,6 +82,7 @@ BREAKDOWN_SOURCES: dict[str, tuple[str, str, str, str, str]] = {
     "pages": ("get_pages_data", "pages", "urlPath", "views", "Views"),
     "sections": ("get_sections_data", "sections", "section", "views", "Views"),
     "events": ("get_events_data", "events", "eventName", "count", "Count"),
+    "groups": ("get_groups_data", "groups", "group", "views", "Views"),
     "browser": ("get_devices_data", "browser", "value", "pageviews", "Views"),
     "os": ("get_devices_data", "os", "value", "pageviews", "Views"),
     "device": ("get_devices_data", "device", "value", "pageviews", "Views"),
@@ -139,23 +140,33 @@ def _resolve_range(widget: dict[str, Any], runtime_range: DateRange) -> DateRang
     return runtime_range
 
 
-def _normalize_rows(rows: list[dict], label_key: str, value_key: str) -> list[dict]:
-    """Shape heterogeneous breakdown rows into ``[{label, value, visitors, pct}]``."""
+def _normalize_rows(
+    rows: list[dict], label_key: str, value_key: str, *, keep_pct: bool = False
+) -> list[dict]:
+    """Shape heterogeneous breakdown rows into ``[{label, value, visitors, pct}]``.
+
+    ``keep_pct`` preserves a percentage the service already computed instead of
+    deriving one from the row values. Needed wherever the rows overlap: content
+    groups are a share of the site total, and re-deriving the percentage from
+    their sum would silently turn overlapping shares into a partition.
+    """
     out: list[dict[str, Any]] = []
     for r in rows:
         value = r.get(value_key)
         if value is None:
             value = r.get("visitors") or 0
-        out.append(
-            {
-                "label": str(r.get(label_key) or "—"),
-                "value": value,
-                "visitors": r.get("visitors"),
-            }
-        )
+        row: dict[str, Any] = {
+            "label": str(r.get(label_key) or "—"),
+            "value": value,
+            "visitors": r.get("visitors"),
+        }
+        if keep_pct and r.get("pct") is not None:
+            row["pct"] = r["pct"]
+        out.append(row)
     total = sum(x["value"] for x in out) or 0
     for x in out:
-        x["pct"] = round(x["value"] / total * 100, 1) if total else 0
+        if "pct" not in x:
+            x["pct"] = round(x["value"] / total * 100, 1) if total else 0
     return out
 
 
@@ -210,7 +221,11 @@ def _render_breakdown(website_id, widget, date_range, filters, granularity="auto
     else:
         data = fn(website_id, date_range, filters)
 
-    rows = _normalize_rows(data.get(result_key, []), label_key, value_key)
+    # Group rows overlap (a page can be in several), so their share-of-site
+    # percentage cannot be re-derived from the rows themselves.
+    rows = _normalize_rows(
+        data.get(result_key, []), label_key, value_key, keep_pct=source == "groups"
+    )
     chart_kind = "pie" if widget.get("chart") == "pie" else "bar"
     chart = _pie_payload(rows) if chart_kind == "pie" else _bar_payload(rows, value_label)
     return {

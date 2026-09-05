@@ -196,7 +196,9 @@ class WebsiteEvent(models.Model):
     Every row is an independent pageview or custom-event count. No session_id,
     visit_id, full referrer URL, UTM parameters, click IDs, or event payload
     data is stored, and no IP/User-Agent. Only the referrer **domain** is kept
-    (for aggregate traffic-source breakdowns). The only per-person field is
+    (for aggregate traffic-source breakdowns). ``content_groups`` is the one
+    site-supplied extra: page labels the site owner declares, never derived from
+    the visitor — page metadata, not a payload. The only per-person field is
     ``visitor_key``, an ephemeral window-salted dedup digest (not derived-
     reversibly from stored data) that the rollup NULLs once the window is
     finalised — so finalised rows are fully anonymous. It exists only to count
@@ -234,6 +236,14 @@ class WebsiteEvent(models.Model):
     # transiently at ingestion and never stored; same-site referrals are dropped
     # to NULL (counted as direct). No UTM/click IDs are collected.
     referrer_domain = models.CharField(max_length=255, null=True, blank=True)
+    # Content groups: labels the *site* declares for the page (e.g. ["guides",
+    # "pricing"]), not anything observed about the visitor. Page metadata in the
+    # same class as ``url_path``/``page_title``, so it changes nothing about the
+    # privacy posture. Lets sites whose URLs carry no taxonomy ("/p/<slug>")
+    # break their traffic down by section anyway. A JSON list rather than a
+    # Postgres array because SQLite is a supported backend; ``None`` when the
+    # page declares nothing. See ``apps.tracker.services.content_groups_from``.
+    content_groups = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "website_event"

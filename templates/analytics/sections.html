@@ -8,12 +8,31 @@
 
 {% block content %}
 
-{% if sections %}
-{# ── Top Sections chart ───────────────────────────────────── #}
-{% if sections_chart_data.labels %}
-{% trans "Top Sections" as t_top_sections %}
+{# ── Grouping toggle: URL prefix (default) vs site-declared content groups ── #}
+<div class="mb-4 flex items-center gap-3">
+  <div class="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
+    <a href="{% url 'analytics_sections' %}?{% view_query %}"
+       class="rounded px-3 py-1 transition-colors {% if not group_mode %}bg-primary/10 font-medium text-foreground{% else %}text-muted-foreground hover:text-foreground{% endif %}">
+      {% trans "URL prefix" %}
+    </a>
+    <a href="{% url 'analytics_sections' %}?{% view_query %}&by=group"
+       class="rounded px-3 py-1 transition-colors {% if group_mode %}bg-primary/10 font-medium text-foreground{% else %}text-muted-foreground hover:text-foreground{% endif %}">
+      {% trans "Content group" %}
+    </a>
+  </div>
+  {% if group_mode %}
+  <p class="text-xs text-muted-foreground">
+    {% trans "A page can declare several groups, so rows overlap and views do not sum to the site total." %}
+  </p>
+  {% endif %}
+</div>
+
+{% if breakdown_rows %}
+{# ── Top breakdown chart ──────────────────────────────────── #}
+{% if chart_data.labels %}
+{% if group_mode %}{% trans "Top Content Groups" as t_top %}{% else %}{% trans "Top Sections" as t_top %}{% endif %}
 <div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
-  {% include "components/_chart_card.html" with key="sections" title=t_top_sections chart_data=sections_chart_data default="bar" %}
+  {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" %}
 </div>
 {% endif %}
 
@@ -21,7 +40,7 @@
   <div class="overflow-x-auto">
     <div class="space-y-0">
       <div class="flex items-center justify-between border-b pb-1.5 mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        <span class="flex-1">{% trans "Section" %}</span>
+        <span class="flex-1">{% if group_mode %}{% trans "Group" %}{% else %}{% trans "Section" %}{% endif %}</span>
         <div class="flex gap-4 text-right">
           <span class="w-16">{% trans "Views" %}</span>
           <span class="w-20">{% trans "Visitors" %}</span>
@@ -29,12 +48,12 @@
           <span class="hidden w-14 sm:inline">{% trans "%" %}</span>
         </div>
       </div>
-      {% for s in sections %}
-      <a href="{% url 'analytics_pages' %}?{% view_query %}&filter=url_path:starts_with:{{ s.section }}"
+      {% for s in breakdown_rows %}
+      <a href="{% url 'analytics_pages' %}?{% view_query %}&filter={{ s.drilldown|urlencode }}"
          class="relative flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
         <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {{ s.pct }}%"></div>
         <div class="relative flex-1 min-w-0 pr-4">
-          <span class="block truncate font-mono font-medium" title="{{ s.section }}">{{ s.section }}</span>
+          <span class="block truncate font-mono font-medium" title="{{ s.label }}">{{ s.label }}</span>
         </div>
         <div class="relative flex gap-4 text-right tabular-nums">
           <span class="w-16 font-medium">{{ s.views|intcomma }}</span>
@@ -50,7 +69,14 @@
 {% else %}
 <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
   <div class="px-4 py-4 text-center">
+    {% if group_mode %}
+    <p class="text-muted-foreground">{% trans "No content groups for this period." %}</p>
+    <p class="mt-1 text-xs text-muted-foreground">
+      {% trans 'Add data-groups="…" to the tracker tag to label your pages.' %}
+    </p>
+    {% else %}
     <p class="text-muted-foreground">{% trans "No section data for this period." %}</p>
+    {% endif %}
   </div>
 </div>
 {% endif %}
