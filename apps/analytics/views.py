@@ -3,7 +3,7 @@
 Supported pages:
 - Overview: total pageviews, trends, top pages, device breakdowns, geo, heatmap
 - Pages: per-URL pageview counts
-- Sections: URL-prefix pageview groupings
+- Sections: URL-prefix pageview groupings, or content groups with ?by=group
 - Devices: browser, OS, device breakdowns
 - Geo: country/region/city pageview distribution
 - Sources: top referrer domains (referrer **domain** only — no full URL/UTM)
@@ -28,6 +28,7 @@ from apps.analytics.chart_data import (
     build_events_timeline_data,
     build_generic_pie_data,
     build_geo_bubble_data,
+    build_groups_bar_chart_data,
     build_pages_bar_chart_data,
     build_sections_bar_chart_data,
     build_timeseries_chart_data,
@@ -37,6 +38,7 @@ from apps.analytics.services import (
     get_devices_data,
     get_events_data,
     get_geo_data,
+    get_groups_data,
     get_heatmap_data,
     get_landing_data,
     get_overview_data,
@@ -136,14 +138,60 @@ class PagesView(AnalyticsBase):
         return get_pages_data(self.website_id, self.date_range, self.filters, page=page)
 
 
+def _breakdown_rows(rows: list[dict], key: str) -> list[dict]:
+    """Normalise section/group rows so one template renders either dimension.
+
+    ``drilldown`` is the filter expression the row links to on the Pages view:
+    a URL prefix for sections, a label membership test for groups.
+    """
+    prefix = "url_path:starts_with:" if key == "section" else "content_group:eq:"
+    return [
+        {
+            "label": row[key],
+            "views": row.get("views"),
+            "visitors": row.get("visitors"),
+            "pages": row.get("pages"),
+            "pct": row.get("pct"),
+            "drilldown": f"{prefix}{row[key]}",
+        }
+        for row in rows
+    ]
+
+
 class SectionsView(AnalyticsBase):
-    """Site sections breakdown by URL prefix."""
+    """Site sections breakdown — by URL prefix (default) or by content group.
+
+    ``?by=group`` switches the grouping to the labels the site declares on the
+    tracker tag. It is the same table and the same chart: only the dimension
+    changes, so a site whose URLs carry no taxonomy still gets a breakdown.
+
+    In group mode the rows may overlap (a page can be in several groups), so
+    the percentages are share-of-site rather than a partition.
+    """
 
     template_name = "analytics/sections.html"
-    _charts = [ChartMapping("sections_chart_data", build_sections_bar_chart_data, "sections")]
 
-    def _call_service(self) -> dict:
-        return get_sections_data(self.website_id, self.date_range, self.filters)
+    @property
+    def group_mode(self) -> bool:
+        """True when the page is grouping by content group instead of URL."""
+        return self.request.GET.get("by") == "group"
+
+    def get_service_data(self) -> dict:
+        if self.group_mode:
+            data = get_groups_data(self.website_id, self.date_range, self.filters)
+            return {
+                **data,
+                "chart_data": build_groups_bar_chart_data(data["groups"]),
+                "breakdown_rows": _breakdown_rows(data["groups"], "group"),
+                "group_mode": True,
+            }
+        data = get_sections_data(self.website_id, self.date_range, self.filters)
+        return {
+            **data,
+            "chart_data": build_sections_bar_chart_data(data["sections"]),
+            "breakdown_rows": _breakdown_rows(data["sections"], "section"),
+            "group_mode": False,
+        }
 
 
 class DevicesView(AnalyticsBase):

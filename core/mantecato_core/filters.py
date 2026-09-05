@@ -15,6 +15,9 @@ SESSION_COLUMNS: list[str] = []
 
 VALID_FILTER_COLUMNS: set[str] = {
     "url_path",
+    # Site-declared page labels. Stored as a JSON list, so it is the one
+    # filterable column that is not a scalar — see CONTAINMENT_COLUMNS.
+    "content_group",
     "page_title",
     "hostname",
     "browser",
@@ -24,6 +27,14 @@ VALID_FILTER_COLUMNS: set[str] = {
     "event_name",
     "referrer_domain",
 }
+
+#: Filter columns backed by a JSON list on ``website_event`` instead of a scalar
+#: column. They match by containment, so only the membership operators are
+#: meaningful on them; substring/prefix operators are rejected (see
+#: :func:`build_filter_sql`) rather than silently matching nothing.
+CONTAINMENT_COLUMNS: dict[str, str] = {"content_group": "content_groups"}
+
+CONTAINMENT_OPERATORS = frozenset({"eq", "neq", "in", "not_in"})
 
 VALID_OPERATORS = {
     "eq",
@@ -153,6 +164,33 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
             param_name = f"f{index}"
             prefix = "we"  # All columns are on website_event
             bucket = pos_clauses if f.operator in POSITIVE_OPERATORS else neg_clauses
+
+            if f.column in CONTAINMENT_COLUMNS:
+                # JSON-list column: match by containment. A substring/prefix
+                # operator has no sensible meaning over a list of labels, so it
+                # is dropped instead of matching nothing (or, worse, everything).
+                if f.operator not in CONTAINMENT_OPERATORS:
+                    continue
+                json_column = CONTAINMENT_COLUMNS[f.column]
+                values = (
+                    [v.strip() for v in (f.value.split(",") if f.value else []) if v.strip()]
+                    if f.operator in ("in", "not_in")
+                    else [f.value]
+                )
+                if not values:
+                    if f.operator == "in":
+                        bucket.append("1 = 0")
+                    continue
+                # ``?|`` asks "does the array hold any of these labels?" — the
+                # GIN index on the column answers it directly.
+                clause = f"{prefix}.{json_column} ?| {{{{{param_name}::text[]}}}}"
+                bucket.append(
+                    clause
+                    if f.operator in POSITIVE_OPERATORS
+                    else f"({prefix}.{json_column} IS NULL OR NOT {clause})"
+                )
+                params[param_name] = values
+                continue
 
             if f.operator == "eq":
                 bucket.append(f"{prefix}.{f.column} = {{{{{param_name}}}}}")

@@ -15,11 +15,17 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.db import connection
-from django.db.models import Count, Max, Q, QuerySet
+from django.db.models import Count, Max, Q, QuerySet, TextField
+from django.db.models.functions import Cast
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
-from core.mantecato_core.filters import POSITIVE_OPERATORS, VALID_FILTER_COLUMNS
+from core.mantecato_core.filters import (
+    CONTAINMENT_COLUMNS,
+    CONTAINMENT_OPERATORS,
+    POSITIVE_OPERATORS,
+    VALID_FILTER_COLUMNS,
+)
 from core.mantecato_core.visitor_counting import section_for_path
 
 if TYPE_CHECKING:
@@ -42,6 +48,8 @@ def _parse_bot_config(value: str) -> dict[str, Any]:
 
 def _filter_q(column: str, operator: str, value: str) -> Q | None:
     """Translate one Filter into a Django ``Q`` (mirrors build_filter_sql)."""
+    if column in CONTAINMENT_COLUMNS:
+        return _containment_q(CONTAINMENT_COLUMNS[column], operator, value)
     if operator == "eq":
         return Q(**{column: value})
     if operator == "neq":
@@ -65,6 +73,35 @@ def _filter_q(column: str, operator: str, value: str) -> Q | None:
         # which keeps NULL rows — ``~Q(col__in=...)`` alone would drop them.
         return q if operator == "in" else (Q(**{f"{column}__isnull": True}) | ~q)
     return None
+
+
+def _containment_q(json_column: str, operator: str, value: str) -> Q | None:
+    """Mirror build_filter_sql's ``?|`` containment for a JSON-list column.
+
+    SQLite has neither jsonb operators nor a JSON ``contains`` lookup, so
+    membership is tested against the serialised document: a label is matched as
+    its own quoted JSON token (``"guides"``), which cannot collide with a longer
+    label that merely starts the same way (``"guides-advanced"``). Labels are
+    serialised with :func:`json.dumps` so any quoting inside them lines up with
+    how the value was stored.
+    """
+    if operator not in CONTAINMENT_OPERATORS:
+        return None
+    values = (
+        [v.strip() for v in (value.split(",") if value else []) if v.strip()]
+        if operator in ("in", "not_in")
+        else [value]
+    )
+    if not values:
+        return Q(pk__in=[]) if operator == "in" else None
+    text_column = f"{json_column}_text"
+    match = Q()
+    for label in values:
+        match |= Q(**{f"{text_column}__contains": json.dumps(label)})
+    if operator in POSITIVE_OPERATORS:
+        return match
+    # Negated: keep rows with no labels at all, like the SQL branch does.
+    return Q(**{f"{json_column}__isnull": True}) | ~match
 
 
 def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
@@ -99,6 +136,11 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
 
         if item.column not in VALID_FILTER_COLUMNS:
             continue
+        if item.column in CONTAINMENT_COLUMNS:
+            # The JSON document is matched as text (see _containment_q), which
+            # needs the column cast once per query.
+            json_column = CONTAINMENT_COLUMNS[item.column]
+            qs = qs.annotate(**{f"{json_column}_text": Cast(json_column, output_field=TextField())})
         q = _filter_q(item.column, item.operator, item.value)
         if q is not None:
             grouped[item.column].append((item.operator, q))
@@ -267,6 +309,31 @@ def top_sections_from_qs(
         for section, views in counter.items()
     ]
     rows.sort(key=lambda row: (-row["views"], row["section"]))
+    return rows[:limit]
+
+
+def top_groups_from_qs(qs: QuerySet, limit: int) -> list[dict[str, Any]]:
+    """SQLite mirror of the ``jsonb_array_elements_text`` group aggregation.
+
+    One row per label; a pageview declaring several labels counts once in each,
+    so the totals overlap by design. Rows with no (or a malformed) group list
+    are skipped rather than bucketed together.
+    """
+    counter: dict[str, int] = defaultdict(int)
+    pages: dict[str, set[str]] = defaultdict(set)
+    for groups, path in qs.values_list("content_groups", "url_path"):
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            if not isinstance(group, str) or not group:
+                continue
+            counter[group] += 1
+            pages[group].add(path or "/")
+    rows = [
+        {"group": group, "views": views, "pages": len(pages[group])}
+        for group, views in counter.items()
+    ]
+    rows.sort(key=lambda row: (-row["views"], row["group"]))
     return rows[:limit]
 
 

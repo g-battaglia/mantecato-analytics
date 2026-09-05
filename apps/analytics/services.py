@@ -31,6 +31,7 @@ from core.mantecato_core.helpers import format_duration
 from core.mantecato_core.queries.devices import get_device_metrics_multi
 from core.mantecato_core.queries.events import get_event_metrics, get_event_time_series
 from core.mantecato_core.queries.geo import get_geo_metrics
+from core.mantecato_core.queries.groups import get_top_groups
 from core.mantecato_core.queries.heatmap import get_traffic_heatmap
 from core.mantecato_core.queries.pageviews import get_page_metrics
 from core.mantecato_core.queries.realtime import (
@@ -529,6 +530,43 @@ def get_compare_data(
         "current_ts": current_ts,
         "previous_ts": previous_ts,
     }
+
+
+def get_groups_data(
+    website_id: str,
+    date_range: DateRange,
+    filters: list[Filter] | None = None,
+    *,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Fetch content-group analytics (site-declared page labels).
+
+    The group counterpart of :func:`get_sections_data`: same shape, same
+    percentage and visitor treatment, but grouped by the labels the site sends
+    on the tracker tag instead of by URL prefix. Useful wherever the URL carries
+    no taxonomy — a blog on ``/p/<slug>`` can still see "guides vs pricing".
+
+    A page may declare several groups, so a pageview is counted in each of them
+    and **the rows do not sum to the site total**. The ``pct`` column is
+    therefore share-of-site, not a partition.
+    """
+    filters = filters or []
+    start = date_range.start_date
+    end = date_range.end_date
+
+    groups = get_top_groups(website_id, start, end, limit=limit, filters=filters)
+    _attach_scope_visitors(
+        website_id,
+        start,
+        end,
+        groups,
+        scope="group",
+        value_key="group",
+        filters=filters,
+    )
+    _add_percentage(groups, "views")
+
+    return {"groups": groups}
 
 
 def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:

@@ -9,6 +9,8 @@ Privacy-first design (per PLAN.md):
 - Only the referrer **domain** is kept (for aggregate traffic sources); the full
   referrer URL, its query string, UTM params and click IDs are never stored.
 - Custom events store only the event name; no payload/properties.
+- Content groups are page labels declared by the site (``data-groups``), never
+  anything observed about the visitor — page metadata like ``page_title``.
 - No identify calls, revenue tracking, or session data.
 - Only the minimal data needed for aggregate pageview analytics is stored:
   url_path, url_query, page_title, event_name, hostname, referrer_domain, and
@@ -17,6 +19,7 @@ Privacy-first design (per PLAN.md):
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -40,6 +43,11 @@ logger = logging.getLogger(__name__)
 # Upper bound on a single engagement beacon's reported active seconds, to cap
 # abuse from a tampered client. A genuine long read still accrues up to this.
 _MAX_ENGAGEMENT_S = 3600
+
+# Content-group limits. The cap keeps one pageview's scope-presence writes (and
+# so its ingest cost) bounded; the length cap keeps labels index-friendly.
+MAX_CONTENT_GROUPS = 5
+MAX_CONTENT_GROUP_LEN = 64
 
 # Throttle for the lazy, scheduler-free rollup piggybacked on ingestion.
 _ROLLUP_MIN_INTERVAL_S = 3600
@@ -178,6 +186,48 @@ def _referrer_domain(referrer: str | None, hostname: str | None) -> str | None:
     return host[:255]
 
 
+def content_groups_from(payload: dict[str, Any]) -> list[str] | None:
+    """Normalise the site-declared content groups on *payload*.
+
+    Groups are page labels the site owner sets on the tracker tag
+    (``data-groups="guides,pricing"``) — page metadata, never anything observed
+    about the visitor. Accepts a list or a comma-separated string, plus the
+    Umami-compatible ``tag`` field as a single group, so a site already sending
+    ``data-tag`` gets a working breakdown for free.
+
+    Labels are lowercased and trimmed (so "Guides" and "guides " are one group),
+    de-duplicated with their first-seen order kept, truncated to
+    :data:`MAX_CONTENT_GROUP_LEN`, and capped at :data:`MAX_CONTENT_GROUPS`.
+
+    Returns:
+        The cleaned label list, or ``None`` when the page declares none — the
+        column stays NULL rather than holding an empty list.
+    """
+    raw = payload.get("groups")
+    if isinstance(raw, str):
+        candidates: list[Any] = raw.split(",")
+    elif isinstance(raw, (list, tuple)):
+        candidates = list(raw)
+    else:
+        candidates = []
+
+    # A site on the Umami wire format can only express one label; honour it.
+    tag = payload.get("tag")
+    if isinstance(tag, str):
+        candidates.append(tag)
+
+    groups: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        label = candidate.strip().lower()[:MAX_CONTENT_GROUP_LEN]
+        if label and label not in groups:
+            groups.append(label)
+        if len(groups) >= MAX_CONTENT_GROUPS:
+            break
+    return groups or None
+
+
 def ingest_pageview(
     website_id: str,
     payload: dict[str, Any],
@@ -191,15 +241,17 @@ def ingest_pageview(
     """Insert an anonymous pageview event and fold it into exact visit counts.
 
     Only aggregate-level data is stored on the event row: URL, title, hostname,
-    device classification, and country. The ``ip``/``user_agent`` are passed to
-    :func:`record_visit` for exact, same-day visitor/visit counting and are
-    never persisted (see :mod:`core.mantecato_core.visitor_counting`).
+    device classification, country, and the site-declared content groups. The
+    ``ip``/``user_agent`` are passed to :func:`record_visit` for exact, same-day
+    visitor/visit counting and are never persisted (see
+    :mod:`core.mantecato_core.visitor_counting`).
     """
     event_id = str(uuid.uuid4())
     now = timezone.now()
 
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
+    groups = content_groups_from(payload)
 
     # Compute the window digest up front (best-effort). It is stored on the durable
     # event row below even if the visit-state fold fails; a ``None`` only degrades
@@ -223,13 +275,15 @@ def ingest_pageview(
              url_path, url_query,
              page_title, event_type, event_name, hostname,
              browser, os, device,
-             country, is_bot, bot_reason, visitor_key, referrer_domain)
+             country, is_bot, bot_reason, visitor_key, referrer_domain,
+             content_groups)
         VALUES
             ({{eventId::uuid}}, {{websiteId::uuid}}, {{createdAt::timestamptz}},
              {{urlPath}}, {{urlQuery}},
              {{pageTitle}}, 1, NULL, {{hostname}},
              {{browser}}, {{os}}, {{device}},
-             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}}, {{referrerDomain}})
+             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}}, {{referrerDomain}},
+             {{contentGroups::jsonb}})
         """,
         {
             "eventId": event_id,
@@ -247,6 +301,7 @@ def ingest_pageview(
             "botReason": bot_reason[:80] if bot_reason else None,
             "visitorKey": event_key,
             "referrerDomain": _referrer_domain(payload.get("referrer"), payload.get("hostname")),
+            "contentGroups": json.dumps(groups) if groups else None,
         },
     )
     # Best-effort visit/bounce fold AFTER the durable write, so a row-lock or
@@ -266,7 +321,13 @@ def ingest_pageview(
                 website_id=website_id,
                 occurred_at=now,
                 visitor_key=key,
-                scopes=[("page", url_path), ("section", section_for_path(url_path))],
+                scopes=[
+                    ("page", url_path),
+                    ("section", section_for_path(url_path)),
+                    # Exact per-group uniques ride the same mechanism as pages
+                    # and sections; the rollup folds them in unchanged.
+                    *(("group", g) for g in groups or ()),
+                ],
             )
     except Exception:
         logger.warning("visit-state fold failed; pageview already stored", exc_info=True)
@@ -290,6 +351,11 @@ def ingest_custom_event(
     omission in the view layer and never persisted. Custom events do not open or
     affect visits, but they do contribute to per-event **unique visitor** counts
     via the window digest derived from ``ip``/``user_agent`` (never persisted).
+
+    The page's content groups are stored here too, so an event fired on a
+    labelled page stays filterable by ``content_group`` like its pageview. They
+    are not recorded as group scope presence: per-group uniques are a pageview
+    metric, and counting an event's visitor there would double-count them.
     """
     clean_name = str(event_name).strip()[:100]
     if not clean_name:
@@ -299,6 +365,7 @@ def ingest_custom_event(
     now = timezone.now()
     url_info = _parse_url(payload.get("url", ""))
     url_path = url_info["url_path"]
+    groups = content_groups_from(payload)
 
     # Digest computed for everyone (incl. bots) so bot custom events are counted
     # separately for the dynamic bot-filter toggle; scope presence stays human-only.
@@ -321,13 +388,14 @@ def ingest_custom_event(
              url_path, url_query,
              page_title, event_type, event_name, hostname,
              browser, os, device,
-             country, is_bot, bot_reason, visitor_key)
+             country, is_bot, bot_reason, visitor_key, content_groups)
         VALUES
             ({{eventId::uuid}}, {{websiteId::uuid}}, {{createdAt::timestamptz}},
              {{urlPath}}, {{urlQuery}},
              {{pageTitle}}, 2, {{eventName}}, {{hostname}},
              {{browser}}, {{os}}, {{device}},
-             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}})
+             {{country}}, {{isBot}}, {{botReason}}, {{visitorKey}},
+             {{contentGroups::jsonb}})
         """,
         {
             "eventId": event_id,
@@ -345,6 +413,7 @@ def ingest_custom_event(
             "isBot": is_bot,
             "botReason": bot_reason[:80] if bot_reason else None,
             "visitorKey": event_key,
+            "contentGroups": json.dumps(groups) if groups else None,
         },
     )
     if not is_bot and event_key:
