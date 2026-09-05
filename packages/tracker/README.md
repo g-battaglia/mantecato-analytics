@@ -13,6 +13,8 @@ Collected payload fields are limited to:
 - `name` for custom events
 - `referrer` when available (reduced to a bare domain server-side)
 - `tag` when configured
+- `groups` when the page declares content groups (site-declared page
+  labels; the collector lowercases, de-duplicates and caps them at 5)
 
 The tracker does not send cookies, persistent identifiers, UTM parameters, screen
 size, language, event properties, identify payloads, revenue data, or session
@@ -119,13 +121,16 @@ interface TrackerConfig {
 
 | Method | Description |
 |---|---|
-| `tracker.pageview(options?)` | Track a pageview. Options: `{ url, title }` |
-| `tracker.event(name, options?)` | Track a custom event name. Options: `{ url, title }` |
+| `tracker.pageview(options?)` | Track a pageview. Options: `{ url, title, groups }` |
+| `tracker.event(name, options?)` | Track a custom event name. Options: `{ url, title, groups }` |
 | `tracker.track()` | Umami-compatible pageview |
 | `tracker.track(name)` | Umami-compatible custom event name |
 | `tracker.track(payload)` | Sends only allowed fields from the payload |
 | `tracker.enable()` / `tracker.disable()` | Toggle in-memory tracking |
 | `tracker.isEnabled()` | Check current in-memory tracking state |
+
+`groups` overrides the configured `data-groups` for that call; pass `[]` to
+send none.
 | `tracker.destroy()` | Remove listeners and stop auto-tracking |
 
 ## Frameworks

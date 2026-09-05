@@ -122,6 +122,22 @@ def test_breakdown_groups_uses_content_groups(seeded):
     assert rows == {"guides": 2, "python": 1}
 
 
+def test_breakdown_groups_keeps_site_share_percentages(seeded):
+    """Group rows overlap, so their percentage must stay a share of the site.
+
+    The seed has 10 pageviews, 2 of them labelled `guides`. Re-deriving the
+    percentage from the group rows themselves (2 + 1) would report 67% for
+    `guides` — a partition of the labelled traffic rather than its real weight.
+    """
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "wgp", "type": "breakdown", "source": "groups"},
+        runtime_range=_range(),
+    )
+    pct = {r["label"]: r["pct"] for r in w["rows"]}
+    assert pct == {"guides": 20.0, "python": 10.0}
+    assert sum(pct.values()) != 100.0
+
+
 def test_content_group_filter_cascades_to_widget(seeded):
     w = render_widget(
         WEBSITE_ID,

@@ -228,12 +228,15 @@ confirm before making a consent-free claim, especially for Italy.
    under the tracked site's origin, strip inbound `Cookie` headers before the
    request reaches Mantecato.
 5. Keep `SECRET_KEY` secret and set a restrictive `ALLOWED_HOSTS` in production.
-6. If you use **content groups**, label pages by topic only. The field is stored
-   as written and shows up in the dashboard and exports, so never derive a label
-   from the visitor (their plan, cohort, referrer or anything they typed) and
-   never put personal data in one. A label is a property of the page; the moment
-   it varies per person it stops being one, and the consent-free posture
-   described above no longer covers it.
+6. If you use **content groups**, label pages by topic only. Ingestion
+   lowercases each label, trims surrounding whitespace, drops duplicates, cuts
+   it to 64 characters and keeps at most 5 per page — it does not inspect or
+   redact what the label *says*, and the normalised value is what appears in the
+   dashboard and in exports. So never derive a label from the visitor (their
+   plan, cohort, referrer or anything they typed) and never put personal data in
+   one. A label is a property of the page; the moment it varies per person it
+   stops being one, and the consent-free posture described above no longer
+   covers it.
 
 ## Model privacy-notice snippet (for site owners)
 

@@ -64,22 +64,28 @@ def get_top_groups(
 
     rows = raw_query(
         f"""SELECT
-      grp.value AS "group",
+      grp.elem #>> '{{}}' AS "group",
       COUNT(*)::bigint AS views,
       COUNT(DISTINCT we.url_path)::bigint AS pages
     FROM website_event we
-    CROSS JOIN LATERAL jsonb_array_elements_text(
+    CROSS JOIN LATERAL jsonb_array_elements(
       -- The column is an unconstrained JSONField, so a scalar can reach here.
       -- The guard has to live inside the lateral: a jsonb_typeof() predicate in
       -- WHERE is not ordered before the FROM clause that expands the value, so
-      -- jsonb_array_elements_text() would raise on a non-array and abort the
-      -- whole query. Mirrors get_filter_values().
+      -- the expansion would raise on a non-array and abort the whole query.
+      -- Mirrors get_filter_values().
       CASE WHEN jsonb_typeof(we.content_groups) = 'array'
            THEN we.content_groups ELSE '[]'::jsonb END
-    ) AS grp(value)
+    ) AS grp(elem)
     WHERE we.website_id = {{{{websiteId::uuid}}}}
       AND we.created_at BETWEEN {{{{startDate::timestamptz}}}} AND {{{{endDate::timestamptz}}}}
       AND we.event_type = 1
+      -- Only string members are labels. jsonb_array_elements_text() would
+      -- stringify a number or an object into a group of its own, which the
+      -- SQLite fallback and the visitor counter both refuse — the two backends
+      -- would disagree on the same row.
+      AND jsonb_typeof(grp.elem) = 'string'
+      AND grp.elem #>> '{{}}' <> ''
       {filter_where}
     GROUP BY 1
     ORDER BY views DESC, 1

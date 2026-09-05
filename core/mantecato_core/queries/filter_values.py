@@ -57,7 +57,7 @@ def get_filter_values(
             }
             return sorted(values)[:limit]
 
-        where_extra = "AND grp.value ILIKE {{search}}" if search else ""
+        where_extra = "AND grp.elem #>> '{}' ILIKE {{search}}" if search else ""
         params: dict[str, Any] = {
             "websiteId": website_id,
             "startDate": start_date,
@@ -66,16 +66,18 @@ def get_filter_values(
         if search:
             params["search"] = f"%{search}%"
         rows = raw_query(
-            f"""SELECT DISTINCT grp.value
+            f"""SELECT DISTINCT grp.elem #>> '{{}}' AS value
     FROM website_event we
-    CROSS JOIN LATERAL jsonb_array_elements_text(
+    CROSS JOIN LATERAL jsonb_array_elements(
       CASE WHEN jsonb_typeof(we.content_groups) = 'array'
            THEN we.content_groups ELSE '[]'::jsonb END
-    ) AS grp(value)
+    ) AS grp(elem)
     WHERE we.website_id = {{{{websiteId::uuid}}}}
       AND we.created_at BETWEEN {{{{startDate::timestamptz}}}} AND {{{{endDate::timestamptz}}}}
       AND we.event_type = 1
-      AND grp.value != ''
+      -- Only string members are labels; see get_top_groups().
+      AND jsonb_typeof(grp.elem) = 'string'
+      AND grp.elem #>> '{{}}' != ''
       {where_extra}
     ORDER BY 1
     LIMIT {limit}""",

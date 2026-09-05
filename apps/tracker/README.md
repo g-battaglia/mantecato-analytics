@@ -61,6 +61,9 @@ metadata like the title, which is why they carry no consent implication.
 ```
 
 Only `name` is accepted for custom events. Any submitted properties are ignored.
+A custom event does store the page's `groups`, so an event fired on a labelled
+page stays filterable by `content_group` like its pageview. Groups are page
+metadata, not event properties.
 
 ### Response
 

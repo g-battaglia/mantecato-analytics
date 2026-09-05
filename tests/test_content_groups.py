@@ -182,13 +182,13 @@ class TestMalformedStoredValues:
         assert [row["group"] for row in rows] == ["guides"]
         assert rows[0]["visitors"] == 1
 
-    def test_postgres_expansion_is_guarded_inside_the_lateral(self) -> None:
-        """A scalar row must not abort the whole aggregation on PostgreSQL.
+    @staticmethod
+    def _generated_sql(module: str, call) -> str:
+        """Run *call* with the PostgreSQL branch forced and return its SQL.
 
-        `jsonb_array_elements_text()` raises on a non-array, and a WHERE
-        predicate is not ordered before the FROM clause that expands the value,
-        so the guard has to sit inside the lateral. SQLite cannot execute this
-        branch, so the generated SQL is asserted instead.
+        SQLite cannot execute these queries, so the guards they rely on are
+        asserted on the generated statement instead of by running it. Weaker
+        than a PostgreSQL integration test, and deliberately so noted.
         """
         captured: dict[str, str] = {}
 
@@ -197,16 +197,55 @@ class TestMalformedStoredValues:
             return []
 
         with (
-            patch("core.mantecato_core.queries.groups.should_use_orm_fallback", return_value=False),
-            patch("core.mantecato_core.queries.groups.raw_query", side_effect=fake_raw_query),
+            patch(f"{module}.should_use_orm_fallback", return_value=False),
+            patch(f"{module}.raw_query", side_effect=fake_raw_query),
         ):
-            get_top_groups(WEBSITE_ID, *WINDOW)
+            call()
+        return " ".join(captured["sql"].split())
 
-        sql = " ".join(captured["sql"].split())
+    def test_postgres_expansion_is_guarded_inside_the_lateral(self) -> None:
+        """A scalar row must not abort the whole aggregation on PostgreSQL.
+
+        The expansion raises on a non-array, and a WHERE predicate is not
+        ordered before the FROM clause that expands the value, so the guard has
+        to sit inside the lateral.
+        """
+        sql = self._generated_sql(
+            "core.mantecato_core.queries.groups",
+            lambda: get_top_groups(WEBSITE_ID, *WINDOW),
+        )
         assert "CASE WHEN jsonb_typeof(we.content_groups) = 'array'" in sql
         assert "ELSE '[]'::jsonb END" in sql
         # The bare expansion (unguarded) must not survive anywhere.
-        assert "jsonb_array_elements_text( we.content_groups" not in sql
+        assert "jsonb_array_elements( we.content_groups" not in sql
+
+    @pytest.mark.parametrize(
+        ("module", "call"),
+        [
+            (
+                "core.mantecato_core.queries.groups",
+                lambda: get_top_groups(WEBSITE_ID, *WINDOW),
+            ),
+            (
+                "core.mantecato_core.queries.filter_values",
+                lambda: get_filter_values(WEBSITE_ID, "content_group", *WINDOW),
+            ),
+        ],
+        ids=["aggregation", "typeahead"],
+    )
+    def test_postgres_only_expands_string_members(self, module: str, call) -> None:
+        """Both PostgreSQL paths must agree with SQLite on what counts as a label.
+
+        `jsonb_array_elements_text()` stringifies every member, so `42` and
+        `{"nested": 1}` would become groups of their own on PostgreSQL while the
+        SQLite fallback and the visitor counter drop them — the same row would
+        report differently per backend.
+        """
+        sql = self._generated_sql(module, call)
+        assert "CROSS JOIN LATERAL jsonb_array_elements(" in sql
+        # The text-returning variant would stringify non-string members.
+        assert "CROSS JOIN LATERAL jsonb_array_elements_text(" not in sql
+        assert "jsonb_typeof(grp.elem) = 'string'" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -291,8 +330,8 @@ class TestContentGroupFilterORM:
 
         assert get_filter_values(WEBSITE_ID, "content_group", *WINDOW, search="guide") == ["guides"]
         sql, params = mock_query.call_args.args
-        assert "jsonb_array_elements_text" in sql
-        assert "grp.value ILIKE" in sql
+        assert "jsonb_array_elements(" in sql
+        assert "grp.elem #>> '{}' ILIKE" in sql
         assert params["search"] == "%guide%"
 
 
