@@ -36,7 +36,7 @@ interface TrackerConfig {
      * Content groups for this page — what it is *about* ("guides", "pricing").
      * Declared by the site, never derived from the visitor: page metadata, like
      * the title. Lets sites whose URLs carry no taxonomy still get a per-section
-     * breakdown. Server-side they are lowercased, de-duplicated and capped at 5.
+     * breakdown. Server-side they are lowercased, de-duplicated and capped at 12.
      */
     groups?: string[];
     /** Strip query string from tracked URLs (default: false) */

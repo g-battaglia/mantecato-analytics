@@ -349,6 +349,30 @@ class TestContentGroupFilterORM:
         )
         assert rows == []
 
+    def test_nested_value_does_not_answer_the_filter(self) -> None:
+        """A label buried in a nested object is not a label.
+
+        The row carries a second, real label, which is what makes this
+        observable: substring-matching the serialised document would let the row
+        through the `guides` filter and report its `other` label, while the
+        aggregation — which counts only top-level string members — never sees
+        `guides` on it at all. Both backends must agree that the row does not
+        answer the filter.
+        """
+        _event([{"nested": "guides"}, "other"], "/a")  # type: ignore[list-item]
+        _event(["guides"], "/b")
+        rows = get_top_groups(
+            WEBSITE_ID, *WINDOW, filters=[Filter("content_group", "eq", "guides")]
+        )
+        assert [(r["group"], r["views"]) for r in rows] == [("guides", 1)]
+
+    def test_prefix_ignores_nested_values(self) -> None:
+        _event([{"nested": "tag:x"}, "other"], "/a")  # type: ignore[list-item]
+        rows = get_top_groups(
+            WEBSITE_ID, *WINDOW, filters=[Filter("content_group", "starts_with", "tag:")]
+        )
+        assert rows == []
+
     def test_negated_keeps_unlabelled_rows(self) -> None:
         _event(["guides"], "/a")
         _event(None, "/b")

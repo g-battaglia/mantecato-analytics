@@ -15,8 +15,8 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.db import connection
-from django.db.models import Count, Max, Q, QuerySet, TextField
-from django.db.models.functions import Cast
+from django.db.models import Count, Max, Q, QuerySet
+from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
 from apps.core.models import WebsiteEvent
@@ -76,34 +76,59 @@ def _filter_q(column: str, operator: str, value: str) -> Q | None:
 
 
 def _containment_q(json_column: str, operator: str, value: str) -> Q | None:
-    """Mirror build_filter_sql's ``?|`` containment for a JSON-list column.
+    """Mirror build_filter_sql's containment for a JSON-list column.
 
-    SQLite has neither jsonb operators nor a JSON ``contains`` lookup, so
-    membership is tested against the serialised document: a label is matched as
-    its own quoted JSON token (``"guides"``), which cannot collide with a longer
-    label that merely starts the same way (``"guides-advanced"``). Labels are
-    serialised with :func:`json.dumps` so any quoting inside them lines up with
-    how the value was stored.
+    Despite this module's name, the queryset path runs on **both** backends:
+    ``read_scope_visitors`` counts visitors through the ORM even on PostgreSQL,
+    so this predicate has to speak both dialects.
+
+    Either way the members are expanded and matched one at a time. Substring-
+    matching the serialised document would be simpler but wrong: it cannot tell
+    a top-level label from a string buried in a nested object, so
+    ``[{"nested": "guides"}]`` would answer to ``content_group=guides`` while the
+    aggregation — which counts only top-level string members — never reports that
+    label at all.
+
+    The array guard and the string-type test mirror the aggregation query's, so
+    both backends answer with the same rows.
     """
     if operator not in CONTAINMENT_OPERATORS:
         return None
-    text_column = f"{json_column}_text"
-    if operator in ("starts_with", "not_starts_with"):
-        # A member always starts right after its opening quote, so searching for
-        # '"cat:' anchors the prefix to the start of a label — it cannot match
-        # mid-label the way a bare substring would.
-        match = Q(**{f"{text_column}__contains": f'"{value}'})
-        return match if operator == "starts_with" else ~match
-    values = (
-        [v.strip() for v in (value.split(",") if value else []) if v.strip()]
-        if operator in ("in", "not_in")
-        else [value]
+
+    prefix_match = operator in ("starts_with", "not_starts_with")
+    if prefix_match:
+        params: list[str] = [f"{value}%"]
+    else:
+        params = (
+            [v.strip() for v in (value.split(",") if value else []) if v.strip()]
+            if operator in ("in", "not_in")
+            else [value]
+        )
+        if not params:
+            return Q(pk__in=[]) if operator == "in" else None
+
+    if connection.vendor == "postgresql":
+        member = "je.v #>> '{}'"
+        source = (
+            f"LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(we.{json_column}) = 'array' "
+            f"THEN we.{json_column} ELSE '[]'::jsonb END) AS je(v)"
+        )
+        type_guard = "jsonb_typeof(je.v) = 'string'"
+    else:
+        member = "je.value"
+        source = f"json_each(we.{json_column}) AS je"
+        type_guard = f"json_type(we.{json_column}) = 'array' AND je.type = 'text'"
+
+    predicate = (
+        f"{member} LIKE %s" if prefix_match else f"{member} IN ({', '.join(['%s'] * len(params))})"
     )
-    if not values:
-        return Q(pk__in=[]) if operator == "in" else None
-    match = Q()
-    for label in values:
-        match |= Q(**{f"{text_column}__contains": json.dumps(label)})
+    match = Q(
+        pk__in=RawSQL(  # noqa: S611 — no interpolation of user input: values are bound params
+            f"""SELECT we.event_id FROM website_event we, {source}
+                WHERE {type_guard} AND {predicate}""",
+            params,
+        )
+    )
     if operator in POSITIVE_OPERATORS:
         return match
     # Negated: keep rows with no labels at all, like the SQL branch does.
@@ -142,11 +167,6 @@ def apply_filters_to_qs(qs: QuerySet, filters: list[Filter] | None) -> QuerySet:
 
         if item.column not in VALID_FILTER_COLUMNS:
             continue
-        if item.column in CONTAINMENT_COLUMNS:
-            # The JSON document is matched as text (see _containment_q), which
-            # needs the column cast once per query.
-            json_column = CONTAINMENT_COLUMNS[item.column]
-            qs = qs.annotate(**{f"{json_column}_text": Cast(json_column, output_field=TextField())})
         q = _filter_q(item.column, item.operator, item.value)
         if q is not None:
             grouped[item.column].append((item.operator, q))

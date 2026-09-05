@@ -128,10 +128,10 @@ interface TrackerConfig {
 | `tracker.track(payload)` | Sends only allowed fields from the payload |
 | `tracker.enable()` / `tracker.disable()` | Toggle in-memory tracking |
 | `tracker.isEnabled()` | Check current in-memory tracking state |
+| `tracker.destroy()` | Remove listeners and stop auto-tracking |
 
 `groups` overrides the configured `data-groups` for that call; pass `[]` to
 send none.
-| `tracker.destroy()` | Remove listeners and stop auto-tracking |
 
 ## Frameworks
 

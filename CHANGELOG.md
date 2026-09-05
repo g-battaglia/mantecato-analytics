@@ -13,7 +13,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   view, and through `GET /api/analytics/groups/`, `mantecato top-groups`,
   `client.analytics.groups()` and the `groups` breakdown widget. Exact per-group
   unique visitors come from the existing scope-presence mechanism. A page may
-  declare several groups (max 5), so per-group views overlap and do not sum to
+  declare several groups (max 12, optionally namespaced as `cat:`/`tag:`), so
+  per-group views overlap and do not sum to
   the site total. The labels are page metadata declared by the site owner —
   nothing is read from the visitor — so the consent-free posture is unchanged
   (see `docs/privacy.md`). The Umami-compatible `tag` field, previously sent by

@@ -18,11 +18,11 @@ For every pageview the server records one anonymous row (`website_event`) with:
 
 - `url_path` (path only — see below), `page_title`, `hostname`
 - `content_groups`: optional labels the **site owner** declares for the page on
-  the tracker tag (`data-groups="guides,pricing"`). They describe the *page*,
-  exactly like its title, and are fixed at build time by the site: nothing about
-  the visitor is read, inferred or stored to produce them. A site that sets no
-  labels stores none. Capped at 5 labels of 64 characters, which the server
-  enforces. Operators must not put personal data in a label — see "Operator
+  the tracker tag (`data-groups="cat:guides,tag:python"`). They describe the
+  *page*, exactly like its title, and are fixed at build time by the site:
+  nothing about the visitor is read, inferred or stored to produce them. A site
+  that sets no labels stores none. Capped at 12 labels of 64 characters, which
+  the server enforces. Operators must not put personal data in a label — see "Operator
   responsibilities"
 - the referrer **domain** only (e.g. `google.com`) — never the full referrer
   URL, its query string, or any UTM/click ID; same-site referrals are dropped
