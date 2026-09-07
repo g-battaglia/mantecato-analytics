@@ -590,7 +590,8 @@ class TestSectionsGroupMode:
         assert "42" in content
         assert "Taxonomy" in content and "Min views" in content
         assert "A page can declare several groups" not in content
-        assert "Pie chart" not in content
+        # The bar/pie chart toggle is available in group mode too.
+        assert 'aria-label="Pie chart"' in content
         # Group rows now open Overview, carrying the exact content-group filter.
         assert 'href="/?' in content
         assert "content_group%3Aeq%3Atag%3Aguides" in content
@@ -606,39 +607,6 @@ class TestSectionsGroupMode:
         assert rows[0]["label"] == "guides"
         assert rows[0]["namespace"] == ""
         assert rows[0]["drilldown"] == "content_group:eq:guides"
-
-    @patch("apps.analytics.views.get_groups_data")
-    @patch("apps.analytics.views.resolve_websites_for_user")
-    def test_compare_renders_new_group(
-        self, mock_websites: MagicMock, mock_data: MagicMock, client: Client
-    ) -> None:
-        self._login(client)
-        mock_websites.return_value = [{"id": WEBSITE_ID, "name": "Test Site", "domain": "test.com"}]
-        mock_data.return_value = {
-            "groups": [
-                {
-                    "group": "family:new-family",
-                    "views": 12,
-                    "previous_views": 0,
-                    "change": None,
-                    "visitors": 8,
-                    "pages": 2,
-                    "pct": 25.0,
-                }
-            ],
-            "namespaces": ["family"],
-            "group_options": {
-                "namespace": None,
-                "search": None,
-                "min_views": 0,
-                "sort": "views",
-                "limit": 100,
-            },
-            "compare": True,
-        }
-        content = client.get("/sections/?by=group&group_compare=1").content.decode()
-        assert "Previous" in content and "Change" in content
-        assert "New" in content
 
     @patch("apps.analytics.views.get_sections_data")
     @patch("apps.analytics.views.resolve_websites_for_user")

@@ -158,14 +158,14 @@ def test_breakdown_groups_keeps_site_share_percentages(seeded):
     assert sum(pct.values()) != 100.0
 
 
-def test_group_widget_forces_bar_when_config_requests_pie(seeded):
+def test_group_widget_honours_pie_when_config_requests_it(seeded):
     w = render_widget(
         WEBSITE_ID,
         {},
         {"id": "wgb", "type": "breakdown", "source": "groups", "chart": "pie"},
         runtime_range=_range(),
     )
-    assert w["chart_kind"] == "bar"
+    assert w["chart_kind"] == "pie"
 
 
 def test_group_widget_applies_namespace(seeded):

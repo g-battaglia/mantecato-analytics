@@ -149,12 +149,6 @@
   function showFields() {
     var t = document.getElementById("cfg-type").value;
     var src = document.getElementById("cfg-source").value;
-    var chart = document.getElementById("cfg-chart");
-    if (chart) {
-      var pie = chart.querySelector('option[value="pie"]');
-      if (pie) { pie.disabled = src === "groups"; pie.hidden = src === "groups"; }
-      if (src === "groups" && chart.value === "pie") chart.value = "bar";
-    }
     drawer.querySelectorAll("[data-when]").forEach(function (el) {
       var when = el.getAttribute("data-when");
       var on = (when === t) ||
@@ -243,7 +237,7 @@
     if (t === "kpi") w.metric = document.getElementById("cfg-metric").value;
     if (t === "breakdown") {
       w.source = document.getElementById("cfg-source").value;
-      w.chart = w.source === "groups" ? "bar" : document.getElementById("cfg-chart").value;
+      w.chart = document.getElementById("cfg-chart").value;
       if (w.source === "sections") w.depth = parseInt(document.getElementById("cfg-depth").value, 10) || 1;
       if (w.source === "groups") w.namespace = document.getElementById("cfg-namespace").value.trim() || undefined;
     }

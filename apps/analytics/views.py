@@ -195,7 +195,6 @@ class SectionsView(AnalyticsBase):
                 min_views=self.request.GET.get("min_views", 0),
                 sort=self.request.GET.get("group_sort", "views"),
                 limit=self.request.GET.get("group_limit", 100),
-                compare=self.request.GET.get("group_compare") == "1",
             )
             return {
                 **data,

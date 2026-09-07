@@ -24,7 +24,7 @@
 {% if group_mode %}
 <form method="get" class="mb-4 rounded-lg border border-border bg-card p-3 shadow-sm">
   {% for key, vals in request.GET.lists %}
-    {% if key != "namespace" and key != "group_search" and key != "min_views" and key != "group_sort" and key != "group_limit" and key != "group_compare" %}
+    {% if key != "namespace" and key != "group_search" and key != "min_views" and key != "group_sort" and key != "group_limit" %}
       {% for val in vals %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endfor %}
     {% endif %}
   {% endfor %}
@@ -72,11 +72,6 @@
       </select>
     </label>
 
-    <label class="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs">
-      <input type="checkbox" name="group_compare" value="1" {% if compare %}checked{% endif %}>
-      {% trans "Previous period" %}
-    </label>
-
     <button type="submit" class="h-9 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">
       {% trans "Apply" %}
     </button>
@@ -92,11 +87,7 @@
 {% if chart_data.labels %}
 {% if group_mode %}{% trans "Top Content Groups" as t_top %}{% else %}{% trans "Top Sections" as t_top %}{% endif %}
 <div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
-  {% if group_mode %}
-    {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" hide_toggle=True %}
-  {% else %}
-    {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" %}
-  {% endif %}
+  {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" %}
 </div>
 {% endif %}
 
@@ -107,7 +98,6 @@
         <span class="flex-1">{% if group_mode %}{% trans "Group" %}{% else %}{% trans "Section" %}{% endif %}</span>
         <div class="flex gap-4 text-right">
           <span class="w-16">{% trans "Views" %}</span>
-          {% if compare %}<span class="w-16">{% trans "Previous" %}</span><span class="w-16">{% trans "Change" %}</span>{% endif %}
           <span class="w-20">{% trans "Visitors" %}</span>
           <span class="hidden w-14 sm:inline">{% trans "Pages" %}</span>
           <span class="hidden w-14 sm:inline">{% trans "%" %}</span>
@@ -123,12 +113,6 @@
         </div>
         <div class="relative flex gap-4 text-right tabular-nums">
           <span class="w-16 font-medium">{{ s.views|intcomma }}</span>
-          {% if compare %}
-          <span class="w-16 text-muted-foreground">{{ s.previous_views|default:0|intcomma }}</span>
-          <span class="w-16 {% if s.change > 0 %}text-green-500{% elif s.change < 0 %}text-red-500{% else %}text-muted-foreground{% endif %}">
-            {% if s.change is None %}{% trans "New" %}{% elif s.change > 0 %}+{{ s.change }}%{% else %}{{ s.change }}%{% endif %}
-          </span>
-          {% endif %}
           <span class="w-20 text-muted-foreground">{% if s.visitors is not None %}{{ s.visitors|intcomma }}{% else %}—{% endif %}</span>
           <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.pages|intcomma }}</span>
           <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.pct|floatformat:1 }}%</span>

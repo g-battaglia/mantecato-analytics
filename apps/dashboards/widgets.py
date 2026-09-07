@@ -259,9 +259,7 @@ def _render_breakdown(
     rows = _normalize_rows(
         data.get(result_key, []), label_key, value_key, keep_pct=source == "groups"
     )
-    # Overlapping groups are not parts of one whole: a pie would communicate a
-    # partition that does not exist. Saved legacy configs are forced to bars too.
-    chart_kind = "bar" if source == "groups" else ("pie" if widget.get("chart") == "pie" else "bar")
+    chart_kind = "pie" if widget.get("chart") == "pie" else "bar"
     chart = _pie_payload(rows) if chart_kind == "pie" else _bar_payload(rows, value_label)
     return {
         "kind": "breakdown",
