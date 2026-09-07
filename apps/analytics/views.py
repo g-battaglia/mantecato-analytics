@@ -144,7 +144,7 @@ def _breakdown_rows(rows: list[dict], key: str) -> list[dict]:
         namespace, separator, label = value.partition(":")
         out.append(
             {
-                "label": value if key == "section" else label.replace("/", " › "),
+                "label": value if key == "section" or not separator else label.replace("/", " › "),
                 "namespace": namespace if key == "group" and separator else "",
                 "value": value,
                 "views": row.get("views"),

@@ -596,6 +596,17 @@ class TestSectionsGroupMode:
         assert "content_group%3Aeq%3Atag%3Aguides" in content
         assert 'value="content_group"' in content
 
+    def test_unnamespaced_group_keeps_its_visible_label(self) -> None:
+        from apps.analytics.views import _breakdown_rows
+
+        rows = _breakdown_rows(
+            [{"group": "guides", "views": 5, "visitors": 3, "pages": 2, "pct": 50.0}],
+            "group",
+        )
+        assert rows[0]["label"] == "guides"
+        assert rows[0]["namespace"] == ""
+        assert rows[0]["drilldown"] == "content_group:eq:guides"
+
     @patch("apps.analytics.views.get_groups_data")
     @patch("apps.analytics.views.resolve_websites_for_user")
     def test_compare_renders_new_group(
