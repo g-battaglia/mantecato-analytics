@@ -85,6 +85,7 @@ The `analytics` module provides these read methods:
 |---|---|
 | `overview()` | Aggregate site metrics, charts, events, devices, geo, heatmap |
 | `pages()` | Per-URL metrics with pagination |
+| `groups()` | Pageviews by site-declared content group (`data-groups`) |
 | `events()` | Custom event-name counts and timelines |
 | `devices()` | Breakdown by browser, OS, device |
 | `geo()` | Country-level pageview distribution |

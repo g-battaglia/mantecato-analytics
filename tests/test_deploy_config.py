@@ -31,6 +31,10 @@ def test_static_and_security_settings_are_defined() -> None:
     assert hasattr(settings, "CSRF_COOKIE_SECURE")
 
 
+def test_postgresql_is_the_only_configured_backend() -> None:
+    assert settings.DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql"
+
+
 def test_env_example_documents_production_vars() -> None:
     env_example = (ROOT / ".env.example").read_text()
     assert "ALLOWED_HOSTS=" in env_example
@@ -65,18 +69,33 @@ def test_production_database_url_ignores_test_database_url() -> None:
         assert get_database_url(debug=True) == "postgres://test:test@test-db:5432/umami"
 
 
+def test_get_database_url_requires_postgres_scheme() -> None:
+    from django.core.exceptions import ImproperlyConfigured
+
+    from mantecato.config import require_database_url
+
+    # An empty scheme (e.g. a bare path) is as unsupported as sqlite.
+    with pytest.raises(ImproperlyConfigured):
+        require_database_url("mantecato.sqlite3", debug=False)
+
+
 def test_require_database_url_enforced_in_production() -> None:
     from django.core.exceptions import ImproperlyConfigured
 
     from mantecato.config import require_database_url
 
-    # Production without a database must fail loudly rather than fall back to SQLite.
+    # No database configured must fail loudly, in development too — PostgreSQL
+    # is the only supported backend and there is no SQLite fallback.
     with pytest.raises(ImproperlyConfigured):
         require_database_url("", debug=False)
-    # Development is allowed to use the SQLite fallback.
-    require_database_url("", debug=True)
-    # Production with a database URL is fine.
+    with pytest.raises(ImproperlyConfigured):
+        require_database_url("", debug=True)
+    # A non-PostgreSQL URL is rejected instead of silently degrading.
+    with pytest.raises(ImproperlyConfigured):
+        require_database_url("sqlite:///mantecato.sqlite3", debug=True)
+    # A PostgreSQL URL is fine in any mode.
     require_database_url("postgres://u:p@h:5432/db", debug=False)
+    require_database_url("postgresql://u:p@h:5432/db", debug=True)
 
 
 def test_open_hosts_warning() -> None:

@@ -68,6 +68,7 @@ function createTracker(config) {
     domains,
     hostname: customHostname,
     tag,
+    groups,
     excludeSearch = false,
     excludeHash = false,
     beforeSend,
@@ -130,19 +131,23 @@ function createTracker(config) {
     const url = normalize(eventPayload.url || getUrl());
     const title = eventPayload.title || getTitle();
     const referrer = getReferrer();
+    const payloadGroups = eventPayload.groups === void 0 ? groups : eventPayload.groups;
     return {
       website: websiteId,
       hostname: customHostname || getHostname(),
       title,
       url,
       ...referrer ? { referrer } : {},
-      ...tag ? { tag } : {}
+      ...tag ? { tag } : {},
+      ...payloadGroups?.length ? { groups: payloadGroups } : {}
     };
   }
-  function sanitizePayload(payload) {
+  function sanitizePayload(payload, applyConfiguredGroups = true) {
+    const payloadGroups = Array.isArray(payload.groups) ? payload.groups : applyConfiguredGroups ? groups : [];
     const base = buildPayload({
       url: payload.url,
-      title: payload.title
+      title: payload.title,
+      groups: payloadGroups
     });
     const name = typeof payload.name === "string" ? payload.name.trim().slice(0, 100) : "";
     return {
@@ -160,7 +165,7 @@ function createTracker(config) {
       if (!finalPayload) return;
     }
     const apiUrl = `${baseUrl}${endpoint}`;
-    const body = { type: "event", payload: sanitizePayload(finalPayload) };
+    const body = { type: "event", payload: sanitizePayload(finalPayload, false) };
     try {
       await fetch(apiUrl, {
         method: "POST",
@@ -295,12 +300,12 @@ function createTracker(config) {
       const url = normalize(options?.url || getUrl());
       if (url !== currentUrl) nextPage();
       currentUrl = url;
-      return send(buildPayload({ url, title: options?.title }));
+      return send(buildPayload({ url, title: options?.title, groups: options?.groups }));
     },
     event(name, options) {
       const url = normalize(options?.url || getUrl());
       currentUrl = url;
-      return send({ ...buildPayload({ url, title: options?.title }), name });
+      return send({ ...buildPayload({ url, title: options?.title, groups: options?.groups }), name });
     },
     track(payloadOrFn) {
       if (typeof payloadOrFn === "function") {

@@ -3,7 +3,7 @@
 Supported pages:
 - Overview: total pageviews, trends, top pages, device breakdowns, geo, heatmap
 - Pages: per-URL pageview counts
-- Sections: URL-prefix pageview groupings
+- Sections: URL-prefix pageview groupings, or content groups with ?by=group
 - Devices: browser, OS, device breakdowns
 - Geo: country/region/city pageview distribution
 - Sources: top referrer domains (referrer **domain** only — no full URL/UTM)
@@ -28,6 +28,7 @@ from apps.analytics.chart_data import (
     build_events_timeline_data,
     build_generic_pie_data,
     build_geo_bubble_data,
+    build_groups_bar_chart_data,
     build_pages_bar_chart_data,
     build_sections_bar_chart_data,
     build_timeseries_chart_data,
@@ -37,6 +38,7 @@ from apps.analytics.services import (
     get_devices_data,
     get_events_data,
     get_geo_data,
+    get_groups_data,
     get_heatmap_data,
     get_landing_data,
     get_overview_data,
@@ -78,9 +80,7 @@ class OverviewView(AnalyticsBase):
         super().setup(request, *args, **kwargs)
         # Bare root + multiple sites + no explicit selection → show the picker
         # instead of silently defaulting to the first accessible site.
-        self.show_site_picker = (
-            not request.GET.get("website") and len(self.websites) > 1
-        )
+        self.show_site_picker = not request.GET.get("website") and len(self.websites) > 1
 
     @property
     def has_data(self) -> bool:
@@ -136,14 +136,79 @@ class PagesView(AnalyticsBase):
         return get_pages_data(self.website_id, self.date_range, self.filters, page=page)
 
 
+def _breakdown_rows(rows: list[dict], key: str) -> list[dict]:
+    """Normalise section/group rows so one template renders either dimension."""
+    out = []
+    for row in rows:
+        value = str(row[key])
+        namespace, separator, label = value.partition(":")
+        out.append(
+            {
+                "label": value if key == "section" or not separator else label.replace("/", " › "),
+                "namespace": namespace if key == "group" and separator else "",
+                "value": value,
+                "views": row.get("views"),
+                "previous_views": row.get("previous_views"),
+                "change": row.get("change"),
+                "visitors": row.get("visitors"),
+                "pages": row.get("pages"),
+                "pct": row.get("pct"),
+                # A group opens Overview with all its existing analytical cuts;
+                # a URL section keeps the historical Pages drill-down.
+                "target": "analytics_pages" if key == "section" else "overview",
+                "drilldown": (
+                    f"url_path:starts_with:{value}"
+                    if key == "section"
+                    else f"content_group:eq:{value}"
+                ),
+            }
+        )
+    return out
+
+
 class SectionsView(AnalyticsBase):
-    """Site sections breakdown by URL prefix."""
+    """Site sections breakdown — by URL prefix (default) or by content group.
+
+    ``?by=group`` switches the grouping to the labels the site declares on the
+    tracker tag. It is the same table and the same chart: only the dimension
+    changes, so a site whose URLs carry no taxonomy still gets a breakdown.
+
+    In group mode the rows may overlap (a page can be in several groups), so
+    the percentages are share-of-site rather than a partition.
+    """
 
     template_name = "analytics/sections.html"
-    _charts = [ChartMapping("sections_chart_data", build_sections_bar_chart_data, "sections")]
 
-    def _call_service(self) -> dict:
-        return get_sections_data(self.website_id, self.date_range, self.filters)
+    @property
+    def group_mode(self) -> bool:
+        """True when the page is grouping by content group instead of URL."""
+        return self.request.GET.get("by") == "group"
+
+    def get_service_data(self) -> dict:
+        if self.group_mode:
+            data = get_groups_data(
+                self.website_id,
+                self.date_range,
+                self.filters,
+                namespace=self.request.GET.get("namespace"),
+                search=self.request.GET.get("group_search"),
+                min_views=self.request.GET.get("min_views", 0),
+                sort=self.request.GET.get("group_sort", "views"),
+                limit=self.request.GET.get("group_limit", 100),
+            )
+            return {
+                **data,
+                "chart_data": build_groups_bar_chart_data(data["groups"]),
+                "breakdown_rows": _breakdown_rows(data["groups"], "group"),
+                "group_mode": True,
+            }
+        data = get_sections_data(self.website_id, self.date_range, self.filters)
+        return {
+            **data,
+            "chart_data": build_sections_bar_chart_data(data["sections"]),
+            "breakdown_rows": _breakdown_rows(data["sections"], "section"),
+            "group_mode": False,
+        }
 
 
 class DevicesView(AnalyticsBase):

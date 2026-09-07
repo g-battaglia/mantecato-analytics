@@ -4,9 +4,6 @@ Unlike the per-page tests that mock the service layer, these drive the full
 view -> service -> query-engine -> template stack against an empty Postgres
 test database. They catch template/context regressions (missing ``{% load %}``,
 wrong context keys, removed helpers) that mocked-render tests cannot.
-
-Requires Postgres (raw_query path); on SQLite the query engine takes the ORM
-fallback, which is also exercised here when the test DB is SQLite.
 """
 
 from __future__ import annotations

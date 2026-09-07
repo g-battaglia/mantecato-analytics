@@ -207,15 +207,37 @@ def build_sections_bar_chart_data(sections: list[dict], limit: int = 15) -> dict
     Returns:
         Chart.js bar config with section names as labels and view counts as data.
     """
-    if not sections:
+    return _build_label_bar_chart_data(sections, "section", limit)
+
+
+def build_groups_bar_chart_data(groups: list[dict], limit: int = 15) -> dict:
+    """Convert content-group rows to a Chart.js vertical bar payload.
+
+    Same chart as the sections bar, keyed on the site-declared label instead of
+    the URL prefix. Bars overlap by design: a page in two groups feeds both.
+
+    Args:
+        groups: Rows ``[{"group": str, "views": int}, ...]`` from
+            ``get_top_groups``.
+        limit: Maximum groups to include (default 15).
+
+    Returns:
+        Chart.js bar config with group names as labels and view counts as data.
+    """
+    return _build_label_bar_chart_data(groups, "group", limit)
+
+
+def _build_label_bar_chart_data(rows: list[dict], key: str, limit: int) -> dict:
+    """Shared body of the section/group bar charts — identical but for the key."""
+    if not rows:
         return {"labels": [], "datasets": []}
-    top = sections[:limit]
+    top = rows[:limit]
     return {
-        "labels": [s["section"] for s in top],
+        "labels": [row[key] for row in top],
         "datasets": [
             {
                 "label": "Views",
-                "data": [s["views"] for s in top],
+                "data": [row["views"] for row in top],
                 "backgroundColor": "rgba(99, 102, 241, 0.7)",
             }
         ],

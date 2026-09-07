@@ -77,7 +77,7 @@ def read_visit_stats(
     daily aggregates (which cannot be filtered).
     """
     from apps.core.models import VisitorDaily
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     agg_upper_day, event_lower = _retention_split(current_window())
 
@@ -125,8 +125,8 @@ def read_scope_visitors(
     """Return exact unique visitors per ``scope_value`` — **filterable** at read time.
 
     Computed from the per-event window digests (``visitor_key``) for ``page`` /
-    ``section`` (pageviews) and ``event`` (custom events), so a country/device/bot
-    filter slices them downstream — the dimensionless aggregates couldn't. Exact
+    ``section`` / ``group`` (pageviews) and ``event`` (custom events), so a
+    country/device/bot filter slices them downstream — the dimensionless aggregates couldn't. Exact
     within the digest retention window; the portion of the range beyond retention
     folds in the permanent ``VisitorPeriod`` aggregates (only when no content
     filter narrows the population — they can't be sliced). Returns
@@ -137,7 +137,7 @@ def read_scope_visitors(
     from collections import defaultdict
 
     from apps.core.models import VisitorPeriod
-    from core.mantecato_core.queries.orm_fallbacks import (
+    from core.mantecato_core.queries.event_querysets import (
         custom_event_queryset,
         pageview_queryset,
     )
@@ -162,6 +162,22 @@ def read_scope_visitors(
                 seen[sec].add(vkey)
         for sec, keys in seen.items():
             out[sec] = len(keys)
+    elif scope == "group":
+        # Content groups live in a JSON list, so the distinct-count is done in
+        # Python like the section branch rather than by the database. A visitor
+        # who read two pages of the same group counts once for that group.
+        seen_groups: dict[str, set[str]] = defaultdict(set)
+        for groups, vkey in ev_qs.values_list("content_groups", "visitor_key").iterator():
+            if not isinstance(groups, list):
+                continue
+            for group in groups:
+                # `want` is a set: an unhashable member (a dict or list stored
+                # by something other than the tracker) would raise TypeError
+                # rather than simply not matching.
+                if isinstance(group, str) and group in want:
+                    seen_groups[group].add(vkey)
+        for group, keys in seen_groups.items():
+            out[group] = len(keys)
     else:
         field = "event_name" if scope == "event" else "url_path"
         rows = (
@@ -212,7 +228,7 @@ def get_landing_metrics(
     consistent with the site-level KPIs.
     """
     from apps.core.models import VisitorPeriod
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     window = current_window()
     agg_upper_day, event_lower = _retention_split(window)
@@ -275,7 +291,7 @@ def visitors_by_bucket(
     is the same daily-uniques-vs-period-total relationship Plausible/Fathom show; the
     KPI card carries a "Deduplicated within each month" note for multi-month ranges.
     """
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     gran = granularity if granularity in _GRANULARITIES else "day"
     rows = (
@@ -310,7 +326,7 @@ def visits_by_bucket(
     from itertools import groupby
 
     from apps.core.models import WebsiteEvent
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     gran = granularity if granularity in _GRANULARITIES else "day"
     rows = (

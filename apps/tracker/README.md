@@ -11,6 +11,8 @@ This module receives anonymous analytics events from `@mantecato/tracker` via
 - Coarse browser, OS, and device labels parsed from the User-Agent
 - Country code
 - Event-level bot flag and bot reason
+- Content groups: page labels the site declares (`data-groups`), normalised to
+  at most 12 lowercase labels of 96 characters
 
 It does not store sessions, visit IDs, raw IPs, raw User-Agents, query strings,
 UTM parameters, click IDs, screen size, language, event payload/properties,
@@ -31,10 +33,20 @@ The endpoint accepts the Umami-compatible `type: "event"` envelope.
     "website": "<uuid>",
     "url": "/page",
     "title": "Page Title",
-    "hostname": "example.com"
+    "hostname": "example.com",
+    "groups": ["guides", "pricing"]
   }
 }
 ```
+
+`groups` is optional: labels describing **the page**, declared by the site owner
+(a list, or a comma-separated string). They are lowercased, de-duplicated and
+capped at 12 labels of 96 characters. The Umami `tag` field is accepted as a
+single group. When they are static, topic-only labels declared by the site, nothing about
+the visitor is read to produce them and they remain page metadata like the
+title. Mantecato normalises labels but does not inspect or redact their meaning:
+labels derived from visitors, cohorts, form input or personal data are outside
+this guarantee and must not be sent.
 
 ### Custom Event
 
@@ -52,6 +64,9 @@ The endpoint accepts the Umami-compatible `type: "event"` envelope.
 ```
 
 Only `name` is accepted for custom events. Any submitted properties are ignored.
+A custom event does store the page's `groups`, so an event fired on a labelled
+page stays filterable by `content_group` like its pageview. Groups are page
+metadata, not event properties.
 
 ### Response
 

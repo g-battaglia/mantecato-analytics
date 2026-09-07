@@ -15,6 +15,9 @@ SESSION_COLUMNS: list[str] = []
 
 VALID_FILTER_COLUMNS: set[str] = {
     "url_path",
+    # Site-declared page labels. Stored as a JSON list, so it is the one
+    # filterable column that is not a scalar — see CONTAINMENT_COLUMNS.
+    "content_group",
     "page_title",
     "hostname",
     "browser",
@@ -24,6 +27,18 @@ VALID_FILTER_COLUMNS: set[str] = {
     "event_name",
     "referrer_domain",
 }
+
+#: Filter columns backed by a JSON list on ``website_event`` instead of a scalar
+#: column. They match by containment: an operator is meaningful here only if it
+#: can be asked of *one member* of the list. Membership and prefix qualify,
+#: substring matching does not (see :func:`build_filter_sql`), and unsupported
+#: operators are dropped rather than silently matching nothing.
+CONTAINMENT_COLUMNS: dict[str, str] = {"content_group": "content_groups"}
+
+#: Operators answerable per member. ``starts_with`` exists for namespaced labels
+#: ("cat:", "tag:"), which is how a site keeps taxonomies apart in one list — it
+#: is the difference between "the category aspects" and "the tag aspects".
+CONTAINMENT_OPERATORS = frozenset({"eq", "neq", "in", "not_in", "starts_with", "not_starts_with"})
 
 VALID_OPERATORS = {
     "eq",
@@ -37,10 +52,24 @@ VALID_OPERATORS = {
     "not_in",
 }
 
+#: Per-column exceptions to the global operator catalog. Parsers and dashboard
+#: validation use this too, so an unsupported combination is rejected before it
+#: can silently degrade into an unfiltered query.
+COLUMN_OPERATORS: dict[str, frozenset[str]] = {
+    "content_group": CONTAINMENT_OPERATORS,
+}
+
+
+def operator_is_valid(column: str, operator: str) -> bool:
+    """Return whether *operator* is meaningful for *column*."""
+    return operator in COLUMN_OPERATORS.get(column, VALID_OPERATORS)
+
+
 # Positive (inclusive) operators. Within one column these OR together
 # ("/trial/ OR /pro/"); the negated operators instead AND ("exclude BOTH
 # /admin/ AND /login/") — OR-ing negations would be a tautology. Both the raw
-# SQL (build_filter_sql) and the ORM fallback (apply_filters_to_qs) honour this.
+# SQL (build_filter_sql) and the queryset path (apply_filters_to_qs) honour
+# this.
 POSITIVE_OPERATORS = frozenset({"eq", "contains", "starts_with", "in"})
 
 GRANULARITIES = ("minute", "hour", "day", "week", "month")
@@ -134,7 +163,9 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
     for f in filters:
         if f.column == "__bot_filter__":
             bot_sql = build_bot_filter_sql(f.value)
-        elif f.column in VALID_FILTER_COLUMNS:
+        elif f.column in VALID_FILTER_COLUMNS and operator_is_valid(f.column, f.operator):
+            # Defence in depth for programmatic callers that construct Filter
+            # objects directly instead of going through parse_filters_from_params.
             regular_filters.append(f)
 
     grouped: dict[str, list[tuple[Filter, int]]] = {}
@@ -153,6 +184,52 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
             param_name = f"f{index}"
             prefix = "we"  # All columns are on website_event
             bucket = pos_clauses if f.operator in POSITIVE_OPERATORS else neg_clauses
+
+            if f.column in CONTAINMENT_COLUMNS:
+                # JSON-list column: match one top-level string member. Exact,
+                # membership and prefix operators are meaningful; substring
+                # operators are rejected before reaching this layer.
+                if f.operator not in CONTAINMENT_OPERATORS:
+                    continue
+                json_column = CONTAINMENT_COLUMNS[f.column]
+                if f.operator in ("starts_with", "not_starts_with"):
+                    # A prefix cannot use the GIN index (that answers membership,
+                    # not shape), so this scans and expands every row: measured at
+                    # ~8s over 30 days of 600k labelled pageviews, against ~2s for
+                    # the same aggregation unfiltered. Fine for an occasional
+                    # "everything tagged" question, too slow to sit on a default
+                    # view. Prefer an exact membership filter where one will do.
+                    # The array guard mirrors the aggregation query's.
+                    clause = (
+                        f"EXISTS (SELECT 1 FROM jsonb_array_elements("
+                        f"CASE WHEN jsonb_typeof({prefix}.{json_column}) = 'array' "
+                        f"THEN {prefix}.{json_column} ELSE '[]'::jsonb END"
+                        f") AS e(v) WHERE jsonb_typeof(e.v) = 'string' "
+                        f"AND e.v #>> '{{}}' ILIKE {{{{{param_name}}}}})"
+                    )
+                    # NOT EXISTS already keeps rows with no labels at all.
+                    bucket.append(clause if f.operator == "starts_with" else f"NOT {clause}")
+                    params[param_name] = f"{f.value}%"
+                    continue
+                values = (
+                    [v.strip() for v in (f.value.split(",") if f.value else []) if v.strip()]
+                    if f.operator in ("in", "not_in")
+                    else [f.value]
+                )
+                if not values:
+                    if f.operator == "in":
+                        bucket.append("1 = 0")
+                    continue
+                # ``?|`` asks "does the array hold any of these labels?" — the
+                # GIN index on the column answers it directly.
+                clause = f"{prefix}.{json_column} ?| {{{{{param_name}::text[]}}}}"
+                bucket.append(
+                    clause
+                    if f.operator in POSITIVE_OPERATORS
+                    else f"({prefix}.{json_column} IS NULL OR NOT {clause})"
+                )
+                params[param_name] = values
+                continue
 
             if f.operator == "eq":
                 bucket.append(f"{prefix}.{f.column} = {{{{{param_name}}}}}")
@@ -245,7 +322,7 @@ def parse_filters_from_params(filter_list: list[str]) -> list[Filter]:
             continue
         if column not in VALID_FILTER_COLUMNS:
             continue
-        if operator not in VALID_OPERATORS:
+        if not operator_is_valid(column, operator):
             continue
         result.append(Filter(column=column, operator=operator, value=value))
     return result

@@ -12,11 +12,6 @@ if TYPE_CHECKING:
 
 from core.mantecato_core.database import raw_query
 from core.mantecato_core.filters import Filter, prepare_filters
-from core.mantecato_core.queries.orm_fallbacks import (
-    pageview_queryset,
-    should_use_orm_fallback,
-    stats_dict,
-)
 
 
 def get_comparison_stats(
@@ -31,12 +26,6 @@ def get_comparison_stats(
 
     Returns ``[{"period": "current", "pageviews": N}, {"period": "previous", "pageviews": N}]``.
     """
-    if should_use_orm_fallback():
-        return [
-            {"period": "current", **stats_dict(pageview_queryset(website_id, cur_start, cur_end, filters))},
-            {"period": "previous", **stats_dict(pageview_queryset(website_id, prev_start, prev_end, filters))},
-        ]
-
     filter_where, filter_params, _ = prepare_filters(filters or [])
     rows = raw_query(
         """SELECT 'current' AS period,

@@ -13,7 +13,7 @@
 
   var PREVIEW_URL = root.getAttribute("data-preview-url");
   var COLUMNS = [
-    "url_path", "page_title", "hostname", "country",
+    "url_path", "content_group", "page_title", "hostname", "country",
     "browser", "os", "device", "event_name", "referrer_domain",
   ];
   var OPERATORS = [
@@ -22,6 +22,8 @@
     ["not_starts_with", "does not start with"], ["in", "in (comma list)"],
     ["not_in", "not in (comma list)"],
   ];
+  var GROUP_OPERATORS = { eq: true, neq: true, starts_with: true,
+    not_starts_with: true, in: true, not_in: true };
   var DEFAULTS = { kpi: { metric: "pageviews" }, breakdown: { source: "events", chart: "bar" } };
 
   function readJSON(id, fallback) {
@@ -149,7 +151,9 @@
     var src = document.getElementById("cfg-source").value;
     drawer.querySelectorAll("[data-when]").forEach(function (el) {
       var when = el.getAttribute("data-when");
-      var on = (when === t) || (when === "breakdown-sections" && t === "breakdown" && src === "sections");
+      var on = (when === t) ||
+        (when === "breakdown-sections" && t === "breakdown" && src === "sections") ||
+        (when === "breakdown-groups" && t === "breakdown" && src === "groups");
       el.classList.toggle("hidden", !on);
     });
   }
@@ -159,12 +163,24 @@
     row.className = "mb-1.5 flex items-center gap-1";
     var parts = (f || "").split(":");
     var colOpts = COLUMNS.map(function (c) { return '<option value="' + c + '"' + (parts[0] === c ? " selected" : "") + ">" + c + "</option>"; }).join("");
-    var opOpts = OPERATORS.map(function (o) { return '<option value="' + o[0] + '"' + (parts[1] === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
+    function operatorOptions(column, selected) {
+      return OPERATORS.filter(function (o) {
+        return column !== "content_group" || GROUP_OPERATORS[o[0]];
+      }).map(function (o) {
+        return '<option value="' + o[0] + '"' + (selected === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+      }).join("");
+    }
+    var opOpts = operatorOptions(parts[0], parts[1]);
     row.innerHTML =
       '<select class="f-col h-8 rounded-md border border-input bg-background px-1.5 text-xs">' + colOpts + "</select>" +
       '<select class="f-op h-8 rounded-md border border-input bg-background px-1 text-xs">' + opOpts + "</select>" +
       '<input class="f-val h-8 w-full rounded-md border border-input bg-background px-1.5 text-xs" value="' + esc(parts.slice(2).join(":")) + '">' +
       '<button type="button" class="f-del shrink-0 text-muted-foreground hover:text-destructive"><i data-lucide="x" class="size-3.5"></i></button>';
+    row.querySelector(".f-col").addEventListener("change", function () {
+      var op = row.querySelector(".f-op");
+      op.innerHTML = operatorOptions(this.value, op.value);
+      if (!op.value) op.value = "eq";
+    });
     row.querySelector(".f-del").addEventListener("click", function () { row.remove(); });
     container.appendChild(row);
     if (window.lucide) lucide.createIcons();
@@ -190,6 +206,7 @@
     document.getElementById("cfg-source").value = d.source || "events";
     document.getElementById("cfg-chart").value = d.chart || "bar";
     document.getElementById("cfg-depth").value = d.depth || 2;
+    document.getElementById("cfg-namespace").value = d.namespace || "";
     document.getElementById("cfg-dateRange").value = d.dateRange || "";
     var fc = document.getElementById("cfg-filters");
     fc.innerHTML = "";
@@ -222,6 +239,7 @@
       w.source = document.getElementById("cfg-source").value;
       w.chart = document.getElementById("cfg-chart").value;
       if (w.source === "sections") w.depth = parseInt(document.getElementById("cfg-depth").value, 10) || 1;
+      if (w.source === "groups") w.namespace = document.getElementById("cfg-namespace").value.trim() || undefined;
     }
     if (editingId) {
       var existing = findWidget(editingId);

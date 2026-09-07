@@ -34,6 +34,38 @@ class TestOverview:
         assert transport.last["params"]["bot_filter"] == "1"
 
 
+class TestGroups:
+    def test_basic_call(self, client: MantecatoClient, transport: MockTransport):
+        transport.response_json = {"groups": []}
+        client.analytics.groups("site-1", date_range="30d")
+        assert transport.last["path"] == "/api/analytics/groups/"
+        assert transport.last["params"]["range"] == "30d"
+
+    def test_with_content_group_filter(self, client: MantecatoClient, transport: MockTransport):
+        transport.response_json = {"groups": []}
+        client.analytics.groups("site-1", filters=["content_group:eq:guides"])
+        assert "filter" in transport.last["params"]
+
+    def test_analysis_options(self, client: MantecatoClient, transport: MockTransport):
+        transport.response_json = {"groups": []}
+        client.analytics.groups(
+            "site-1",
+            namespace="tag",
+            search="moon",
+            min_views=10,
+            sort="pages",
+            limit=20,
+            compare=True,
+        )
+        params = transport.last["params"]
+        assert params["namespace"] == "tag"
+        assert params["search"] == "moon"
+        assert params["min_views"] == "10"
+        assert params["sort"] == "pages"
+        assert params["limit"] == "20"
+        assert params["compare"] == "1"
+
+
 class TestPages:
     def test_with_page(self, client: MantecatoClient, transport: MockTransport):
         transport.response_json = {"pages": []}

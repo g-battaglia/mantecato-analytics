@@ -300,3 +300,74 @@ describe("beforeSend", () => {
     expect(sentPayloads).toHaveLength(0);
   });
 });
+
+describe("content groups", () => {
+  it("rides along on pageviews", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["guides", "pricing"] }));
+    await tracker.pageview();
+
+    expect(lastPayload().payload.groups).toEqual(["guides", "pricing"]);
+  });
+
+  it("rides along on custom events", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["guides"] }));
+    await tracker.event("signup");
+
+    const { payload } = lastPayload();
+    expect(payload.name).toBe("signup");
+    expect(payload.groups).toEqual(["guides"]);
+  });
+
+  it("is omitted when the site declares none", async () => {
+    const tracker = createTracker(makeConfig());
+    await tracker.pageview();
+
+    expect(lastPayload().payload).not.toHaveProperty("groups");
+  });
+
+  it("is omitted when the list is empty", async () => {
+    const tracker = createTracker(makeConfig({ groups: [] }));
+    await tracker.pageview();
+
+    expect(lastPayload().payload).not.toHaveProperty("groups");
+  });
+
+  it("survives a track() call with an explicit payload", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["guides"] }));
+    await tracker.track({ url: "/other", title: "Other" });
+
+    const { payload } = lastPayload();
+    expect(payload.url).toContain("/other");
+    expect(payload.groups).toEqual(["guides"]);
+  });
+
+  it("accepts route-specific groups in pageview and event options", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["default"] }));
+
+    await tracker.pageview({ groups: ["guides"] });
+    expect(lastPayload().payload.groups).toEqual(["guides"]);
+
+    await tracker.event("signup", { groups: ["pricing"] });
+    expect(lastPayload().payload.groups).toEqual(["pricing"]);
+  });
+
+  it("preserves groups supplied by track() and beforeSend", async () => {
+    const routeTracker = createTracker(makeConfig({ groups: ["default"] }));
+    await routeTracker.track({ url: "/route", groups: ["from-route"] });
+    expect(lastPayload().payload.groups).toEqual(["from-route"]);
+
+    const hookTracker = createTracker(makeConfig({
+      groups: ["default"],
+      beforeSend: (_type, payload) => ({ ...payload, groups: ["from-hook"] }),
+    }));
+    await hookTracker.pageview();
+    expect(lastPayload().payload.groups).toEqual(["from-hook"]);
+  });
+
+  it("lets a route clear configured groups", async () => {
+    const tracker = createTracker(makeConfig({ groups: ["default"] }));
+    await tracker.pageview({ groups: [] });
+
+    expect(lastPayload().payload).not.toHaveProperty("groups");
+  });
+});
