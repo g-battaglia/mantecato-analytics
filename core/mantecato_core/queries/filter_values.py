@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 from core.mantecato_core.database import raw_query
-from core.mantecato_core.queries.orm_fallbacks import should_use_orm_fallback
 
 # Columns that can be filtered and whose distinct values power the typeahead.
 _VALID_COLUMNS = {
@@ -36,27 +35,6 @@ def get_filter_values(
 ) -> list[str]:
     """Return distinct values for a column, optionally filtered by a search substring."""
     if column == "content_group":
-        if should_use_orm_fallback():
-            from apps.core.models import WebsiteEvent
-
-            stored_groups = WebsiteEvent.objects.filter(
-                website_id=website_id,
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-                event_type=1,
-            ).values_list("content_groups", flat=True)
-            needle = search.casefold() if search else None
-            values = {
-                group
-                for groups in stored_groups
-                if isinstance(groups, list)
-                for group in groups
-                if isinstance(group, str)
-                and group
-                and (needle is None or needle in group.casefold())
-            }
-            return sorted(values)[:limit]
-
         where_extra = "AND grp.elem #>> '{}' ILIKE {{search}}" if search else ""
         params: dict[str, Any] = {
             "websiteId": website_id,

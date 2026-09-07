@@ -338,6 +338,9 @@ class AnalyticsGroupsView(_AnalyticsJSONView):
 
     Query params:
         ``website`` (required), ``start_at``, ``end_at``, plus filter params.
+        Dimension controls: ``namespace``, ``search``, ``min_views``, ``sort``
+        (``views``, ``pages`` or ``name``), ``limit`` (20, 50 or 100), and
+        ``compare=1`` for the previous period.
 
     Response:
         200 JSON with per-group views, distinct pages, exact unique visitors
@@ -346,6 +349,17 @@ class AnalyticsGroupsView(_AnalyticsJSONView):
     """
 
     service_name = "get_groups_data"
+
+    def extra_kwargs(self, request: HttpRequest) -> dict[str, Any]:
+        """Forward validated dimension-analysis controls."""
+        return {
+            "namespace": request.GET.get("namespace"),
+            "search": request.GET.get("search"),
+            "min_views": request.GET.get("min_views", 0),
+            "sort": request.GET.get("sort", "views"),
+            "limit": safe_int(request.GET.get("limit"), default=100),
+            "compare": request.GET.get("compare") == "1",
+        }
 
 
 class AnalyticsEventsView(_AnalyticsJSONView):

@@ -31,7 +31,11 @@ from core.mantecato_core.helpers import format_duration
 from core.mantecato_core.queries.devices import get_device_metrics_multi
 from core.mantecato_core.queries.events import get_event_metrics, get_event_time_series
 from core.mantecato_core.queries.geo import get_geo_metrics
-from core.mantecato_core.queries.groups import get_top_groups
+from core.mantecato_core.queries.groups import (
+    get_group_namespaces,
+    get_top_groups,
+    normalise_group_options,
+)
 from core.mantecato_core.queries.heatmap import get_traffic_heatmap
 from core.mantecato_core.queries.pageviews import get_page_metrics
 from core.mantecato_core.queries.realtime import (
@@ -42,11 +46,11 @@ from core.mantecato_core.queries.realtime import (
 from core.mantecato_core.queries.sources import get_channel_metrics, get_referrer_metrics
 from core.mantecato_core.queries.stats import (
     get_country_breakdown,
+    get_pageview_count,
     get_pageview_time_series,
     get_pageview_time_series_comparison,
     get_top_pages,
     get_top_sections,
-    get_website_stats,
     get_website_stats_comparison,
 )
 from core.mantecato_core.queries.visitors import (
@@ -148,7 +152,7 @@ def _attach_scope_visitors(
     filters: list[Filter] | None = None,
     depth: int = 2,
 ) -> None:
-    """Attach **exact** per-scope (page/section/event) unique visitors to *rows*.
+    """Attach **exact** per-scope (page/section/group/event) unique visitors to *rows*.
 
     Counts come from the per-event digests at read time, so the active **filters**
     (country/device/bot) slice them downstream — like the session-based product.
@@ -539,7 +543,12 @@ def get_groups_data(
     date_range: DateRange,
     filters: list[Filter] | None = None,
     *,
+    namespace: str | None = None,
+    search: str | None = None,
+    min_views: int = 0,
+    sort: str = "views",
     limit: int = 100,
+    compare: bool = False,
 ) -> dict[str, Any]:
     """Fetch content-group analytics (site-declared page labels).
 
@@ -556,7 +565,28 @@ def get_groups_data(
     start = date_range.start_date
     end = date_range.end_date
 
-    groups = get_top_groups(website_id, start, end, limit=limit, filters=filters)
+    options = normalise_group_options(
+        namespace=namespace,
+        search=search,
+        min_views=min_views,
+        sort=sort,
+        limit=limit,
+        preset_limits_only=True,
+    )
+    # When comparing, query a wider candidate set before the final sort/limit so
+    # a group that disappeared in the current period can still surface at -100%.
+    query_limit = 1000 if compare else options["limit"]
+    groups = get_top_groups(
+        website_id,
+        start,
+        end,
+        limit=query_limit,
+        filters=filters,
+        namespace=options["namespace"],
+        search=options["search"],
+        min_views=options["min_views"],
+        sort=options["sort"],
+    )
     _attach_scope_visitors(
         website_id,
         start,
@@ -566,10 +596,56 @@ def get_groups_data(
         value_key="group",
         filters=filters,
     )
-    pageview_total = get_website_stats(website_id, start, end, filters)["pageviews"]
+    pageview_total = get_pageview_count(website_id, start, end, filters)
     _add_percentage(groups, "views", total=pageview_total)
 
-    return {"groups": groups}
+    if compare:
+        previous_range = get_comparison_range(date_range, "previous_period")
+        previous = get_top_groups(
+            website_id,
+            previous_range.start_date,
+            previous_range.end_date,
+            limit=1000,
+            filters=filters,
+            namespace=options["namespace"],
+            search=options["search"],
+            min_views=options["min_views"],
+            sort=options["sort"],
+        )
+        by_group = {row["group"]: row for row in groups}
+        for old in previous:
+            row = by_group.setdefault(
+                old["group"],
+                {
+                    "group": old["group"],
+                    "views": 0,
+                    "pages": 0,
+                    "visitors": 0,
+                    "pct": 0.0,
+                },
+            )
+            row["previous_views"] = old["views"]
+        for row in by_group.values():
+            previous_views = row.setdefault("previous_views", 0)
+            if previous_views:
+                row["change"] = round((row["views"] - previous_views) / previous_views * 100, 1)
+            else:
+                row["change"] = None
+        groups = list(by_group.values())
+        if options["sort"] == "name":
+            groups.sort(key=lambda row: row["group"])
+        elif options["sort"] == "pages":
+            groups.sort(key=lambda row: (-row["pages"], -row["views"], row["group"]))
+        else:
+            groups.sort(key=lambda row: (-row["views"], row["group"]))
+        groups = groups[: options["limit"]]
+
+    return {
+        "groups": groups,
+        "namespaces": get_group_namespaces(website_id, start, end, filters),
+        "group_options": options,
+        "compare": compare,
+    }
 
 
 def get_events_data(*args: Any, **kwargs: Any) -> dict[str, Any]:

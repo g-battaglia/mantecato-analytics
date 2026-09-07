@@ -396,8 +396,8 @@ def record_scope_presence(
 ) -> None:
     """Record that *visitor_key* was seen on each ``(scope, scope_value)`` this window.
 
-    Enables exact per-page/section/event unique-visitor counts. Idempotent per
-    window via the unique constraint. Skipped for bots (no ``visitor_key``).
+    Enables exact per-page/section/group/event unique-visitor counts. Idempotent
+    per window via the unique constraint. Skipped for bots (no ``visitor_key``).
     """
     if not visitor_key or not scopes:
         return
@@ -405,14 +405,25 @@ def record_scope_presence(
     from apps.core.models import VisitorScopeState
 
     period = _period_key_for_date(utc_day(occurred_at), _window())
-    for scope, scope_value in scopes:
-        VisitorScopeState.objects.get_or_create(
-            website_id=website_id,
-            period=period,
-            scope=scope,
-            scope_value=(scope_value or "")[:500],
-            visitor_key=visitor_key,
-        )
+    # One pageview can carry many content groups. ``get_or_create`` here used
+    # to issue one SELECT (plus an INSERT/transaction for a new row) per scope:
+    # 12 groups turned the ingest hot path from 19 into 63 SQL statements.
+    # The unique constraint already defines idempotence, so one conflict-
+    # ignoring bulk insert has the same semantics in O(1) statements.
+    unique_scopes = {(scope, (scope_value or "")[:500]) for scope, scope_value in scopes}
+    VisitorScopeState.objects.bulk_create(
+        [
+            VisitorScopeState(
+                website_id=website_id,
+                period=period,
+                scope=scope,
+                scope_value=scope_value,
+                visitor_key=visitor_key,
+            )
+            for scope, scope_value in unique_scopes
+        ],
+        ignore_conflicts=True,
+    )
 
 
 def aggregate_state(qs: QuerySet) -> dict[str, int]:
@@ -582,7 +593,7 @@ def rollup_finished_periods(
                 bounces=g["bounces"] or 0,
             )
 
-        # 4) Per-window per-scope unique visitors (pages/sections/events).
+        # 4) Per-window per-scope unique visitors (pages/sections/groups/events).
         scope_qs = VisitorScopeState.objects.filter(period__in=finished_keys)
         for g in scope_qs.values("website_id", "period", "scope", "scope_value").annotate(
             unique_visitors=Count("visitor_key", distinct=True),
@@ -636,8 +647,8 @@ def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]
     consequence, importing historical data into a day that already has live
     aggregates is a no-op for that day. The whole pass runs under the rollup's
     advisory lock so it cannot interleave with a concurrent rollup. Idempotent
-    (nulled rows are skipped on re-run). Pure-Python → works on PostgreSQL and
-    SQLite. Returns ``{"days", "events"}``.
+    (nulled rows are skipped on re-run). Pure-Python. Returns
+    ``{"days", "events"}``.
     """
     from collections import defaultdict
     from itertools import groupby

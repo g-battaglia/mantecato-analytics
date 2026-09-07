@@ -199,16 +199,14 @@ def save_bot_config(
     with transaction.atomic():
         # Serialise concurrent first-saves for the same website so two requests
         # can't both miss the existing row and create duplicate BotConfig rows
-        # (there is no unique constraint on the shared report table). On SQLite
-        # the single-writer lock already serialises writes.
-        if connection.vendor == "postgresql":
-            lock_key = int.from_bytes(
-                hashlib.sha256(f"bot_config:{website_id}".encode()).digest()[:8],
-                "big",
-                signed=True,
-            )
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_key])
+        # (there is no unique constraint on the shared report table).
+        lock_key = int.from_bytes(
+            hashlib.sha256(f"bot_config:{website_id}".encode()).digest()[:8],
+            "big",
+            signed=True,
+        )
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_key])
         existing = BotConfig.objects.filter(website_id=website_id).first()
         if existing is not None:
             existing.parameters = merged

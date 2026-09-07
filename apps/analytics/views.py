@@ -80,9 +80,7 @@ class OverviewView(AnalyticsBase):
         super().setup(request, *args, **kwargs)
         # Bare root + multiple sites + no explicit selection → show the picker
         # instead of silently defaulting to the first accessible site.
-        self.show_site_picker = (
-            not request.GET.get("website") and len(self.websites) > 1
-        )
+        self.show_site_picker = not request.GET.get("website") and len(self.websites) > 1
 
     @property
     def has_data(self) -> bool:
@@ -139,23 +137,33 @@ class PagesView(AnalyticsBase):
 
 
 def _breakdown_rows(rows: list[dict], key: str) -> list[dict]:
-    """Normalise section/group rows so one template renders either dimension.
-
-    ``drilldown`` is the filter expression the row links to on the Pages view:
-    a URL prefix for sections, a label membership test for groups.
-    """
-    prefix = "url_path:starts_with:" if key == "section" else "content_group:eq:"
-    return [
-        {
-            "label": row[key],
-            "views": row.get("views"),
-            "visitors": row.get("visitors"),
-            "pages": row.get("pages"),
-            "pct": row.get("pct"),
-            "drilldown": f"{prefix}{row[key]}",
-        }
-        for row in rows
-    ]
+    """Normalise section/group rows so one template renders either dimension."""
+    out = []
+    for row in rows:
+        value = str(row[key])
+        namespace, separator, label = value.partition(":")
+        out.append(
+            {
+                "label": value if key == "section" else label.replace("/", " › "),
+                "namespace": namespace if key == "group" and separator else "",
+                "value": value,
+                "views": row.get("views"),
+                "previous_views": row.get("previous_views"),
+                "change": row.get("change"),
+                "visitors": row.get("visitors"),
+                "pages": row.get("pages"),
+                "pct": row.get("pct"),
+                # A group opens Overview with all its existing analytical cuts;
+                # a URL section keeps the historical Pages drill-down.
+                "target": "analytics_pages" if key == "section" else "overview",
+                "drilldown": (
+                    f"url_path:starts_with:{value}"
+                    if key == "section"
+                    else f"content_group:eq:{value}"
+                ),
+            }
+        )
+    return out
 
 
 class SectionsView(AnalyticsBase):
@@ -178,7 +186,17 @@ class SectionsView(AnalyticsBase):
 
     def get_service_data(self) -> dict:
         if self.group_mode:
-            data = get_groups_data(self.website_id, self.date_range, self.filters)
+            data = get_groups_data(
+                self.website_id,
+                self.date_range,
+                self.filters,
+                namespace=self.request.GET.get("namespace"),
+                search=self.request.GET.get("group_search"),
+                min_views=self.request.GET.get("min_views", 0),
+                sort=self.request.GET.get("group_sort", "views"),
+                limit=self.request.GET.get("group_limit", 100),
+                compare=self.request.GET.get("group_compare") == "1",
+            )
             return {
                 **data,
                 "chart_data": build_groups_bar_chart_data(data["groups"]),

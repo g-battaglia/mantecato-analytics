@@ -12,11 +12,6 @@ if TYPE_CHECKING:
 
 from core.mantecato_core.database import raw_query
 from core.mantecato_core.filters import Filter, prepare_filters
-from core.mantecato_core.queries.orm_fallbacks import (
-    heatmap_rows,
-    pageview_queryset,
-    should_use_orm_fallback,
-)
 
 
 def get_traffic_heatmap(
@@ -30,9 +25,6 @@ def get_traffic_heatmap(
     day_of_week: 0=Sunday, 1=Monday, ... 6=Saturday (PostgreSQL DOW).
     hour: 0-23.
     """
-    if should_use_orm_fallback():
-        return heatmap_rows(pageview_queryset(website_id, start_date, end_date, filters))
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
 

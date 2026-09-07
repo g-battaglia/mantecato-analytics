@@ -78,7 +78,7 @@ an IP/UA (forward secrecy).
 | `country` | `IT` | No | ISO 3166-1 alpha-2 **only** (no region/city/coords) |
 | `is_bot` / `bot_reason` | `false` / `null` | No | Aggregate bot classification |
 | `referrer_domain` | `google.com` | No | Domain only; no full URL, no UTM/click IDs |
-| `content_groups` | `["guides","pricing"]` | No | Optional page labels **declared by the site owner** on the tracker tag (`data-groups`), fixed per page at build time; ≤ 12 labels of ≤ 64 chars. Describes the page, not the visitor — nothing about the visitor is read to produce it |
+| `content_groups` | `["topic:guides","format:tutorial"]` | **No only for static, topic-only page labels** | Optional labels declared by the site owner on the tracker tag (`data-groups`), ≤ 12 labels of ≤ 96 chars. Mantecato normalises but does not inspect or redact their meaning; visitor-derived values or personal data must not be sent |
 | `visitor_key` | 64-hex HMAC | **Pseudonymous** while the month's salt lives; **anonymous** once NULLed (≤13 months) | The only per-person field; a salted dedup digest, not an IP/UA, not reversible without the salt |
 
 ### 4.2 Supporting tables

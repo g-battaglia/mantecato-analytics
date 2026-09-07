@@ -1,17 +1,16 @@
 # `core.mantecato_core` — Raw-SQL analytics query engine
 
-The Mantecato query engine is a thin synchronous bridge over PostgreSQL for
-production, with ORM fallbacks for SQLite development and tests. Analytics SQL
-lives in `.py` modules under `queries/` and is executed via the Django default
-database connection through the helpers in `database.py`.
+The Mantecato query engine is a thin synchronous bridge over PostgreSQL.
+Analytics SQL lives in `.py` modules under `queries/` and is executed via the
+Django default database connection through the helpers in `database.py`.
 
 This document explains the architecture, the placeholder DSL used in
 every SQL string, and the public surface consumed by
 `apps/analytics/services.py`.
 
-> **Constraint**: production analytics SQL stays **raw**. SQLite fallbacks are
-> intentionally limited to aggregate pageview/event reads so local pages render
-> without requiring PostgreSQL.
+> **Constraint**: analytics SQL stays **raw** PostgreSQL. The only ORM path is
+> `queries/event_querysets.py`, which the visitor-counting read model uses to
+> filter event rows by the same filter pipeline.
 
 ## Layout
 
@@ -33,7 +32,7 @@ core/mantecato_core/
     ├── filter_values.py  # discover distinct filter values
     ├── heatmap.py        # hour-of-day / day-of-week heatmap
     ├── visitors.py       # anonymous aggregate visitor-sketch estimates
-    ├── orm_fallbacks.py  # SQLite fallback helpers
+    ├── event_querysets.py # ORM event querysets + filter pipeline (visitor read model)
     └── __init__.py       # public re-exports
 ```
 

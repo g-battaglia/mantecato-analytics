@@ -23,6 +23,7 @@ import json
 import logging
 import threading
 import time
+import unicodedata
 import uuid
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -44,18 +45,12 @@ logger = logging.getLogger(__name__)
 # abuse from a tampered client. A genuine long read still accrues up to this.
 _MAX_ENGAGEMENT_S = 3600
 
-# Content-group limits. The cap bounds how many labels one page can claim; the
-# length cap keeps labels index-friendly.
-#
-# 12 is deliberate rather than conservative: scope presence is de-duplicated per
-# (visitor, group, period), so a reader browsing a hundred pages of the same
-# group writes one row, not a hundred — measured ingest cost is flat from 5 to
-# 16 labels. What does grow with the count is read time on long windows (a 30-day
-# aggregation roughly doubles between 5 and 16 labels), which is what the cap is
-# really trading against. 12 covers a three-level taxonomy plus a healthy set of
-# tags without pushing that.
+# Content-group limits. One page can carry a three-level taxonomy, a family and
+# a useful tag set while the cap keeps query expansion and live scope-state
+# cardinality bounded. Scope presence is inserted in one conflict-ignoring bulk
+# statement, so the number of labels no longer creates an N+1 ingest path.
 MAX_CONTENT_GROUPS = 12
-MAX_CONTENT_GROUP_LEN = 64
+MAX_CONTENT_GROUP_LEN = 96
 
 # Throttle for the lazy, scheduler-free rollup piggybacked on ingestion.
 _ROLLUP_MIN_INTERVAL_S = 3600
@@ -200,8 +195,8 @@ def content_groups_from(payload: dict[str, Any]) -> list[str] | None:
     Groups are page labels the site owner sets on the tracker tag
     (``data-groups="guides,pricing"``) — page metadata, never anything observed
     about the visitor. Accepts a list or a comma-separated string, plus the
-    Umami-compatible ``tag`` field as a single group, so a site already sending
-    ``data-tag`` gets a working breakdown for free.
+    legacy wire-compatible ``tag`` field as a single group, so an existing
+    integration already sending ``data-tag`` gets a working breakdown for free.
 
     Labels are lowercased and trimmed (so "Guides" and "guides " are one group),
     de-duplicated with their first-seen order kept, truncated to
@@ -219,7 +214,7 @@ def content_groups_from(payload: dict[str, Any]) -> list[str] | None:
     else:
         candidates = []
 
-    # A site on the Umami wire format can only express one label; honour it.
+    # The legacy wire-compatible field can express one label; honour it.
     tag = payload.get("tag")
     if isinstance(tag, str):
         candidates.append(tag)
@@ -228,7 +223,18 @@ def content_groups_from(payload: dict[str, Any]) -> list[str] | None:
     for candidate in candidates:
         if not isinstance(candidate, str):
             continue
-        label = candidate.strip().lower()[:MAX_CONTENT_GROUP_LEN]
+        # PostgreSQL JSONB rejects NUL and unpaired surrogates. Other control
+        # characters make poor filter values even when JSON can encode them.
+        # Drop only the invalid characters (or the now-empty label), never the
+        # pageview carrying it.
+        clean = "".join(
+            char
+            for char in candidate
+            if char != "\x00"
+            and not 0xD800 <= ord(char) <= 0xDFFF
+            and unicodedata.category(char) not in {"Cc", "Cs"}
+        )
+        label = clean.strip().lower()[:MAX_CONTENT_GROUP_LEN]
         if label and label not in groups:
             groups.append(label)
         if len(groups) >= MAX_CONTENT_GROUPS:

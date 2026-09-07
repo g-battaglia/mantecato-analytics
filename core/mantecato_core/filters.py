@@ -52,10 +52,24 @@ VALID_OPERATORS = {
     "not_in",
 }
 
+#: Per-column exceptions to the global operator catalog. Parsers and dashboard
+#: validation use this too, so an unsupported combination is rejected before it
+#: can silently degrade into an unfiltered query.
+COLUMN_OPERATORS: dict[str, frozenset[str]] = {
+    "content_group": CONTAINMENT_OPERATORS,
+}
+
+
+def operator_is_valid(column: str, operator: str) -> bool:
+    """Return whether *operator* is meaningful for *column*."""
+    return operator in COLUMN_OPERATORS.get(column, VALID_OPERATORS)
+
+
 # Positive (inclusive) operators. Within one column these OR together
 # ("/trial/ OR /pro/"); the negated operators instead AND ("exclude BOTH
 # /admin/ AND /login/") — OR-ing negations would be a tautology. Both the raw
-# SQL (build_filter_sql) and the ORM fallback (apply_filters_to_qs) honour this.
+# SQL (build_filter_sql) and the queryset path (apply_filters_to_qs) honour
+# this.
 POSITIVE_OPERATORS = frozenset({"eq", "contains", "starts_with", "in"})
 
 GRANULARITIES = ("minute", "hour", "day", "week", "month")
@@ -149,7 +163,9 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
     for f in filters:
         if f.column == "__bot_filter__":
             bot_sql = build_bot_filter_sql(f.value)
-        elif f.column in VALID_FILTER_COLUMNS:
+        elif f.column in VALID_FILTER_COLUMNS and operator_is_valid(f.column, f.operator):
+            # Defence in depth for programmatic callers that construct Filter
+            # objects directly instead of going through parse_filters_from_params.
             regular_filters.append(f)
 
     grouped: dict[str, list[tuple[Filter, int]]] = {}
@@ -170,9 +186,9 @@ def build_filter_sql(filters: list[Filter]) -> dict[str, Any]:
             bucket = pos_clauses if f.operator in POSITIVE_OPERATORS else neg_clauses
 
             if f.column in CONTAINMENT_COLUMNS:
-                # JSON-list column: match by containment. A substring/prefix
-                # operator has no sensible meaning over a list of labels, so it
-                # is dropped instead of matching nothing (or, worse, everything).
+                # JSON-list column: match one top-level string member. Exact,
+                # membership and prefix operators are meaningful; substring
+                # operators are rejected before reaching this layer.
                 if f.operator not in CONTAINMENT_OPERATORS:
                     continue
                 json_column = CONTAINMENT_COLUMNS[f.column]
@@ -306,7 +322,7 @@ def parse_filters_from_params(filter_list: list[str]) -> list[Filter]:
             continue
         if column not in VALID_FILTER_COLUMNS:
             continue
-        if operator not in VALID_OPERATORS:
+        if not operator_is_valid(column, operator):
             continue
         result.append(Filter(column=column, operator=operator, value=value))
     return result

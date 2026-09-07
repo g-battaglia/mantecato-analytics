@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from apps.analytics import services
 from apps.analytics.chart_data import build_timeseries_chart_data
@@ -45,7 +45,7 @@ from apps.common.constants import VALID_RANGE_PRESETS
 from core.mantecato_core.date_utils import DateRange, resolve_date_range
 from core.mantecato_core.filters import (
     VALID_FILTER_COLUMNS,
-    VALID_OPERATORS,
+    operator_is_valid,
     parse_filters_from_params,
 )
 
@@ -56,11 +56,22 @@ logger = logging.getLogger(__name__)
 _WIDGET_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from core.mantecato_core.filters import Filter
 
 # ── Catalogs ─────────────────────────────────────────────────────────────────
 
-WIDGET_TYPES = {"kpi", "timeseries", "breakdown", "heatmap", "funnel", "namespace", "ratio", "compare"}
+WIDGET_TYPES = {
+    "kpi",
+    "timeseries",
+    "breakdown",
+    "heatmap",
+    "funnel",
+    "namespace",
+    "ratio",
+    "compare",
+}
 
 # Upper bound for the "sections" breakdown grouping depth. Beyond this the
 # breakdown degrades into a near-per-full-URL list, so a hand-edited config
@@ -92,8 +103,14 @@ BREAKDOWN_SOURCES: dict[str, tuple[str, str, str, str, str]] = {
 }
 
 _PALETTE = [
-    "rgb(99, 102, 241)", "rgb(34, 197, 94)", "rgb(234, 179, 8)", "rgb(239, 68, 68)",
-    "rgb(168, 85, 247)", "rgb(6, 182, 212)", "rgb(249, 115, 22)", "rgb(107, 114, 128)",
+    "rgb(99, 102, 241)",
+    "rgb(34, 197, 94)",
+    "rgb(234, 179, 8)",
+    "rgb(239, 68, 68)",
+    "rgb(168, 85, 247)",
+    "rgb(6, 182, 212)",
+    "rgb(249, 115, 22)",
+    "rgb(107, 114, 128)",
 ]
 _BAR_FILL = "rgba(99, 102, 241, 0.7)"
 
@@ -174,7 +191,9 @@ def _bar_payload(rows: list[dict], label: str, limit: int = 20) -> dict:
     top = rows[:limit]
     return {
         "labels": [r["label"] for r in top],
-        "datasets": [{"label": label, "data": [r["value"] for r in top], "backgroundColor": _BAR_FILL}],
+        "datasets": [
+            {"label": label, "data": [r["value"] for r in top], "backgroundColor": _BAR_FILL}
+        ],
     }
 
 
@@ -197,14 +216,18 @@ def _render_kpi(website_id, widget, date_range, filters, granularity="auto") -> 
     return {"kind": "kpi", "stat": stats.get(metric), "metric_label": KPI_METRICS[metric]}
 
 
-def _render_timeseries(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+def _render_timeseries(
+    website_id, widget, date_range, filters, granularity="auto"
+) -> dict[str, Any]:
     # A per-widget granularity wins; otherwise the runtime (filter-bar) value.
     gran = widget.get("granularity") or granularity or "auto"
     data = services.get_timeseries_data(website_id, date_range, filters, granularity=gran)
     return {"kind": "timeseries", "chart": build_timeseries_chart_data(data["timeseries"])}
 
 
-def _render_breakdown(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+def _render_breakdown(
+    website_id, widget, date_range, filters, granularity="auto"
+) -> dict[str, Any]:
     source = widget.get("source", "events")
     spec = BREAKDOWN_SOURCES.get(source)
     if spec is None:
@@ -218,6 +241,16 @@ def _render_breakdown(website_id, widget, date_range, filters, granularity="auto
             depth = 2
         depth = min(depth, _MAX_SECTION_DEPTH)  # avoid degrading into per-full-URL
         data = fn(website_id, date_range, filters, depth=depth)
+    elif source == "groups":
+        data = fn(
+            website_id,
+            date_range,
+            filters,
+            namespace=widget.get("namespace"),
+            search=widget.get("search"),
+            min_views=widget.get("minViews", 0),
+            limit=widget.get("limit", 100),
+        )
     else:
         data = fn(website_id, date_range, filters)
 
@@ -226,7 +259,9 @@ def _render_breakdown(website_id, widget, date_range, filters, granularity="auto
     rows = _normalize_rows(
         data.get(result_key, []), label_key, value_key, keep_pct=source == "groups"
     )
-    chart_kind = "pie" if widget.get("chart") == "pie" else "bar"
+    # Overlapping groups are not parts of one whole: a pie would communicate a
+    # partition that does not exist. Saved legacy configs are forced to bars too.
+    chart_kind = "bar" if source == "groups" else ("pie" if widget.get("chart") == "pie" else "bar")
     chart = _pie_payload(rows) if chart_kind == "pie" else _bar_payload(rows, value_label)
     return {
         "kind": "breakdown",
@@ -242,7 +277,9 @@ def _render_heatmap(website_id, widget, date_range, filters, granularity="auto")
     return {"kind": "heatmap", "grid": data["grid"], "max_val": data["max_val"]}
 
 
-def _unique_visitors_for_events(website_id, date_range, filters, names: list[str]) -> dict[str, int]:
+def _unique_visitors_for_events(
+    website_id, date_range, filters, names: list[str]
+) -> dict[str, int]:
     """Exact unique visitors per event name within the window (cookieless digest).
 
     Reuses ``read_scope_visitors(scope="event")`` — the same monthly-rotating,
@@ -270,8 +307,13 @@ def _render_funnel(website_id, widget, date_range, filters, granularity="auto") 
     steps = [s for s in (widget.get("steps") or []) if isinstance(s, dict) and s.get("event")]
     if not steps:
         return {"error": "Funnel needs at least one step with an 'event'."}
-    counts = _unique_visitors_for_events(website_id, date_range, filters, [s["event"] for s in steps])
-    rows = [{"label": s.get("label") or s["event"], "visitors": counts.get(s["event"], 0)} for s in steps]
+    counts = _unique_visitors_for_events(
+        website_id, date_range, filters, [s["event"] for s in steps]
+    )
+    rows = [
+        {"label": s.get("label") or s["event"], "visitors": counts.get(s["event"], 0)}
+        for s in steps
+    ]
     first = rows[0]["visitors"] if rows else 0
     for r in rows:
         r["pct"] = round(r["visitors"] / first * 100, 1) if first else 0
@@ -280,7 +322,9 @@ def _render_funnel(website_id, widget, date_range, filters, granularity="auto") 
     return {"kind": "funnel", "chart": build_funnel_chart_data(rows), "rows": rows}
 
 
-def _render_namespace(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
+def _render_namespace(
+    website_id, widget, date_range, filters, granularity="auto"
+) -> dict[str, Any]:
     # Group event names by a slash- (or custom-) delimited prefix depth, mirroring
     # url_path section grouping but for events. Generic: delimiter is configurable
     # and it degrades to full names when there is no delimiter.
@@ -303,14 +347,23 @@ def _render_namespace(website_id, widget, date_range, filters, granularity="auto
         prefix = delimiter.join(name.split(delimiter)[:depth]) if name else "—"
         groups[prefix or "—"] += r.get("count") or 0
 
-    rows = [{"label": k, "value": v, "visitors": None} for k, v in sorted(groups.items(), key=lambda x: -x[1])]
+    rows = [
+        {"label": k, "value": v, "visitors": None}
+        for k, v in sorted(groups.items(), key=lambda x: -x[1])
+    ]
     total = sum(x["value"] for x in rows) or 0
     for x in rows:
         x["pct"] = round(x["value"] / total * 100, 1) if total else 0
     chart_kind = "pie" if widget.get("chart") == "pie" else "bar"
     chart = _pie_payload(rows) if chart_kind == "pie" else _bar_payload(rows, "Count")
     # Reuse the breakdown template (same shape).
-    return {"kind": "breakdown", "rows": rows, "value_label": "Count", "chart": chart, "chart_kind": chart_kind}
+    return {
+        "kind": "breakdown",
+        "rows": rows,
+        "value_label": "Count",
+        "chart": chart,
+        "chart_kind": chart_kind,
+    }
 
 
 def _render_ratio(website_id, widget, date_range, filters, granularity="auto") -> dict[str, Any]:
@@ -411,8 +464,8 @@ def _validate_filter_strings(values: Any, where: str, errors: list[str]) -> None
         column, operator, _ = f.split(":", 2)
         if column not in VALID_FILTER_COLUMNS:
             errors.append(f"{where}: unknown filter column '{column}'")
-        if operator not in VALID_OPERATORS:
-            errors.append(f"{where}: unknown filter operator '{operator}'")
+        if column in VALID_FILTER_COLUMNS and not operator_is_valid(column, operator):
+            errors.append(f"{where}: unsupported operator '{operator}' for '{column}'")
 
 
 def validate_dashboard_config(config: Any) -> list[str]:
@@ -430,7 +483,9 @@ def validate_dashboard_config(config: Any) -> list[str]:
     # otherwise a malformed config (e.g. ``dateRange: []``) would 500 instead of
     # returning a clean validation error.
     date_range = config.get("dateRange")
-    if date_range is not None and (not isinstance(date_range, str) or date_range not in VALID_RANGE_PRESETS):
+    if date_range is not None and (
+        not isinstance(date_range, str) or date_range not in VALID_RANGE_PRESETS
+    ):
         errors.append(f"dateRange '{date_range}' is not a valid preset")
     _validate_filter_strings(config.get("filters"), "dashboard", errors)
 
@@ -460,34 +515,48 @@ def validate_dashboard_config(config: Any) -> list[str]:
         if wtype == "kpi":
             metric = w.get("metric")
             if not isinstance(metric, str) or metric not in KPI_METRICS:
-                errors.append(f"{where}: kpi metric '{metric}' must be one of {sorted(KPI_METRICS)}")
+                errors.append(
+                    f"{where}: kpi metric '{metric}' must be one of {sorted(KPI_METRICS)}"
+                )
         if wtype == "breakdown":
             source = w.get("source")
             if not isinstance(source, str) or source not in BREAKDOWN_SOURCES:
                 errors.append(
-                    f"{where}: breakdown source '{source}' must be one of {sorted(BREAKDOWN_SOURCES)}"
+                    f"{where}: breakdown source '{source}' must be one of "
+                    f"{sorted(BREAKDOWN_SOURCES)}"
                 )
             depth = w.get("depth")
             if depth is not None and (
-                not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= _MAX_SECTION_DEPTH
+                not isinstance(depth, int)
+                or isinstance(depth, bool)
+                or not 1 <= depth <= _MAX_SECTION_DEPTH
             ):
                 errors.append(f"{where}: depth must be an integer 1–{_MAX_SECTION_DEPTH}")
         if wtype == "namespace":
             depth = w.get("depth")
             if depth is not None and (
-                not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= _MAX_SECTION_DEPTH
+                not isinstance(depth, int)
+                or isinstance(depth, bool)
+                or not 1 <= depth <= _MAX_SECTION_DEPTH
             ):
                 errors.append(f"{where}: depth must be an integer 1–{_MAX_SECTION_DEPTH}")
         if wtype == "funnel":
             steps = w.get("steps")
             if not isinstance(steps, list) or not steps:
                 errors.append(f"{where}: funnel needs a non-empty 'steps' list")
-            elif not all(isinstance(s, dict) and isinstance(s.get("event"), str) and s.get("event") for s in steps):
+            elif not all(
+                isinstance(s, dict) and isinstance(s.get("event"), str) and s.get("event")
+                for s in steps
+            ):
                 errors.append(f"{where}: each funnel step needs a string 'event'")
         if wtype == "ratio":
             for side in ("numerator", "denominator"):
                 spec = w.get(side)
-                if not isinstance(spec, dict) or not isinstance(spec.get("event"), str) or not spec.get("event"):
+                if (
+                    not isinstance(spec, dict)
+                    or not isinstance(spec.get("event"), str)
+                    or not spec.get("event")
+                ):
                     errors.append(f"{where}: ratio '{side}' needs an object with a string 'event'")
         if wtype == "compare":
             mode = w.get("comparison")

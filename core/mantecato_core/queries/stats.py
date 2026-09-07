@@ -19,13 +19,6 @@ from core.mantecato_core.filters import (
     prepare_filters,
     safe_identifier,
 )
-from core.mantecato_core.queries.orm_fallbacks import (
-    pageview_queryset,
-    pageview_time_series_rows,
-    should_use_orm_fallback,
-    stats_dict,
-    top_sections_from_qs,
-)
 from core.mantecato_core.queries.visitors import (
     visit_metrics,
     visitors_by_bucket,
@@ -59,16 +52,6 @@ def _normalize_url(path: str, mode: str = "smart") -> str:
 
 def get_first_event_date(website_id: str) -> datetime | None:
     """Return the timestamp of the first event ever recorded for *website_id*."""
-    if should_use_orm_fallback():
-        from apps.core.models import WebsiteEvent
-
-        return (
-            WebsiteEvent.objects.filter(website_id=website_id)
-            .order_by("created_at")
-            .values_list("created_at", flat=True)
-            .first()
-        )
-
     rows = raw_query(
         """SELECT MIN(created_at) AS first_event
         FROM website_event
@@ -78,6 +61,32 @@ def get_first_event_date(website_id: str) -> datetime | None:
     if rows and rows[0].get("first_event"):
         return rows[0]["first_event"]
     return None
+
+
+def get_pageview_count(
+    website_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    filters: list[Filter] | None = None,
+) -> int:
+    """Return only the filtered pageview total, without visitor/session work."""
+    filter_where, filter_params, _ = prepare_filters(filters or [])
+    rows = raw_query(
+        """SELECT COUNT(*)::bigint AS pageviews
+    FROM website_event we
+    WHERE we.website_id = {{websiteId::uuid}}
+      AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
+      AND we.event_type = 1
+      """
+        + filter_where,
+        {
+            "websiteId": website_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            **filter_params,
+        },
+    )
+    return int(rows[0].get("pageviews") or 0) if rows else 0
 
 
 def get_website_stats(
@@ -95,13 +104,9 @@ def get_website_stats(
     (no longer suppressed), within the digest retention window.
     """
     filters = filters or []
-
-    if should_use_orm_fallback():
-        base = stats_dict(pageview_queryset(website_id, start_date, end_date, filters))
-    else:
-        filter_where, filter_params, _ = prepare_filters(filters)
-        rows = raw_query(
-            """SELECT
+    filter_where, filter_params, _ = prepare_filters(filters)
+    rows = raw_query(
+        """SELECT
       COUNT(*)::bigint AS pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = false)::bigint AS human_pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = true)::bigint AS bot_pageviews
@@ -109,20 +114,21 @@ def get_website_stats(
     WHERE we.website_id = {{websiteId::uuid}}
       AND we.created_at BETWEEN {{startDate::timestamptz}} AND {{endDate::timestamptz}}
       AND we.event_type = 1
-      """ + filter_where,
-            {
-                "websiteId": website_id,
-                "startDate": start_date,
-                "endDate": end_date,
-                **filter_params,
-            },
-        )
-        row = rows[0] if rows else {}
-        base = {
-            "pageviews": int(row.get("pageviews") or 0),
-            "human_pageviews": int(row.get("human_pageviews") or 0),
-            "bot_pageviews": int(row.get("bot_pageviews") or 0),
-        }
+      """
+        + filter_where,
+        {
+            "websiteId": website_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            **filter_params,
+        },
+    )
+    row = rows[0] if rows else {}
+    base = {
+        "pageviews": int(row.get("pageviews") or 0),
+        "human_pageviews": int(row.get("human_pageviews") or 0),
+        "bot_pageviews": int(row.get("bot_pageviews") or 0),
+    }
 
     base.update(visit_metrics(website_id, start_date, end_date, filters))
     return base
@@ -160,13 +166,8 @@ def get_pageview_time_series(
     """
     gran = safe_identifier(granularity, GRANULARITIES, "day")
 
-    if should_use_orm_fallback():
-        rows = pageview_time_series_rows(website_id, start_date, end_date, gran, filters)
-        return _attach_visitors(website_id, start_date, end_date, gran, rows, filters)
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
-    gran = safe_identifier(granularity, GRANULARITIES, "day")
 
     gran_interval = {
         "minute": "1 minute",
@@ -242,13 +243,9 @@ def get_website_stats_comparison(
 
     out: dict[str, dict[str, Any]] = {"current": _zero(), "previous": _zero()}
 
-    if should_use_orm_fallback():
-        out["current"] = stats_dict(pageview_queryset(website_id, cur_start, cur_end, filters))
-        out["previous"] = stats_dict(pageview_queryset(website_id, prev_start, prev_end, filters))
-    else:
-        filter_where, filter_params, _ = prepare_filters(filters)
-        rows = raw_query(
-            """SELECT 'current' AS period,
+    filter_where, filter_params, _ = prepare_filters(filters)
+    rows = raw_query(
+        """SELECT 'current' AS period,
       COUNT(*)::bigint AS pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = false)::bigint AS human_pageviews,
       COUNT(*) FILTER (WHERE COALESCE(we.is_bot, false) = true)::bigint AS bot_pageviews
@@ -256,7 +253,9 @@ def get_website_stats_comparison(
     WHERE we.website_id = {{websiteId::uuid}}
       AND we.created_at BETWEEN {{curStart::timestamptz}} AND {{curEnd::timestamptz}}
       AND we.event_type = 1
-      """ + filter_where + """
+      """
+        + filter_where
+        + """
     UNION ALL
     SELECT 'previous' AS period,
       COUNT(*)::bigint AS pageviews,
@@ -266,22 +265,23 @@ def get_website_stats_comparison(
     WHERE we.website_id = {{websiteId::uuid}}
       AND we.created_at BETWEEN {{prevStart::timestamptz}} AND {{prevEnd::timestamptz}}
       AND we.event_type = 1
-      """ + filter_where,
-            {
-                "websiteId": website_id,
-                "curStart": cur_start,
-                "curEnd": cur_end,
-                "prevStart": prev_start,
-                "prevEnd": prev_end,
-                **filter_params,
-            },
-        )
-        for row in rows:
-            out[row["period"]] = {
-                "pageviews": int(row.get("pageviews") or 0),
-                "human_pageviews": int(row.get("human_pageviews") or 0),
-                "bot_pageviews": int(row.get("bot_pageviews") or 0),
-            }
+      """
+        + filter_where,
+        {
+            "websiteId": website_id,
+            "curStart": cur_start,
+            "curEnd": cur_end,
+            "prevStart": prev_start,
+            "prevEnd": prev_end,
+            **filter_params,
+        },
+    )
+    for row in rows:
+        out[row["period"]] = {
+            "pageviews": int(row.get("pageviews") or 0),
+            "human_pageviews": int(row.get("human_pageviews") or 0),
+            "bot_pageviews": int(row.get("bot_pageviews") or 0),
+        }
 
     out["current"].update(visit_metrics(website_id, cur_start, cur_end, filters))
     out["previous"].update(visit_metrics(website_id, prev_start, prev_end, filters))
@@ -303,20 +303,6 @@ def get_pageview_time_series_comparison(
     row shape.
     """
     gran = safe_identifier(granularity, GRANULARITIES, "day")
-
-    if should_use_orm_fallback():
-        return {
-            "current": _attach_visitors(
-                website_id, cur_start, cur_end, gran,
-                pageview_time_series_rows(website_id, cur_start, cur_end, gran, filters),
-                filters,
-            ),
-            "previous": _attach_visitors(
-                website_id, prev_start, prev_end, gran,
-                pageview_time_series_rows(website_id, prev_start, prev_end, gran, filters),
-                filters,
-            ),
-        }
 
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
@@ -406,30 +392,6 @@ def get_top_pages(
     normalize_urls: bool | str = True,
 ) -> list[dict[str, Any]]:
     """Return the most-viewed pages ranked by total pageview count."""
-    if should_use_orm_fallback():
-        from django.db.models import Count
-
-        qs = pageview_queryset(website_id, start_date, end_date, filters)
-        rows = (
-            qs.values("url_path")
-            .annotate(views=Count("event_id"))
-            .order_by("-views", "url_path")
-        )
-        if page_mode == "slug" and normalize_urls:
-            merged: dict[str, dict[str, int]] = {}
-            norm_mode = normalize_urls if isinstance(normalize_urls, str) else "smart"
-            for row in rows[: limit * 10]:
-                clean = (row["url_path"] or "/").split("?", 1)[0].rstrip("/") or "/"
-                key = _normalize_url(clean, norm_mode)
-                merged.setdefault(key, {"views": 0})["views"] += int(row["views"] or 0)
-            result_list = [{"urlPath": path, **vals} for path, vals in merged.items()]
-            result_list.sort(key=lambda x: x["views"], reverse=True)
-            return result_list[:limit]
-        return [
-            {"urlPath": row["url_path"] or "/", "views": int(row["views"] or 0)}
-            for row in rows[:limit]
-        ]
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
 
@@ -450,7 +412,7 @@ def get_top_pages(
       {filter_where}
     GROUP BY url_path
     ORDER BY views DESC
-    LIMIT {limit * 10 if (page_mode == 'slug' and normalize_urls) else limit}""",
+    LIMIT {limit * 10 if (page_mode == "slug" and normalize_urls) else limit}""",
         {
             "websiteId": website_id,
             "startDate": start_date,
@@ -491,16 +453,6 @@ def get_top_sections(
     normalize_urls: bool | str = True,
 ) -> list[dict[str, Any]]:
     """Return the most-viewed URL path sections (directory prefixes)."""
-    if should_use_orm_fallback():
-        norm_mode = normalize_urls if isinstance(normalize_urls, str) else "smart"
-        normalizer = (lambda value: _normalize_url(value, norm_mode)) if normalize_urls else None
-        return top_sections_from_qs(
-            pageview_queryset(website_id, start_date, end_date, filters),
-            depth,
-            limit,
-            normalizer,
-        )
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
 
@@ -572,22 +524,6 @@ def get_country_breakdown(
     Country data comes directly from the website_event
     table (no session join needed).
     """
-    if should_use_orm_fallback():
-        from django.db.models import Count
-
-        rows = (
-            pageview_queryset(website_id, start_date, end_date, filters)
-            .exclude(country__isnull=True)
-            .exclude(country="")
-            .values("country")
-            .annotate(pageviews=Count("event_id"))
-            .order_by("-pageviews", "country")[:limit]
-        )
-        return [
-            {"country": row["country"], "pageviews": int(row["pageviews"] or 0)}
-            for row in rows
-        ]
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
 

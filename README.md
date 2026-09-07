@@ -100,8 +100,9 @@ which says nothing when every article lives at `/p/<slug>`; groups let you break
 the same traffic down by whatever dimension you actually care about. A page can
 carry several (up to 12), so the rows overlap like a tag cloud. Prefix them when
 one page carries more than one taxonomy — `cat:guides,tag:python` keeps a
-category and a tag that share a name apart, and `content_group:starts_with:tag:`
-then scopes a view to one of them. Find them under
+category and a tag that share a name apart. In **Sections → Content group**,
+use the Taxonomy selector to narrow the returned dimension; use the global
+`content_group` filter when you want every other analytics view scoped to a label. Find them under
 **Sections → Content group**, as a `content_group` filter on every other view,
 and on the API, CLI, SDK and custom dashboards.
 
@@ -780,15 +781,19 @@ No JavaScript framework. No task queue. No Redis. No build step.
 # 📦 Install with dev dependencies
 pip install -e ".[dev]"
 
-# 🗃️ Set up database
+# 🗃️ Set up database — PostgreSQL is required (the only supported backend)
 cp .env.example .env
+docker compose up -d db          # or point DATABASE_URL at your own PostgreSQL
 python manage.py migrate
 
 # 🚀 Run the dev server
 python manage.py runserver
 
-# ✅ Run tests
-pytest
+# ✅ Run tests (pytest creates an isolated PostgreSQL test database)
+pytest tests
+
+# Python SDK tests use a separate tests package
+(cd packages/mantecato-client && pytest tests)
 
 # 🧹 Lint and format
 ruff check .

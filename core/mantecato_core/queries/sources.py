@@ -15,11 +15,6 @@ if TYPE_CHECKING:
 
 from core.mantecato_core.database import raw_query
 from core.mantecato_core.filters import Filter, prepare_filters
-from core.mantecato_core.queries.orm_fallbacks import (
-    count_by_field,
-    pageview_queryset,
-    should_use_orm_fallback,
-)
 
 
 def get_referrer_metrics(
@@ -30,25 +25,6 @@ def get_referrer_metrics(
     filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
     """Aggregate pageview counts by referrer domain (top traffic sources)."""
-    if should_use_orm_fallback():
-        rows = count_by_field(
-            pageview_queryset(website_id, start_date, end_date, filters),
-            "referrer_domain",
-            "pageviews",
-            limit,
-        )
-        total = sum(int(row["pageviews"] or 0) for row in rows)
-        return [
-            {
-                "referrer": row["value"],
-                "pageviews": int(row["pageviews"] or 0),
-                "percentage": round((int(row["pageviews"] or 0) / total) * 100, 1)
-                if total > 0
-                else 0,
-            }
-            for row in rows
-        ]
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
 
@@ -128,16 +104,6 @@ def _referrer_domain_counts(
     filters: list[Filter] | None,
 ) -> list[tuple[str | None, int]]:
     """Return ``(referrer_domain, pageviews)`` pairs, including NULL (= Direct)."""
-    if should_use_orm_fallback():
-        from django.db.models import Count
-
-        rows = (
-            pageview_queryset(website_id, start_date, end_date, filters)
-            .values("referrer_domain")
-            .annotate(total=Count("event_id"))
-        )
-        return [(row["referrer_domain"], int(row["total"] or 0)) for row in rows]
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
     params: dict[str, Any] = {

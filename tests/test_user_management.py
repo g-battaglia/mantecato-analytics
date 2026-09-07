@@ -13,7 +13,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.conf import settings as django_settings
 from django.test import Client
 
 from apps.common.forms import (
@@ -35,13 +34,6 @@ from apps.settings_app.services import (
 
 ADMIN_USER_ID = "b0000000-0000-0000-0000-000000000001"
 OTHER_USER_ID = "b0000000-0000-0000-0000-000000000002"
-
-# Migration 0002 uses PostgreSQL-only SQL (SET DEFAULT now()); skip DB tests on SQLite.
-_requires_postgres = pytest.mark.skipif(
-    django_settings.DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3",
-    reason="Requires PostgreSQL (migration 0002 breaks SQLite)",
-)
-
 
 # ============================================================================
 # Helpers
@@ -86,7 +78,6 @@ def _patch_middleware_user(user: MantecatoUser):
 
 
 @pytest.mark.django_db
-@_requires_postgres
 class TestCreateUserAccount:
     def test_creates_user(self) -> None:
         result = create_user_account("alice", "user", "password123")
@@ -112,7 +103,6 @@ class TestCreateUserAccount:
 
 
 @pytest.mark.django_db
-@_requires_postgres
 class TestUpdateUserAccount:
     def test_updates_role(self) -> None:
         user = MantecatoUser.objects.create_user("alice", "password123", "user")
@@ -141,7 +131,6 @@ class TestUpdateUserAccount:
 
 
 @pytest.mark.django_db
-@_requires_postgres
 class TestSoftDeleteUser:
     def test_soft_deletes(self) -> None:
         user = MantecatoUser.objects.create_user("alice", "password123", "user")
@@ -170,7 +159,6 @@ class TestSoftDeleteUser:
 
 
 @pytest.mark.django_db
-@_requires_postgres
 class TestChangeOwnPassword:
     def test_changes_password(self) -> None:
         user = MantecatoUser.objects.create_user("alice", "oldpassword1", "user")
@@ -186,7 +174,6 @@ class TestChangeOwnPassword:
 
 
 @pytest.mark.django_db
-@_requires_postgres
 class TestGetAllUsers:
     def test_returns_active_users_ordered(self) -> None:
         MantecatoUser.objects.create_user("bob", "password123", "user")
@@ -205,7 +192,6 @@ class TestGetAllUsers:
 
 
 @pytest.mark.django_db
-@_requires_postgres
 class TestGetUser:
     def test_returns_user_dict(self) -> None:
         user = MantecatoUser.objects.create_user("alice", "password123", "admin")

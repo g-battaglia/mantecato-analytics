@@ -146,21 +146,32 @@ class AnalyticsEndpoints:
         end: str | None = None,
         filters: list[str] | None = None,
         bot_filter: bool = False,
+        namespace: str | None = None,
+        search: str | None = None,
+        min_views: int = 0,
+        sort: str = "views",
+        limit: int = 100,
+        compare: bool = False,
     ) -> dict[str, Any]:
         """Fetch content-group metrics — pageviews by site-declared page label.
 
-        The counterpart of :meth:`sections` for sites whose URLs carry no
-        taxonomy: the site labels its pages on the tracker tag
-        (``data-groups="guides,pricing"``) and this breaks traffic down by
-        those labels.
+        The content-group counterpart of the dashboard's URL-prefix sections
+        for sites whose URLs carry no taxonomy. ``namespace`` and ``search``
+        narrow dimension values; ``filters`` narrow source pageviews.
 
         Args:
             website_id: UUID of the tracked website.
             date_range: Shorthand range (e.g. ``"7d"``).
             start: ISO start date.
             end: ISO end date.
-            filters: Column-level filter expressions (``content_group`` included).
+            filters: Column-level filters over source pageviews.
             bot_filter: Exclude bot traffic if ``True``.
+            namespace: Return only labels in this namespace.
+            search: Case-insensitive group-name search.
+            min_views: Hide groups below this view count.
+            sort: ``views``, ``pages`` or ``name``.
+            limit: Maximum rows (clamped server-side).
+            compare: Include previous-period views and change.
 
         Returns:
             ``{"groups": [{"group", "views", "pages", "visitors", "pct"}, ...]}``.
@@ -173,6 +184,16 @@ class AnalyticsEndpoints:
             print(groups["groups"][0]["group"])
         """
         params = self._base_params(website_id, date_range, start, end, filters, bot_filter)
+        params.update(
+            {
+                "namespace": namespace,
+                "search": search,
+                "min_views": min_views or None,
+                "sort": sort if sort != "views" else None,
+                "limit": limit if limit != 100 else None,
+                "compare": "1" if compare else None,
+            }
+        )
         return self._client._get("/api/analytics/groups/", params)
 
     def events(

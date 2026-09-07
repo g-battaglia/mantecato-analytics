@@ -10,13 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from core.mantecato_core.database import raw_query
-from core.mantecato_core.filters import Filter, GRANULARITIES, prepare_filters, safe_identifier
-from core.mantecato_core.queries.orm_fallbacks import (
-    custom_event_queryset,
-    event_metric_rows,
-    truncate_dt,
-    should_use_orm_fallback,
-)
+from core.mantecato_core.filters import GRANULARITIES, Filter, prepare_filters, safe_identifier
 
 
 def get_event_metrics(
@@ -27,12 +21,6 @@ def get_event_metrics(
     filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
     """Return aggregate custom-event counts by event name."""
-    if should_use_orm_fallback():
-        return event_metric_rows(
-            custom_event_queryset(website_id, start_date, end_date, filters),
-            limit,
-        )
-
     filter_where, filter_params, _ = prepare_filters(filters or [])
     rows = raw_query(
         f"""SELECT
@@ -80,28 +68,6 @@ def get_event_time_series(
     if not event_names:
         return []
     gran = safe_identifier(granularity, GRANULARITIES, "day")
-    if should_use_orm_fallback():
-        grouped: dict[str, dict[datetime, int]] = {name: {} for name in event_names}
-        qs = custom_event_queryset(website_id, start_date, end_date, filters).filter(
-            event_name__in=event_names,
-        )
-        for event_name, created_at in qs.values_list("event_name", "created_at"):
-            if not event_name:
-                continue
-            bucket = truncate_dt(created_at, gran)
-            grouped.setdefault(event_name, {})
-            grouped[event_name][bucket] = grouped[event_name].get(bucket, 0) + 1
-        return [
-            {
-                "name": name,
-                "data": [
-                    {"time": bucket.isoformat(), "count": count}
-                    for bucket, count in sorted(grouped.get(name, {}).items())
-                ],
-            }
-            for name in event_names
-        ]
-
     filter_where, filter_params, _ = prepare_filters(filters or [])
     rows = raw_query(
         f"""SELECT

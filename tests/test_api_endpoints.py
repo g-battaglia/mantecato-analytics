@@ -257,6 +257,36 @@ class TestLegacyMcpRoutes:
         assert json.loads(response.content)["websites"][0]["id"] == _WEBSITE_ID
 
 
+class TestGroupsEndpointOptions:
+    @patch("mantecato.middleware.validate_api_key")
+    @patch("apps.api.views.resolve_websites_for_user")
+    @patch("apps.api.views.get_groups_data")
+    def test_forwards_analysis_options(
+        self,
+        mock_groups: MagicMock,
+        mock_resolve: MagicMock,
+        mock_validate: MagicMock,
+        client: Client,
+    ) -> None:
+        mock_validate.return_value = {"userId": _USER_ID, "scopes": ["read"]}
+        mock_resolve.return_value = [{"id": _WEBSITE_ID, "name": "T", "domain": "t.com"}]
+        mock_groups.return_value = {"groups": [], "namespaces": []}
+        response = client.get(
+            f"/api/analytics/groups/?website={_WEBSITE_ID}&range=30d"
+            "&namespace=tag&search=moon&min_views=10&sort=pages&limit=20&compare=1",
+            **_auth_header(),
+        )
+        assert response.status_code == 200
+        assert mock_groups.call_args.kwargs == {
+            "namespace": "tag",
+            "search": "moon",
+            "min_views": "10",
+            "sort": "pages",
+            "limit": 20,
+            "compare": True,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Safe invalid params
 # ---------------------------------------------------------------------------

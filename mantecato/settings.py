@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 
 import dj_database_url
 from dotenv import load_dotenv
@@ -305,32 +304,22 @@ WSGI_APPLICATION = "mantecato.wsgi.application"
 # ============================================================================
 
 DATABASE_URL = get_database_url(debug=DEBUG)
-# Refuse the silent SQLite fallback in production: Mantecato is PostgreSQL-only.
-# Skip during build-time commands (collectstatic) that don't need a database.
-_is_build_command = len(sys.argv) > 1 and sys.argv[1] in ("collectstatic", "help", "version")
-if not _is_build_command:
-    require_database_url(DATABASE_URL, debug=DEBUG)
-if DATABASE_URL:
-    validate_database_host(DATABASE_URL, DEBUG)
+# PostgreSQL is the only supported backend, development and build commands
+# included. Fail fast on a missing or non-PostgreSQL URL.
+require_database_url(DATABASE_URL, debug=DEBUG)
+validate_database_host(DATABASE_URL, DEBUG)
 
-# PostgreSQL when DATABASE_URL is set, otherwise SQLite for quick local setup.
 DATABASES = {
     "default": dj_database_url.parse(
         DATABASE_URL,
         engine="django.db.backends.postgresql",
-    )
-    if DATABASE_URL
-    else {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "mantecato.sqlite3",
-    },
+    ),
 }
 
-if DATABASE_URL:
-    # 5-second connect timeout to fail fast on unreachable hosts.
-    DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 5
-    # Keep connections alive for 10 minutes to reduce per-request overhead.
-    DATABASES["default"]["CONN_MAX_AGE"] = 600
+# 5-second connect timeout to fail fast on unreachable hosts.
+DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 5
+# Keep connections alive for 10 minutes to reduce per-request overhead.
+DATABASES["default"]["CONN_MAX_AGE"] = 600
 
 # ============================================================================
 # 6. Authentication and session settings

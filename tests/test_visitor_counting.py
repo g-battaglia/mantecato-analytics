@@ -20,6 +20,7 @@ from apps.core.models import (
     VisitorDayState,
     VisitorPeriod,
     VisitorSalt,
+    VisitorScopeState,
     WebsiteEvent,
 )
 from apps.tracker.services import ingest_pageview
@@ -105,6 +106,28 @@ def _visit(
             scopes=[("page", path), ("section", section_for_path(path))],
         )
     return key
+
+
+def test_scope_presence_bulk_insert_is_idempotent(django_assert_num_queries):
+    """The number of scopes must not create an N+1 ingest path."""
+    scopes = [("page", "/a"), ("section", "/a"), *[("group", f"tag:g{i}") for i in range(12)]]
+    with django_assert_num_queries(1):  # one bulk INSERT ... ON CONFLICT
+        record_scope_presence(
+            website_id=WEBSITE_ID,
+            occurred_at=_today(),
+            visitor_key="bulk-scope-visitor",
+            scopes=scopes,
+        )
+    assert VisitorScopeState.objects.filter(visitor_key="bulk-scope-visitor").count() == 14
+
+    with django_assert_num_queries(1):  # same single statement, conflicts ignored
+        record_scope_presence(
+            website_id=WEBSITE_ID,
+            occurred_at=_today(),
+            visitor_key="bulk-scope-visitor",
+            scopes=scopes,
+        )
+    assert VisitorScopeState.objects.filter(visitor_key="bulk-scope-visitor").count() == 14
 
 
 def _ingest(ip="1.2.3.4", ua="Mozilla/5.0 Chrome", path="/x"):

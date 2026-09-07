@@ -51,7 +51,8 @@ def get_database_url(*, debug: bool = False) -> str:
     """Resolve the database URL from the environment.
 
     In debug mode a ``TEST_DATABASE_URL`` takes precedence; an empty result
-    lets ``settings`` fall back to a local SQLite database.
+    fails fast in ``require_database_url`` — PostgreSQL is the only supported
+    backend, in development too.
     """
     if debug:
         return _env("TEST_DATABASE_URL") or _env("DATABASE_URL")
@@ -131,25 +132,35 @@ def validate_database_host(database_url: str, debug: bool) -> None:
 
 
 def require_database_url(database_url: str, *, debug: bool) -> None:
-    """Fail fast when no database is configured in production.
+    """Fail fast when no PostgreSQL database is configured.
 
-    Mantecato requires PostgreSQL; the SQLite fallback in ``settings`` is only
-    for quick local development (``DEBUG=True``). With ``DEBUG=False`` a missing
-    ``DATABASE_URL`` would silently fall back to SQLite and break the
-    PostgreSQL-only migrations (e.g. ``core.0002`` runs ``SET DEFAULT now()``),
-    so we fail with a clear message instead of an opaque mid-migration crash.
+    PostgreSQL is Mantecato's only supported backend, development included:
+    the analytics engine is raw PostgreSQL SQL (JSONB operators, GIN indexes,
+    ``::timestamptz`` casts) and the migrations contain PostgreSQL-only DDL
+    (``core.0002`` runs ``SET DEFAULT now()``). A missing or non-PostgreSQL
+    ``DATABASE_URL`` must fail here rather than surface as an opaque
+    mid-migration or mid-query crash.
 
     Args:
         database_url: The resolved database URL (may be empty).
-        debug: Whether Django is running in debug mode.
+        debug: Whether Django is running in debug mode (unused for the
+            requirement itself; kept for signature compatibility).
 
     Raises:
-        ImproperlyConfigured: If *database_url* is empty and *debug* is False.
+        ImproperlyConfigured: If *database_url* is empty or not a
+            ``postgres://`` / ``postgresql://`` URL.
     """
-    if not database_url and not debug:
+    if not database_url:
         raise ImproperlyConfigured(
-            "DATABASE_URL must be set when DEBUG=False. Mantecato requires "
-            "PostgreSQL in production; the SQLite fallback is development-only."
+            "DATABASE_URL must be set. PostgreSQL is Mantecato's only supported "
+            "database, in development too — start one with `docker compose up db` "
+            "or point DATABASE_URL at an existing PostgreSQL instance."
+        )
+    scheme = urlparse(database_url).scheme.lower()
+    if scheme not in ("postgres", "postgresql"):
+        raise ImproperlyConfigured(
+            f"DATABASE_URL scheme '{scheme or 'missing'}' is not supported. "
+            "Mantecato runs on PostgreSQL only (postgres:// or postgresql://)."
         )
 
 

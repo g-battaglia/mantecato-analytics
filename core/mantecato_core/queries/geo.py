@@ -13,11 +13,6 @@ if TYPE_CHECKING:
 
 from core.mantecato_core.database import raw_query
 from core.mantecato_core.filters import Filter, prepare_filters
-from core.mantecato_core.queries.orm_fallbacks import (
-    count_by_field,
-    pageview_queryset,
-    should_use_orm_fallback,
-)
 
 
 def get_geo_metrics(
@@ -28,25 +23,6 @@ def get_geo_metrics(
     filters: list[Filter] | None = None,
 ) -> list[dict[str, Any]]:
     """Aggregate pageview counts by country (ISO 3166-1 alpha-2)."""
-    if should_use_orm_fallback():
-        rows = count_by_field(
-            pageview_queryset(website_id, start_date, end_date, filters),
-            "country",
-            "pageviews",
-            limit,
-        )
-        total = sum(int(row["pageviews"] or 0) for row in rows)
-        return [
-            {
-                "country": row["value"],
-                "pageviews": int(row["pageviews"] or 0),
-                "percentage": round((int(row["pageviews"] or 0) / total) * 100, 1)
-                if total > 0
-                else 0,
-            }
-            for row in rows
-        ]
-
     filters = filters or []
     filter_where, filter_params, _ = prepare_filters(filters)
 

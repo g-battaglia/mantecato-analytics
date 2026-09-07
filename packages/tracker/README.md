@@ -133,6 +133,14 @@ interface TrackerConfig {
 `groups` overrides the configured `data-groups` for that call; pass `[]` to
 send none.
 
+### Content groups in SPAs
+
+`data-groups` is read once when the tracker starts. For route-specific labels in
+an SPA, either set `data-auto-track="false"` and call
+`tracker.pageview({ groups })` after each navigation, or derive the current
+groups in `beforeSend`. Otherwise automatic `pushState`/`popstate` pageviews keep
+the groups declared by the initial document.
+
 ## Frameworks
 
 ### Next.js App Router

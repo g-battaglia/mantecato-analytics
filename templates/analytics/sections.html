@@ -8,7 +8,6 @@
 
 {% block content %}
 
-{# ── Grouping toggle: URL prefix (default) vs site-declared content groups ── #}
 <div class="mb-4 flex items-center gap-3">
   <div class="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
     <a href="{% url 'analytics_sections' %}?{% view_query %}"
@@ -20,19 +19,84 @@
       {% trans "Content group" %}
     </a>
   </div>
-  {% if group_mode %}
-  <p class="text-xs text-muted-foreground">
-    {% trans "A page can declare several groups, so rows overlap and views do not sum to the site total." %}
-  </p>
-  {% endif %}
 </div>
 
+{% if group_mode %}
+<form method="get" class="mb-4 rounded-lg border border-border bg-card p-3 shadow-sm">
+  {% for key, vals in request.GET.lists %}
+    {% if key != "namespace" and key != "group_search" and key != "min_views" and key != "group_sort" and key != "group_limit" and key != "group_compare" %}
+      {% for val in vals %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endfor %}
+    {% endif %}
+  {% endfor %}
+  {% if not request.GET.by %}<input type="hidden" name="by" value="group">{% endif %}
+
+  <div class="flex flex-wrap items-end gap-2">
+    <label class="flex min-w-36 flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Taxonomy" %}</span>
+      <select name="namespace" class="h-9 rounded-md border border-input bg-background px-2.5 text-xs">
+        <option value="">{% trans "All groups" %}</option>
+        {% for item in namespaces %}
+        <option value="{{ item }}" {% if group_options.namespace == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="flex min-w-48 flex-1 flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Search" %}</span>
+      <input name="group_search" value="{{ group_options.search|default:'' }}"
+             placeholder="{% trans 'Group name…' %}"
+             class="h-9 rounded-md border border-input bg-background px-2.5 text-xs">
+    </label>
+
+    <label class="flex w-24 flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Min views" %}</span>
+      <input name="min_views" type="number" min="0" value="{{ group_options.min_views }}"
+             class="h-9 rounded-md border border-input bg-background px-2.5 text-xs tabular-nums">
+    </label>
+
+    <label class="flex w-28 flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Sort by" %}</span>
+      <select name="group_sort" class="h-9 rounded-md border border-input bg-background px-2.5 text-xs">
+        <option value="views" {% if group_options.sort == "views" %}selected{% endif %}>{% trans "Views" %}</option>
+        <option value="pages" {% if group_options.sort == "pages" %}selected{% endif %}>{% trans "Pages" %}</option>
+        <option value="name" {% if group_options.sort == "name" %}selected{% endif %}>{% trans "Name" %}</option>
+      </select>
+    </label>
+
+    <label class="flex w-20 flex-col gap-1">
+      <span class="text-[11px] font-medium text-muted-foreground">{% trans "Rows" %}</span>
+      <select name="group_limit" class="h-9 rounded-md border border-input bg-background px-2.5 text-xs">
+        <option value="20" {% if group_options.limit == 20 %}selected{% endif %}>20</option>
+        <option value="50" {% if group_options.limit == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if group_options.limit == 100 %}selected{% endif %}>100</option>
+      </select>
+    </label>
+
+    <label class="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs">
+      <input type="checkbox" name="group_compare" value="1" {% if compare %}checked{% endif %}>
+      {% trans "Previous period" %}
+    </label>
+
+    <button type="submit" class="h-9 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+      {% trans "Apply" %}
+    </button>
+    <a href="{% url 'analytics_sections' %}?{% view_query %}&by=group"
+       class="inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-xs text-muted-foreground hover:bg-muted">
+      {% trans "Reset" %}
+    </a>
+  </div>
+</form>
+{% endif %}
+
 {% if breakdown_rows %}
-{# ── Top breakdown chart ──────────────────────────────────── #}
 {% if chart_data.labels %}
 {% if group_mode %}{% trans "Top Content Groups" as t_top %}{% else %}{% trans "Top Sections" as t_top %}{% endif %}
 <div class="mb-4 rounded-lg border border-border bg-card p-4 shadow-sm">
-  {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" %}
+  {% if group_mode %}
+    {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" hide_toggle=True %}
+  {% else %}
+    {% include "components/_chart_card.html" with key="sections" title=t_top chart_data=chart_data default="bar" %}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -43,20 +107,28 @@
         <span class="flex-1">{% if group_mode %}{% trans "Group" %}{% else %}{% trans "Section" %}{% endif %}</span>
         <div class="flex gap-4 text-right">
           <span class="w-16">{% trans "Views" %}</span>
+          {% if compare %}<span class="w-16">{% trans "Previous" %}</span><span class="w-16">{% trans "Change" %}</span>{% endif %}
           <span class="w-20">{% trans "Visitors" %}</span>
           <span class="hidden w-14 sm:inline">{% trans "Pages" %}</span>
           <span class="hidden w-14 sm:inline">{% trans "%" %}</span>
         </div>
       </div>
       {% for s in breakdown_rows %}
-      <a href="{% url 'analytics_pages' %}?{% view_query %}&filter={{ s.drilldown|urlencode }}"
+      <a href="{% if s.target == 'overview' %}{% url 'overview' %}{% else %}{% url 'analytics_pages' %}{% endif %}?{% view_query %}&filter={{ s.drilldown|urlencode }}"
          class="relative flex items-center justify-between py-1.5 text-sm rounded-sm px-1 -mx-1 hover:bg-muted/50 transition-colors">
         <div class="absolute inset-y-0 left-0 rounded bg-primary/[0.08]" style="width: {{ s.pct }}%"></div>
-        <div class="relative flex-1 min-w-0 pr-4">
-          <span class="block truncate font-mono font-medium" title="{{ s.label }}">{{ s.label }}</span>
+        <div class="relative flex min-w-0 flex-1 items-center gap-2 pr-4">
+          {% if s.namespace %}<span class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{{ s.namespace }}</span>{% endif %}
+          <span class="block truncate font-mono font-medium" title="{{ s.value }}">{{ s.label }}</span>
         </div>
         <div class="relative flex gap-4 text-right tabular-nums">
           <span class="w-16 font-medium">{{ s.views|intcomma }}</span>
+          {% if compare %}
+          <span class="w-16 text-muted-foreground">{{ s.previous_views|default:0|intcomma }}</span>
+          <span class="w-16 {% if s.change > 0 %}text-green-500{% elif s.change < 0 %}text-red-500{% else %}text-muted-foreground{% endif %}">
+            {% if s.change is None %}{% trans "New" %}{% elif s.change > 0 %}+{{ s.change }}%{% else %}{{ s.change }}%{% endif %}
+          </span>
+          {% endif %}
           <span class="w-20 text-muted-foreground">{% if s.visitors is not None %}{{ s.visitors|intcomma }}{% else %}—{% endif %}</span>
           <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.pages|intcomma }}</span>
           <span class="hidden w-14 text-muted-foreground sm:inline">{{ s.pct|floatformat:1 }}%</span>
@@ -70,10 +142,7 @@
 <div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
   <div class="px-4 py-4 text-center">
     {% if group_mode %}
-    <p class="text-muted-foreground">{% trans "No content groups for this period." %}</p>
-    <p class="mt-1 text-xs text-muted-foreground">
-      {% trans 'Add data-groups="…" to the tracker tag to label your pages.' %}
-    </p>
+    <p class="text-muted-foreground">{% trans "No content groups match these controls." %}</p>
     {% else %}
     <p class="text-muted-foreground">{% trans "No section data for this period." %}</p>
     {% endif %}

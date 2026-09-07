@@ -48,31 +48,43 @@ def _range():
 
 
 def test_validate_ok():
-    cfg = {"version": 2, "filters": ["url_path:starts_with:/pro/"], "widgets": [
-        {"id": "a", "type": "kpi", "metric": "visitors"},
-        {"id": "b", "type": "breakdown", "source": "sections", "depth": 1},
-        {"id": "c", "type": "timeseries"},
-    ]}
+    cfg = {
+        "version": 2,
+        "filters": ["url_path:starts_with:/pro/"],
+        "widgets": [
+            {"id": "a", "type": "kpi", "metric": "visitors"},
+            {"id": "b", "type": "breakdown", "source": "sections", "depth": 1},
+            {"id": "c", "type": "timeseries"},
+        ],
+    }
     assert validate_dashboard_config(cfg) == []
 
 
 def test_validate_catches_bad_widgets():
-    errs = validate_dashboard_config({"widgets": [
-        {"id": "a", "type": "nope"},
-        {"id": "b", "type": "kpi", "metric": "bad"},
-        {"id": "c", "type": "breakdown", "source": "zzz"},
-        {"id": "d", "type": "kpi", "metric": "visitors", "filters": ["x:y"]},
-    ]})
+    errs = validate_dashboard_config(
+        {
+            "widgets": [
+                {"id": "a", "type": "nope"},
+                {"id": "b", "type": "kpi", "metric": "bad"},
+                {"id": "c", "type": "breakdown", "source": "zzz"},
+                {"id": "d", "type": "kpi", "metric": "visitors", "filters": ["x:y"]},
+            ]
+        }
+    )
     assert len(errs) >= 4
 
 
 def test_validate_requires_unique_widget_ids():
     missing = validate_dashboard_config({"widgets": [{"type": "kpi", "metric": "visitors"}]})
     assert any("id" in e for e in missing)
-    dup = validate_dashboard_config({"widgets": [
-        {"id": "x", "type": "kpi", "metric": "visitors"},
-        {"id": "x", "type": "timeseries"},
-    ]})
+    dup = validate_dashboard_config(
+        {
+            "widgets": [
+                {"id": "x", "type": "kpi", "metric": "visitors"},
+                {"id": "x", "type": "timeseries"},
+            ]
+        }
+    )
     assert any("duplicate" in e for e in dup)
 
 
@@ -95,14 +107,18 @@ def test_validate_survives_non_string_fields():
 
 
 def test_kpi_widget(seeded):
-    w = render_widget(WEBSITE_ID, {}, {"id": "w1", "type": "kpi", "metric": "pageviews"}, runtime_range=_range())
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "w1", "type": "kpi", "metric": "pageviews"}, runtime_range=_range()
+    )
     assert "error" not in w and w["kind"] == "kpi"
     assert w["stat"] is not None
 
 
 def test_breakdown_sections_groups_by_tier(seeded):
     w = render_widget(
-        WEBSITE_ID, {}, {"id": "w2", "type": "breakdown", "source": "sections", "depth": 1},
+        WEBSITE_ID,
+        {},
+        {"id": "w2", "type": "breakdown", "source": "sections", "depth": 1},
         runtime_range=_range(),
     )
     assert "error" not in w
@@ -112,7 +128,9 @@ def test_breakdown_sections_groups_by_tier(seeded):
 
 def test_breakdown_groups_uses_content_groups(seeded):
     w = render_widget(
-        WEBSITE_ID, {}, {"id": "wg", "type": "breakdown", "source": "groups"},
+        WEBSITE_ID,
+        {},
+        {"id": "wg", "type": "breakdown", "source": "groups"},
         runtime_range=_range(),
     )
     assert "error" not in w
@@ -130,12 +148,40 @@ def test_breakdown_groups_keeps_site_share_percentages(seeded):
     `guides` — a partition of the labelled traffic rather than its real weight.
     """
     w = render_widget(
-        WEBSITE_ID, {}, {"id": "wgp", "type": "breakdown", "source": "groups"},
+        WEBSITE_ID,
+        {},
+        {"id": "wgp", "type": "breakdown", "source": "groups"},
         runtime_range=_range(),
     )
     pct = {r["label"]: r["pct"] for r in w["rows"]}
     assert pct == {"guides": 20.0, "python": 10.0}
     assert sum(pct.values()) != 100.0
+
+
+def test_group_widget_forces_bar_when_config_requests_pie(seeded):
+    w = render_widget(
+        WEBSITE_ID,
+        {},
+        {"id": "wgb", "type": "breakdown", "source": "groups", "chart": "pie"},
+        runtime_range=_range(),
+    )
+    assert w["chart_kind"] == "bar"
+
+
+def test_group_widget_applies_namespace(seeded):
+    _ev("/p/c", content_groups=["tag:python", "family:guides"])
+    w = render_widget(
+        WEBSITE_ID,
+        {},
+        {"id": "wgn", "type": "breakdown", "source": "groups", "namespace": "tag"},
+        runtime_range=_range(),
+    )
+    assert [row["label"] for row in w["rows"]] == ["tag:python"]
+
+
+def test_dashboard_validation_rejects_unsupported_group_operator():
+    errors = validate_dashboard_config({"filters": ["content_group:contains:tag:"], "widgets": []})
+    assert any("unsupported operator" in error for error in errors)
 
 
 def test_content_group_filter_cascades_to_widget(seeded):
@@ -216,7 +262,10 @@ def test_validate_rejects_out_of_range_depth():
 
 def test_widget_filter_event(seeded):
     w = render_widget(
-        WEBSITE_ID, {}, {"id": "w5", "type": "breakdown", "source": "events"}, runtime_range=_range()
+        WEBSITE_ID,
+        {},
+        {"id": "w5", "type": "breakdown", "source": "events"},
+        runtime_range=_range(),
     )
     labels = [r["label"] for r in w["rows"]]
     assert "ai-generate-success" in labels
@@ -231,8 +280,11 @@ def test_timeseries_widget(seeded):
 def test_timeseries_respects_runtime_granularity(seeded):
     # Threading the filter-bar granularity through must not break rendering.
     w = render_widget(
-        WEBSITE_ID, {}, {"id": "t", "type": "timeseries"},
-        runtime_range=_range(), runtime_granularity="day",
+        WEBSITE_ID,
+        {},
+        {"id": "t", "type": "timeseries"},
+        runtime_range=_range(),
+        runtime_granularity="day",
     )
     assert "error" not in w and "labels" in w["chart"]
 
@@ -242,7 +294,10 @@ def test_sources_breakdown_uses_real_keys(seeded):
     _ev("/pro/x", referrer_domain="google.com")
     _ev("/pro/x", referrer_domain="google.com")
     w = render_widget(
-        WEBSITE_ID, {}, {"id": "s", "type": "breakdown", "source": "sources"}, runtime_range=_range()
+        WEBSITE_ID,
+        {},
+        {"id": "s", "type": "breakdown", "source": "sources"},
+        runtime_range=_range(),
     )
     assert "error" not in w
     assert w["rows"], "expected referrer rows"
@@ -262,7 +317,9 @@ def test_namespace_widget_groups_events_by_prefix(seeded):
     _ev("/pro/x", event_type=2, event_name="settings/ai/enable")
     _ev("/pro/x", event_type=2, event_name="settings/preset/save")
     _ev("/pro/x", event_type=2, event_name="chart/export/pdf")
-    w = render_widget(WEBSITE_ID, {}, {"id": "ns", "type": "namespace", "depth": 1}, runtime_range=_range())
+    w = render_widget(
+        WEBSITE_ID, {}, {"id": "ns", "type": "namespace", "depth": 1}, runtime_range=_range()
+    )
     assert "error" not in w
     labels = [r["label"] for r in w["rows"]]
     assert "settings" in labels and "chart" in labels  # grouped by first slash segment
@@ -274,11 +331,16 @@ def test_funnel_widget_counts_unique_visitors_per_step(seeded):
     _ev("/pro/x", event_type=2, event_name="funnel/signup/start", visitor_key="v2")
     _ev("/pro/x", event_type=2, event_name="funnel/signup/complete", visitor_key="v1")
     w = render_widget(
-        WEBSITE_ID, {},
-        {"id": "f", "type": "funnel", "steps": [
-            {"event": "funnel/signup/start", "label": "Start"},
-            {"event": "funnel/signup/complete", "label": "Complete"},
-        ]},
+        WEBSITE_ID,
+        {},
+        {
+            "id": "f",
+            "type": "funnel",
+            "steps": [
+                {"event": "funnel/signup/start", "label": "Start"},
+                {"event": "funnel/signup/complete", "label": "Complete"},
+            ],
+        },
         runtime_range=_range(),
     )
     assert "error" not in w and w["kind"] == "funnel"
@@ -292,8 +354,14 @@ def test_ratio_widget_event_over_event(seeded):
     for vk in ("v1", "v2", "v3"):
         _ev("/pro/x", event_type=2, event_name="a/try", visitor_key=vk)
     w = render_widget(
-        WEBSITE_ID, {},
-        {"id": "r", "type": "ratio", "numerator": {"event": "a/win"}, "denominator": {"event": "a/try"}},
+        WEBSITE_ID,
+        {},
+        {
+            "id": "r",
+            "type": "ratio",
+            "numerator": {"event": "a/win"},
+            "denominator": {"event": "a/try"},
+        },
         runtime_range=_range(),
     )
     assert "error" not in w and w["kind"] == "ratio"
@@ -307,12 +375,16 @@ def test_compare_widget_renders(seeded):
 
 
 def test_validate_new_widget_types():
-    errs = validate_dashboard_config({"widgets": [
-        {"id": "f", "type": "funnel"},                        # missing steps
-        {"id": "r", "type": "ratio"},                         # missing numerator/denominator
-        {"id": "n", "type": "namespace", "depth": 999},       # depth out of range
-        {"id": "c", "type": "compare", "comparison": "bogus"},  # bad mode
-    ]})
+    errs = validate_dashboard_config(
+        {
+            "widgets": [
+                {"id": "f", "type": "funnel"},  # missing steps
+                {"id": "r", "type": "ratio"},  # missing numerator/denominator
+                {"id": "n", "type": "namespace", "depth": 999},  # depth out of range
+                {"id": "c", "type": "compare", "comparison": "bogus"},  # bad mode
+            ]
+        }
+    )
     assert len(errs) >= 4
 
 
@@ -321,12 +393,22 @@ def test_validate_new_widget_types():
 
 def test_detail_and_widget_views(authenticated_client, seeded):
     dashboard = create_new_dashboard(
-        ADMIN_USER_ID, WEBSITE_ID, "Pro Cohort",
+        ADMIN_USER_ID,
+        WEBSITE_ID,
+        "Pro Cohort",
         config={
-            "version": 2, "dateRange": "30d", "filters": ["url_path:starts_with:/pro/"],
+            "version": 2,
+            "dateRange": "30d",
+            "filters": ["url_path:starts_with:/pro/"],
             "widgets": [
                 {"id": "k1", "type": "kpi", "metric": "pageviews", "grid": {"w": 3}},
-                {"id": "b1", "type": "breakdown", "source": "sections", "depth": 1, "grid": {"w": 6}},
+                {
+                    "id": "b1",
+                    "type": "breakdown",
+                    "source": "sections",
+                    "depth": 1,
+                    "grid": {"w": 6},
+                },
             ],
         },
     )
@@ -344,7 +426,9 @@ def test_detail_and_widget_views(authenticated_client, seeded):
 
 def test_heatmap_widget_renders_with_day_labels(authenticated_client, seeded):
     dashboard = create_new_dashboard(
-        ADMIN_USER_ID, WEBSITE_ID, "HM",
+        ADMIN_USER_ID,
+        WEBSITE_ID,
+        "HM",
         config={"version": 2, "widgets": [{"id": "hm", "type": "heatmap", "grid": {"w": 12}}]},
     )
     did = dashboard["id"]
@@ -356,14 +440,27 @@ def test_heatmap_widget_renders_with_day_labels(authenticated_client, seeded):
 def test_new_widget_types_render_via_view(authenticated_client, seeded):
     _ev("/pro/x", event_type=2, event_name="funnel/signup/start", visitor_key="v1")
     dashboard = create_new_dashboard(
-        ADMIN_USER_ID, WEBSITE_ID, "New types",
-        config={"version": 2, "widgets": [
-            {"id": "fn", "type": "funnel", "steps": [{"event": "funnel/signup/start", "label": "Start"}]},
-            {"id": "ns", "type": "namespace", "depth": 1},
-            {"id": "rt", "type": "ratio",
-             "numerator": {"event": "funnel/signup/start"}, "denominator": {"event": "funnel/signup/start"}},
-            {"id": "cmp", "type": "compare"},
-        ]},
+        ADMIN_USER_ID,
+        WEBSITE_ID,
+        "New types",
+        config={
+            "version": 2,
+            "widgets": [
+                {
+                    "id": "fn",
+                    "type": "funnel",
+                    "steps": [{"event": "funnel/signup/start", "label": "Start"}],
+                },
+                {"id": "ns", "type": "namespace", "depth": 1},
+                {
+                    "id": "rt",
+                    "type": "ratio",
+                    "numerator": {"event": "funnel/signup/start"},
+                    "denominator": {"event": "funnel/signup/start"},
+                },
+                {"id": "cmp", "type": "compare"},
+            ],
+        },
     )
     did = dashboard["id"]
     for wid in ("fn", "ns", "rt", "cmp"):
@@ -384,15 +481,18 @@ def test_builder_page_and_preview(authenticated_client, seeded):
     assert b"grid-stack" in builder.content
     assert b"dashboard_builder.js" in builder.content
     assert b'<option value="groups">Content groups</option>' in builder.content
+    assert b'id="cfg-namespace"' in builder.content
 
     # Live preview of an unsaved widget config.
     preview = authenticated_client.post(
         f"/dashboards/{did}/preview-widget/",
-        data=_json.dumps({
-            "widget": {"id": "tmp", "type": "breakdown", "source": "sections", "depth": 1},
-            "dashboardFilters": ["url_path:starts_with:/pro/"],
-            "dashboardDateRange": "30d",
-        }),
+        data=_json.dumps(
+            {
+                "widget": {"id": "tmp", "type": "breakdown", "source": "sections", "depth": 1},
+                "dashboardFilters": ["url_path:starts_with:/pro/"],
+                "dashboardDateRange": "30d",
+            }
+        ),
         content_type="application/json",
     )
     assert preview.status_code == 200

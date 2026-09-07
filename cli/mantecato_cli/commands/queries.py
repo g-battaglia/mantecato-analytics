@@ -119,6 +119,10 @@ def top_groups_cmd(
     range: str = RANGE_ALIAS_OPT,
     limit: int = LIMIT_OPT,
     filter: list[str] = FILTER_OPTION,
+    namespace: str | None = typer.Option(None, "--namespace"),
+    search: str | None = typer.Option(None, "--search"),
+    min_views: int = typer.Option(0, "--min-views", min=0),
+    sort: str = typer.Option("views", "--sort"),
     format: str = FORMAT_OPTION,
 ) -> None:
     """Top content groups by views (labels the site declares on the tracker tag)."""
@@ -127,7 +131,17 @@ def top_groups_cmd(
 
     dr = resolve_range(range)
     emit(
-        get_top_groups(website, dr.start_date, dr.end_date, limit, parse_filters(filter)),
+        get_top_groups(
+            website,
+            dr.start_date,
+            dr.end_date,
+            limit,
+            parse_filters(filter),
+            namespace=namespace,
+            search=search,
+            min_views=min_views,
+            sort=sort,
+        ),
         format,
     )
 

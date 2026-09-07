@@ -240,9 +240,9 @@ class WebsiteEvent(models.Model):
     # "pricing"]), not anything observed about the visitor. Page metadata in the
     # same class as ``url_path``/``page_title``, so it changes nothing about the
     # privacy posture. Lets sites whose URLs carry no taxonomy ("/p/<slug>")
-    # break their traffic down by section anyway. A JSON list rather than a
-    # Postgres array because SQLite is a supported backend; ``None`` when the
-    # page declares nothing. See ``apps.tracker.services.content_groups_from``.
+    # break their traffic down by section anyway. A JSON list stored as
+    # ``jsonb``; ``None`` when the page declares nothing. See
+    # ``apps.tracker.services.content_groups_from``.
     content_groups = models.JSONField(null=True, blank=True)
 
     class Meta:
@@ -381,8 +381,8 @@ class VisitorScopeState(models.Model):
     """Ephemeral per-(visitor, scope) presence for **exact** per-scope uniques.
 
     One row per ``(site, period, scope, scope_value, visitor_key)`` — i.e. "this
-    visitor was seen on this page/section/event during this window". Counting
-    distinct keys per ``scope_value`` gives exact per-page/section/event unique
+    visitor was seen on this page/section/group/event during this window".
+    Counting distinct keys per ``scope_value`` gives exact per-scope unique
     visitors for the window. Period-grained (not per-day) to bound storage to
     visitors×content. Deleted by the rollup; only integer counts survive in
     :class:`VisitorPeriod`.

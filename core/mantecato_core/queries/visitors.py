@@ -77,7 +77,7 @@ def read_visit_stats(
     daily aggregates (which cannot be filtered).
     """
     from apps.core.models import VisitorDaily
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     agg_upper_day, event_lower = _retention_split(current_window())
 
@@ -137,7 +137,7 @@ def read_scope_visitors(
     from collections import defaultdict
 
     from apps.core.models import VisitorPeriod
-    from core.mantecato_core.queries.orm_fallbacks import (
+    from core.mantecato_core.queries.event_querysets import (
         custom_event_queryset,
         pageview_queryset,
     )
@@ -228,7 +228,7 @@ def get_landing_metrics(
     consistent with the site-level KPIs.
     """
     from apps.core.models import VisitorPeriod
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     window = current_window()
     agg_upper_day, event_lower = _retention_split(window)
@@ -291,7 +291,7 @@ def visitors_by_bucket(
     is the same daily-uniques-vs-period-total relationship Plausible/Fathom show; the
     KPI card carries a "Deduplicated within each month" note for multi-month ranges.
     """
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     gran = granularity if granularity in _GRANULARITIES else "day"
     rows = (
@@ -326,7 +326,7 @@ def visits_by_bucket(
     from itertools import groupby
 
     from apps.core.models import WebsiteEvent
-    from core.mantecato_core.queries.orm_fallbacks import pageview_queryset
+    from core.mantecato_core.queries.event_querysets import pageview_queryset
 
     gran = granularity if granularity in _GRANULARITIES else "day"
     rows = (

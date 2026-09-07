@@ -1,12 +1,10 @@
 """Tests for content groups — site-declared page labels.
 
 Covers the whole path: normalisation at ingest, aggregation, the
-``content_group`` filter (SQL builder and ORM fallback), exact per-group unique
-visitors, and the Sections page's ``?by=group`` mode.
+``content_group`` filter (SQL builder and queryset path), exact per-group
+unique visitors, and the Sections page's ``?by=group`` mode.
 
-The aggregation and visitor tests run against the ORM fallback, since the suite
-runs on SQLite; the raw-SQL branch is exercised by the same public functions on
-PostgreSQL deployments.
+Runs against PostgreSQL — the only supported backend.
 """
 
 from __future__ import annotations
@@ -26,7 +24,8 @@ from apps.tracker.services import (
 )
 from core.mantecato_core.filters import Filter, build_filter_sql
 from core.mantecato_core.queries.filter_values import get_filter_values
-from core.mantecato_core.queries.groups import get_top_groups
+from core.mantecato_core.queries.groups import get_top_groups, normalise_group_options
+from core.mantecato_core.queries.stats import get_pageview_count
 from tests.conftest import WEBSITE_ID, make_admin_user
 
 if TYPE_CHECKING:
@@ -59,6 +58,12 @@ class TestContentGroupsFrom:
         groups = content_groups_from({"groups": ["x" * (MAX_CONTENT_GROUP_LEN + 50)]})
         assert len(groups[0]) == MAX_CONTENT_GROUP_LEN
 
+    def test_invalid_unicode_never_breaks_the_pageview_label_set(self) -> None:
+        groups = content_groups_from(
+            {"groups": ["tag:ok", "bad\x00label", "line\nfeed", "bad\ud800surrogate"]}
+        )
+        assert groups == ["tag:ok", "badlabel", "linefeed", "badsurrogate"]
+
     def test_umami_tag_becomes_a_group(self) -> None:
         assert content_groups_from({"tag": "Blog"}) == ["blog"]
 
@@ -77,8 +82,39 @@ class TestContentGroupsFrom:
 
 
 # ---------------------------------------------------------------------------
-# Aggregation
+# Analysis controls and aggregation
 # ---------------------------------------------------------------------------
+
+
+class TestGroupOptions:
+    def test_public_limits_are_restricted_to_stable_presets(self) -> None:
+        assert normalise_group_options(limit=20, preset_limits_only=True)["limit"] == 20
+        assert normalise_group_options(limit="50", preset_limits_only=True)["limit"] == 50
+        assert normalise_group_options(limit=100, preset_limits_only=True)["limit"] == 100
+        assert normalise_group_options(limit=999, preset_limits_only=True)["limit"] == 100
+        assert normalise_group_options(limit="bad", preset_limits_only=True)["limit"] == 100
+
+    def test_low_level_limit_remains_reusable_and_bounded(self) -> None:
+        assert normalise_group_options(limit=2)["limit"] == 2
+        assert normalise_group_options(limit=10_000)["limit"] == 1000
+        assert normalise_group_options(limit=-1)["limit"] == 1
+
+    def test_malformed_controls_fall_back_without_raising(self) -> None:
+        options = normalise_group_options(
+            namespace=[],  # type: ignore[arg-type]
+            search={},  # type: ignore[arg-type]
+            min_views=float("inf"),
+            sort=[],  # type: ignore[arg-type]
+            limit=float("inf"),
+            preset_limits_only=True,
+        )
+        assert options == {
+            "namespace": None,
+            "search": None,
+            "min_views": 0,
+            "sort": "views",
+            "limit": 100,
+        }
 
 
 def _event(
@@ -128,6 +164,48 @@ class TestGroupAggregation:
             _event([f"g{i}"])
         assert len(get_top_groups(WEBSITE_ID, *WINDOW, limit=2)) == 2
 
+    def test_namespace_filters_dimension_values_not_source_rows(self) -> None:
+        _event(["tag:python", "cat-l1:guides", "family:docs"], "/a")
+        rows = get_top_groups(WEBSITE_ID, *WINDOW, namespace="tag")
+        assert rows == [{"group": "tag:python", "views": 1, "pages": 1}]
+
+    def test_search_min_views_and_sort_apply_to_dimension(self) -> None:
+        _event(["tag:beta"], "/a")
+        _event(["tag:alpha"], "/b")
+        _event(["tag:alpha"], "/c")
+        rows = get_top_groups(
+            WEBSITE_ID, *WINDOW, namespace="tag", search="a", min_views=2, sort="name"
+        )
+        assert rows == [{"group": "tag:alpha", "views": 2, "pages": 2}]
+
+    def test_namespaces_are_discovered_from_data(self) -> None:
+        from core.mantecato_core.queries.groups import get_group_namespaces
+
+        _event(["tag:python", "family:docs", "plain"], "/a")
+        _event(["cat-l1:guides"], "/b")
+        assert get_group_namespaces(WEBSITE_ID, *WINDOW) == ["cat-l1", "family", "tag"]
+
+    def test_compare_includes_groups_missing_from_current_period(self) -> None:
+        from core.mantecato_core.date_utils import DateRange
+
+        old = WebsiteEvent.objects.create(
+            website_id=WEBSITE_ID,
+            url_path="/old",
+            event_type=1,
+            content_groups=["tag:gone"],
+        )
+        old_when = NOW - timedelta(days=3)
+        WebsiteEvent.objects.filter(pk=old.pk).update(created_at=old_when)
+        data = get_groups_data(
+            WEBSITE_ID,
+            DateRange(NOW - timedelta(days=1), NOW + timedelta(days=1)),
+            compare=True,
+        )
+        gone = next(row for row in data["groups"] if row["group"] == "tag:gone")
+        assert gone["views"] == 0
+        assert gone["previous_views"] == 1
+        assert gone["change"] == -100.0
+
     def test_malformed_stored_value_is_skipped(self) -> None:
         _event("not-a-list")  # type: ignore[arg-type]
         _event(["ok"])
@@ -157,12 +235,22 @@ class TestGroupAggregation:
         _event(None, "/it-unlabelled", country="IT")
         _event(["guides"], "/us", country="US")
 
-        rows = get_groups_data(
-            WEBSITE_ID,
-            _range(),
-            filters=[Filter("country", "eq", "IT")],
-        )["groups"]
+        filters = [Filter("country", "eq", "IT")]
+        rows = get_groups_data(WEBSITE_ID, _range(), filters=filters)["groups"]
         assert rows[0]["pct"] == 50.0
+        assert get_pageview_count(WEBSITE_ID, *WINDOW, filters=filters) == 2
+
+    def test_pageview_count_ignores_custom_events(self) -> None:
+        _event(["guides"], "/page")
+        event = WebsiteEvent.objects.create(
+            website_id=WEBSITE_ID,
+            url_path="/event",
+            event_type=2,
+            event_name="clicked",
+            content_groups=["guides"],
+        )
+        WebsiteEvent.objects.filter(pk=event.pk).update(created_at=NOW)
+        assert get_pageview_count(WEBSITE_ID, *WINDOW) == 1
 
 
 class TestMalformedStoredValues:
@@ -184,11 +272,10 @@ class TestMalformedStoredValues:
 
     @staticmethod
     def _generated_sql(module: str, call) -> str:
-        """Run *call* with the PostgreSQL branch forced and return its SQL.
+        """Run *call* with the database bypassed and return the SQL it builds.
 
-        SQLite cannot execute these queries, so the guards they rely on are
-        asserted on the generated statement instead of by running it. Weaker
-        than a PostgreSQL integration test, and deliberately so noted.
+        Guards are asserted on the generated statement without needing a
+        database round trip.
         """
         captured: dict[str, str] = {}
 
@@ -196,10 +283,7 @@ class TestMalformedStoredValues:
             captured["sql"] = sql
             return []
 
-        with (
-            patch(f"{module}.should_use_orm_fallback", return_value=False),
-            patch(f"{module}.raw_query", side_effect=fake_raw_query),
-        ):
+        with patch(f"{module}.raw_query", side_effect=fake_raw_query):
             call()
         return " ".join(captured["sql"].split())
 
@@ -219,6 +303,21 @@ class TestMalformedStoredValues:
         # The bare expansion (unguarded) must not survive anywhere.
         assert "jsonb_array_elements( we.content_groups" not in sql
 
+    def test_postgres_namespace_and_search_filter_emitted_labels(self) -> None:
+        sql = self._generated_sql(
+            "core.mantecato_core.queries.groups",
+            lambda: get_top_groups(
+                WEBSITE_ID,
+                *WINDOW,
+                namespace="tag",
+                search="moon",
+                min_views=3,
+            ),
+        )
+        assert "split_part(grp.elem #>> '{}', ':', 1) = {{groupNamespace}}" in sql
+        assert "grp.elem #>> '{}' ILIKE {{groupSearch}}" in sql
+        assert "HAVING COUNT(*) >= {{minViews::bigint}}" in sql
+
     @pytest.mark.parametrize(
         ("module", "call"),
         [
@@ -234,12 +333,11 @@ class TestMalformedStoredValues:
         ids=["aggregation", "typeahead"],
     )
     def test_postgres_only_expands_string_members(self, module: str, call) -> None:
-        """Both PostgreSQL paths must agree with SQLite on what counts as a label.
+        """Every expansion site must agree on what counts as a label.
 
         `jsonb_array_elements_text()` stringifies every member, so `42` and
-        `{"nested": 1}` would become groups of their own on PostgreSQL while the
-        SQLite fallback and the visitor counter drop them — the same row would
-        report differently per backend.
+        `{"nested": 1}` would become groups of their own while the visitor
+        counter drops them — the same row would report differently per path.
         """
         sql = self._generated_sql(module, call)
         assert "CROSS JOIN LATERAL jsonb_array_elements(" in sql
@@ -268,12 +366,10 @@ class TestContentGroupFilterSQL:
         assert "IS NULL OR NOT" in where
 
     @pytest.mark.parametrize("operator", ["contains", "not_contains"])
-    def test_substring_operators_are_dropped(self, operator: str) -> None:
-        # A substring test over a list of labels has no meaning — "guides"
-        # matching inside "sub-guides-x" answers no real question. It must not
-        # silently degrade into "match everything".
-        # (Prefix matching does have a meaning: see TestNamespacedLabels.)
-        assert build_filter_sql([Filter("content_group", operator, "x")])["where"] == ""
+    def test_substring_operators_are_rejected_by_the_parser(self, operator: str) -> None:
+        from core.mantecato_core.filters import parse_filters_from_params
+
+        assert parse_filters_from_params([f"content_group:{operator}:x"]) == []
 
     def test_combines_with_other_columns(self) -> None:
         where = build_filter_sql(
@@ -301,7 +397,10 @@ class TestNamespacedLabels:
 
     def test_twelve_labels_fit(self) -> None:
         # Three category levels + a family + eight tags is the site's shape.
-        payload = {"groups": ["cat:a", "cat:b", "cat:c", "fam:d"] + [f"tag:{i}" for i in range(8)]}
+        payload = {
+            "groups": ["cat-l1:a", "cat-l2:a/b", "cat-l3:a/b/c", "family:d"]
+            + [f"tag:{i}" for i in range(8)]
+        }
         assert len(content_groups_from(payload)) == 12
 
     def test_prefix_filter_is_answerable(self) -> None:
@@ -395,11 +494,8 @@ class TestContentGroupFilterORM:
         ]
         assert get_filter_values(WEBSITE_ID, "content_group", *WINDOW, search="pri") == ["pricing"]
 
-    @patch("core.mantecato_core.queries.filter_values.should_use_orm_fallback", return_value=False)
     @patch("core.mantecato_core.queries.filter_values.raw_query")
-    def test_typeahead_uses_json_array_expansion_on_postgres(
-        self, mock_query: MagicMock, _mock_fallback: MagicMock
-    ) -> None:
+    def test_typeahead_uses_json_array_expansion_on_postgres(self, mock_query: MagicMock) -> None:
         mock_query.return_value = [{"value": "guides"}]
 
         assert get_filter_values(WEBSITE_ID, "content_group", *WINDOW, search="guide") == ["guides"]
@@ -470,14 +566,68 @@ class TestSectionsGroupMode:
         self._login(client)
         mock_websites.return_value = [{"id": WEBSITE_ID, "name": "Test Site", "domain": "test.com"}]
         mock_data.return_value = {
-            "groups": [{"group": "guides", "views": 42, "visitors": 30, "pages": 7, "pct": 60.0}]
+            "groups": [
+                {
+                    "group": "tag:guides",
+                    "views": 42,
+                    "visitors": 30,
+                    "pages": 7,
+                    "pct": 60.0,
+                }
+            ],
+            "namespaces": ["family", "tag"],
+            "group_options": {
+                "namespace": "tag",
+                "search": None,
+                "min_views": 0,
+                "sort": "views",
+                "limit": 20,
+            },
+            "compare": False,
         }
-        content = client.get("/sections/?by=group").content.decode()
+        content = client.get("/sections/?by=group&namespace=tag&group_limit=20").content.decode()
         assert "guides" in content
         assert "42" in content
-        # Drilldown links filter the Pages view by label, not by URL prefix.
-        assert "content_group%3Aeq%3Aguides" in content
+        assert "Taxonomy" in content and "Min views" in content
+        assert "A page can declare several groups" not in content
+        assert "Pie chart" not in content
+        # Group rows now open Overview, carrying the exact content-group filter.
+        assert 'href="/?' in content
+        assert "content_group%3Aeq%3Atag%3Aguides" in content
         assert 'value="content_group"' in content
+
+    @patch("apps.analytics.views.get_groups_data")
+    @patch("apps.analytics.views.resolve_websites_for_user")
+    def test_compare_renders_new_group(
+        self, mock_websites: MagicMock, mock_data: MagicMock, client: Client
+    ) -> None:
+        self._login(client)
+        mock_websites.return_value = [{"id": WEBSITE_ID, "name": "Test Site", "domain": "test.com"}]
+        mock_data.return_value = {
+            "groups": [
+                {
+                    "group": "family:new-family",
+                    "views": 12,
+                    "previous_views": 0,
+                    "change": None,
+                    "visitors": 8,
+                    "pages": 2,
+                    "pct": 25.0,
+                }
+            ],
+            "namespaces": ["family"],
+            "group_options": {
+                "namespace": None,
+                "search": None,
+                "min_views": 0,
+                "sort": "views",
+                "limit": 100,
+            },
+            "compare": True,
+        }
+        content = client.get("/sections/?by=group&group_compare=1").content.decode()
+        assert "Previous" in content and "Change" in content
+        assert "New" in content
 
     @patch("apps.analytics.views.get_sections_data")
     @patch("apps.analytics.views.resolve_websites_for_user")
