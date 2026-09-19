@@ -6,12 +6,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Remote CLI and MCP clients** — two independent packages now authenticate with
+  an API key and use HTTPS. Neither client installs Django or accesses PostgreSQL.
+- **Analytics API v1** — additive, strict endpoints for capabilities, schemas,
+  totals, dimensional time series, comparisons, dimension discovery and traffic
+  quality diagnostics. Existing API and dashboard contracts are unchanged.
 - **Content groups** — break traffic down by labels the site declares for each
   page, for sites whose URLs carry no taxonomy of their own (`/p/<slug>`).
   Set them on the tracker tag (`data-groups="guides,pricing"`) and they show up
   under **Sections → Content group**, as a `content_group` filter on every other
-  view, and through `GET /api/analytics/groups/`, `mantecato top-groups`,
-  `client.analytics.groups()` and the `groups` breakdown widget. Exact per-group
+  view, and through `GET /api/analytics/groups/`, the independent
+  `mantecato top-groups` command and the `groups` breakdown widget. Exact per-group
   unique visitors come from the existing scope-presence mechanism. A page may
   declare several groups (max 12, optionally namespaced as `cat:`/`tag:`), so
   per-group views overlap and do not sum to
@@ -21,6 +26,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the tracker and dropped on ingest, now lands as a single group.
 
 ### Changed
+- The old database-backed CLI is no longer bundled with the Django server. The
+  public Python SDK has been retired in favor of the REST API and separate clients.
 - **Relicensed from MIT to the Apache License 2.0.** Apache 2.0 keeps the same
   permissive freedoms but adds an explicit patent grant and trademark clause.
   The full text now lives in the root `LICENSE` file.

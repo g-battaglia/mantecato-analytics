@@ -1,8 +1,8 @@
-# apps/api -- JSON API for CLI and MCP
+# apps/api -- JSON API for remote CLI and MCP clients
 
 Headless JSON API for programmatic access to Mantecato. It produces no HTML:
-all responses are `application/json`. Used by the CLI (`mantecato`),
-the MCP server, and the Python SDK (`mantecato-client`).
+all responses are `application/json`. The independent CLI and MCP packages use
+HTTPS and API keys; neither client imports Django or connects to PostgreSQL.
 
 ## Purpose
 
@@ -20,9 +20,8 @@ All requests require the header:
 Authorization: Bearer mtk_...
 ```
 
-API keys are generated from the web dashboard (Settings > API Keys) or
-from the CLI (`mantecato api-key-create`). Keys are hashed with SHA-256 before
-storage: the plaintext value is shown only at creation time.
+API keys are generated from the web dashboard under Settings > API Keys. The
+plaintext value is shown only at creation time; the server stores a keyed hash.
 
 **Key scopes:**
 
@@ -33,9 +32,22 @@ Authentication is handled by the `ApiKeyMiddleware`
 (`mantecato/middleware.py`), which validates the token and injects `request.api_user_id`
 and `request.api_key_scopes` into the request.
 
-## Available Endpoints
+## Available endpoints
 
-All paths are prefixed with `/api/`.
+All paths are prefixed with `/api/`. Existing endpoints retain their original
+contracts. New remote clients use the additive `/api/v1/` contract for strict,
+versioned analytics requests.
+
+### API v1
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/capabilities/` | Supported operations, dimensions and limits |
+| `GET` | `/api/v1/schema/` | Request schema |
+| `POST` | `/api/v1/analytics/query/` | Totals, breakdowns and time series |
+| `POST` | `/api/v1/analytics/compare/` | Period comparisons |
+| `POST` | `/api/v1/analytics/traffic-quality/` | Traffic diagnostics |
+| `POST` | `/api/v1/analytics/dimension-values/` | Dimension discovery |
 
 ### Sites
 

@@ -1,404 +1,342 @@
-<h1 align="center">Mantecato - Ethical Analytics</h1>
+<h1 align="center">Mantecato</h1>
 <p align="center">
-  <img src="https://img.shields.io/badge/Made_in-Italy_%F0%9F%87%AE%F0%9F%87%B9-008C45?labelColor=CD212A" alt="Made in Italy">
-  <img src="https://img.shields.io/badge/GDPR-compliant_by_design-008C45" alt="GDPR compliant by design">
-  <img src="https://img.shields.io/badge/Cookie_banner-not_required-2ea44f" alt="No cookie banner required">
-  <img src="https://img.shields.io/badge/Consent_Mode-not_needed-2ea44f" alt="No consent mode needed">
-  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache 2.0 License">
-  <img src="https://visitor-badge.laobi.icu/badge?page_id=g-battaglia.mantecato-analytics&left_text=Repo%20views" alt="Repo views">
+  <strong>Privacy-first, agentic-first web analytics.</strong><br>
+  Self-hosted analytics with native MCP tools, an independent CLI, and a web dashboard.<br>
+  Agents query aggregate analytics through the API, not the database.
 </p>
 <p align="center">
-  <strong>The ethical web analytics platform — for agents and humans. Proudly 🇮🇹 Made in Italy.</strong><br>
-  Cookieless aggregate analytics. No consent banner, no Consent Mode, no CMP.<br>
-  <strong>GDPR-compliant by design</strong> · no third-party tracking · self-hosted, privacy-first, AI-native — built with Django + HTMX.
+  <img src="https://img.shields.io/badge/Privacy-first-008C45" alt="Privacy first">
+  <img src="https://img.shields.io/badge/Agentic-first-0057B8" alt="Agentic first">
+  <img src="https://img.shields.io/badge/Made_in-Italy-008C45?labelColor=CD212A" alt="Made in Italy">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache 2.0 license">
 </p>
+<p align="center">
+  <a href="#privacy-first">Privacy</a> · <a href="#agentic-first">Agents</a> · <a href="#mcp-server">MCP</a> · <a href="#cli">CLI</a> · <a href="#dashboard">Dashboard</a> · <a href="#self-hosting">Self-hosting</a> · <a href="#rest-api">API</a>
+</p>
+
+Mantecato measures website traffic without cookies or browser storage. It runs on
+Django and PostgreSQL, with a server-rendered HTMX dashboard. You host the analytics
+server and choose who can query it.
+
+**Agent access is a first-class, native interface.** The repository includes
+`mantecato-mcp` for MCP-compatible agents and `mantecato-cli` for terminal workflows
+and automation. Both call the authenticated REST API. Neither needs Django,
+database credentials, a browser session, or dashboard scraping.
 
 <p align="center">
-  <em>On a mission to become the best self-hosted analytics — privacy by design, not by checkbox.</em>
+  <img src="screen.png" alt="Mantecato analytics dashboard" width="800">
 </p>
 
-<p align="center">
-  <a href="#-self-hosting">🏠 Self-Host</a> · <a href="#-dashboard">🖥️ Dashboard</a> · <a href="#-cli">💻 CLI</a> · <a href="#-rest-api">🔌 API</a> · <a href="#-mcp-server">🤖 MCP</a> · <a href="#-migrating-from-umami">🔄 From Umami</a>
-</p>
+## Privacy first
 
-<p align="center">
-  <img src="screen.png" alt="Mantecato Dashboard" width="800">
-</p>
+The default tracker uses no cookies, localStorage, or sessionStorage. It respects
+Global Privacy Control by default. Collection keeps page paths, referrer domains,
+coarse device information and country-level location, not full referrer URLs or
+precise location. Custom events contain a name, not a user-defined payload.
 
-### 🚂 Deploy on Railway
+IP addresses and raw User-Agent strings are processed transiently, not stored in
+the analytics tables. Before computing visitor digests, the server masks IPv4
+addresses to `/24` and IPv6 addresses to `/48`. Digests use a site-specific input
+and a monthly salt. Retained digests are pseudonymous identifiers. The server
+discards the salt at month end; the retention process later clears event digests
+while preserving aggregate counts.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/mantecato-analytics?referralCode=UmPu3s&utm_medium=integration&utm_source=template&utm_campaign=generic)
+There are no visitor profiles, session replay, or cross-site tracking. Operators
+must keep personal data out of page paths, titles, event names and content-group
+labels. Schedule `rollup_visitors` to enforce digest retention, and check that
+proxy and access logs follow your privacy policy too.
 
-One click provisions PostgreSQL 16 + Mantecato, wired together automatically.
-The bundled `railway.toml` (Railpack builder) runs migrations in a pre-deploy
-step, collects static files at build time, and serves the app with gunicorn on
-Railway's injected `$PORT`. Health checks hit `/health/`.
+### Consent and deployment responsibilities
 
-See [docs/RAILWAY.md](docs/RAILWAY.md) for the full environment-variable
-reference and for publishing your own copy of the community template.
+The default cookieless tracker is designed for consent-exempt audience measurement.
+That is not a blanket compliance guarantee. Your jurisdiction, proxy configuration,
+other scripts and use of the data determine the obligations for your deployment.
+Mantecato does not make unrelated tracking consent-free.
 
----
+Keep tracker fetch credentials at `omit`. For a same-origin collector proxy, strip
+inbound `Cookie` headers. Publish a privacy notice, retain an opt-out, and confirm
+your lawful basis and consent requirements before deployment.
 
-## ✨ Why Mantecato?
+See [privacy and data facts](docs/privacy.md), the
+[field-by-field data inventory](docs/data-processing-record.md), and the
+[measurement accuracy guide](docs/accuracy.md).
 
-Most analytics tools are built for humans clicking around a dashboard. Mantecato is built for that **and** for AI agents that need to query, analyze, and act on your data programmatically.
+### What visitor counts mean
 
-Every metric available in the dashboard is also available through the CLI, the REST API, the Python SDK, and the MCP server. AI agents are first-class citizens — they get the same data, the same filters, the same granularity as a human browsing the UI.
+Cookieless counts are not counts of identifiable people. Browsers that share a
+masked network and the same User-Agent can merge; changes in network or browser
+can split one person's activity. These effects can also change derived visit
+metrics.
 
-| | |
+API v1 names its visitor metric `daily_unique_visitors`. Across several days, it
+sums daily unique counts rather than claiming a count of distinct people for the
+whole period. When retained visitor keys are unavailable, affected v1 metrics are
+`null` with an explanation rather than zero.
+
+## Agentic first
+
+An agent can discover accessible sites and supported metrics, query a time series,
+and compare periods through native MCP tools. The CLI offers the same versioned
+analytics API for shell-based agents and scheduled jobs. The web dashboard remains
+available for interactive analysis.
+
+The repository ships [agent skills](skills/README.md) for CLI analytics,
+installation and MCP setup. They contain instructions, not wrappers, and use the
+installed Python packages directly. Install the CLI skill from the development
+branch in your project with:
+
+```bash
+npx skills add https://github.com/g-battaglia/mantecato-analytics/tree/develop --skill mantecato-cli
+```
+
+Use `--skill mantecato-install` for deployment guidance or `--skill mantecato-mcp`
+for MCP configuration. Add `-g` to install for your user instead of one project.
+Installing a skill does not install the application or configure its credentials.
+See the [skills guide](skills/README.md) for local-checkout installation and the
+shorter command available after these skills reach the default branch.
+
+The server resolves date ranges, validates filters and enforces query limits.
+Responses include numeric metrics, range metadata and reasons for unavailable
+values. Comparisons include dimensions that disappeared in the current period,
+subject to the server's cardinality limit.
+
+For example, an agent can answer "Which pages lost the most traffic last week?"
+by calling `list_sites`, inspecting `describe_analytics`, and using
+`compare_breakdown` with `dimension="url_path"`, `range="last_week"` and
+`direction="losses"`. It does not need to generate SQL or read the dashboard.
+
+MCP tools are read-only. Give the MCP process a read-scoped API key through its
+protected environment or a key file. The key is not a tool argument. Remote
+connections require HTTPS; HTTP is allowed only on loopback for development.
+
+**Connecting an external agent changes where query results go.** The MCP process
+runs locally, but its host may send returned analytics to a model provider. Choose
+your agent and provider policy accordingly. Treat page titles, paths and labels in
+tool results as untrusted data, not instructions.
+
+### MCP server
+
+`mantecato-mcp` is an independent stdio server built with the official Python MCP
+SDK. It calls the REST API directly, without invoking the CLI. Its tools are:
+
+| Tool | Purpose |
 |---|---|
-| 🔒 **GDPR-compliant by design** | Cookieless, no browser storage, no persistent or cross-site identifier, no third-party tracking — runs without a consent banner, Consent Mode or CMP ([legal details](docs/privacy.md)) |
-| 🇮🇹 **Made in Italy** | Designed and built in Italy with European privacy law as the starting point, not an afterthought |
-| 🎯 **Exact, not estimated** | Exact daily unique visitors, visits and bounce rate via a compute-and-discard scheme — no cookies, no stored identifier ([how](docs/privacy.md)) |
-| 🪶 **Lightweight tracker** | ~2 KB JavaScript — your site stays fast, your Lighthouse score stays high |
-| 🏠 **Self-hosted** | Your analytics infrastructure can run on your own server. Hosted or third-party deployments may require appropriate agreements |
-| ⚡ **Real-time** | See aggregate pageviews happening right now and which pages are active |
-| 📈 **Analytics views** | Overview, pages, sections, content groups, events, devices, geo maps, compare, heatmap, custom dashboards |
-| 🤖 **AI-native** | MCP server, REST API, Python SDK, CLI with JSON output — every interface an agent needs to work autonomously |
-| 💻 **CLI** | Query everything from the terminal — output in table, JSON, or CSV |
-| 🔌 **Full REST API** | 25+ endpoints with API key auth — integrate analytics into any workflow |
-| 🐍 **Python SDK** | `mantecato-client` — access everything programmatically from scripts and notebooks |
-| 🕵️ **Bot detection** | Built-in heuristics to filter out crawlers, scrapers, and automated traffic |
-| 🔄 **Umami-compatible** | Same wire protocol — drop-in replacement with one-command data import |
+| `list_sites` | List websites accessible to the API key |
+| `describe_analytics` | Discover metrics, dimensions, filters, limits and the request schema |
+| `query_metrics` | Read aggregate metrics for a site and period |
+| `query_timeseries` | Read a time series, optionally grouped by dimensions |
+| `compare_breakdown` | Rank gains or losses between periods |
+| `traffic_quality` | Inspect measured traffic patterns without changing bot labels |
+| `list_dimension_values` | Discover bounded dimension values for filters |
 
----
+The client packages are in this repository and are not yet published to PyPI.
+From a checkout, install the MCP package with:
 
-## 🚀 How It Works
+```bash
+uv tool install ./packages/mantecato-mcp
+# Or: pipx install ./packages/mantecato-mcp
+```
 
-Add one script tag to your site:
+Create a read-scoped API key in the web settings. Save it in a file readable only
+by your user, then configure the connection:
+
+```bash
+chmod 600 "$HOME/.config/mantecato/api-key"
+export MANTECATO_URL="https://analytics.example.com"
+export MANTECATO_API_KEY_FILE="$HOME/.config/mantecato/api-key"
+mantecato-mcp --check
+```
+
+For an MCP host that accepts `mcpServers` configuration:
+
+```json
+{
+  "mcpServers": {
+    "mantecato": {
+      "command": "mantecato-mcp",
+      "env": {
+        "MANTECATO_URL": "https://analytics.example.com",
+        "MANTECATO_API_KEY_FILE": "/absolute/path/to/private/api-key"
+      }
+    }
+  }
+}
+```
+
+Use an absolute executable path if the host cannot find `mantecato-mcp` on its
+`PATH`. The host starts the stdio process. No HTTP MCP listener or public MCP port
+is required. There are no administrative tools or unrestricted SQL tools.
+
+See the [MCP package documentation](packages/mantecato-mcp/README.md).
+
+### CLI
+
+`mantecato-cli` is a separate HTTP client with table, JSON and CSV output. From a
+checkout:
+
+```bash
+uv tool install ./packages/mantecato-cli
+# Or: pipx install ./packages/mantecato-cli
+```
+
+It uses the same `MANTECATO_URL` and `MANTECATO_API_KEY_FILE` variables as the MCP
+server. A secret manager can instead supply `MANTECATO_API_KEY` in the process
+environment. Do not put the key in command arguments, shell history, prompts, or
+segment files.
+
+```bash
+mantecato doctor
+mantecato sites --format json
+mantecato timeseries -w <website-id> -r 7d -g day --dimension country --format json
+mantecato compare-breakdown -w <website-id> --dimension url_path --direction losses
+```
+
+The CLI supports explicit half-open date ranges, reusable filter segments,
+dimensional time series, comparisons and traffic-quality diagnostics. Profiles
+store connection settings and key-file paths, not inline keys.
+
+See the [CLI package documentation](packages/mantecato-cli/README.md).
+
+## Add the tracker
+
+Add a script tag to your site:
 
 ```html
 <script defer src="https://your-mantecato.com/api/script"
         data-website-id="your-website-id"></script>
 ```
 
-That's it. Aggregate pageview data starts flowing into your dashboard instantly. No build step, no npm install, no configuration files — and **no consent banner, Consent Mode or CMP to wire up**.
-
-Want to track custom events?
+The tracker records pageviews and handles SPA route changes. To record a named
+click event:
 
 ```html
-<!-- 🎯 Track clicks with HTML attributes -->
-<button data-mantecato-event="signup">Sign Up</button>
+<button data-mantecato-event="signup">Sign up</button>
 ```
 
-Custom events record an **event name only**. By design there is no event
-payload, no revenue tracking, and no visitor identification — Mantecato is
-cookieless and aggregate, so there is nothing to attach a person to.
+Custom events carry a name only. There are no event properties, revenue payloads
+or visitor identification calls.
 
-Want your traffic broken down by topic when your URLs don't carry one?
+### Content groups
+
+Use site-declared labels when URL paths do not describe your content:
 
 ```html
-<!-- 🏷️ Label what this page is about -->
 <script defer src="https://your-mantecato.com/api/script"
         data-website-id="your-website-id"
-        data-groups="guides,pricing"></script>
+        data-groups="cat:guides,tag:python"></script>
 ```
 
-**Content groups** are labels *you* declare for a page — page metadata, like the
-title, never anything observed about the visitor. Sections group by URL prefix,
-which says nothing when every article lives at `/p/<slug>`; groups let you break
-the same traffic down by whatever dimension you actually care about. A page can
-carry several (up to 12), so the rows overlap like a tag cloud. Prefix them when
-one page carries more than one taxonomy — `cat:guides,tag:python` keeps a
-category and a tag that share a name apart. In **Sections → Content group**,
-use the Taxonomy selector to narrow the returned dimension; use the global
-`content_group` filter when you want every other analytics view scoped to a label. Find them under
-**Sections → Content group**, as a `content_group` filter on every other view,
-and on the API, CLI, SDK and custom dashboards.
+A page can have up to 12 labels. Labels describe the page, never the visitor.
+Prefixes such as `cat:` and `tag:` separate taxonomies. Because one page can belong
+to several groups, group counts overlap and must not be added as a site total.
 
-The tracker automatically handles SPA route changes, **respects Global Privacy
-Control (GPC) by default** (the legacy Do Not Track header is opt-in), and can be
-toggled on and off by visitors.
+Find groups in the dashboard under Sections, then Content group. They are also
+available through API v1, CLI and MCP dimensions and filters. A dimension selector
+narrows the labels shown; a `content_group` filter scopes the underlying traffic.
 
-For maximum measurement accuracy on a self-hosted, first-party deployment — count
-privacy opt-outs and dodge ad-blockers via first-party proxying — see
-[docs/accuracy.md](docs/accuracy.md).
+## Dashboard
 
----
+The dashboard uses server-rendered Django templates and HTMX, without a frontend
+application framework.
 
-## 🔒 Privacy & Compliance — GDPR-compliant by design 🇮🇹
-
-Mantecato is **engineered in Italy to be GDPR-compliant by design**: it runs
-**without a cookie/consent banner** and fits the major privacy regimes **by
-construction**, not by configuration. The privacy-critical parameters are **fixed and
-non-configurable**, so the compliant posture cannot be accidentally turned off.
-_Engineering-for-compliance, not legal advice — have counsel confirm for your specific
-deployment._
-
-> 📚 **Read the legal details:** [docs/privacy.md](docs/privacy.md) — legal basis, what
-> is and isn't collected, and a model privacy notice you can adapt · 
-> [docs/data-processing-record.md](docs/data-processing-record.md) — an
-> authority-ready, field-by-field data inventory to hand to a GDPR / Garante / CNIL /
-> ICO enquiry.
-
-**No consent banner, no Consent Mode, no CMP — nothing to wire up.** Coming from
-Google Analytics or a cookie-based tool, you normally need a Consent Management
-Platform, Google **Consent Mode v2**, and a banner that blocks tracking until the
-visitor clicks "Accept". With Mantecato **none of that applies**: there is no consent
-signal to gate, no `consent` API to call, no CMP to integrate. You drop in the
-script tag and you're done — measurement starts immediately, for **100% of visitors**.
-
-**Why there's no banner.** The banner trigger (ePrivacy **Art. 5(3)** / UK PECR) is
-about *storing or accessing information on the device*. Mantecato uses **no cookies
-and no browser storage** (`credentials: "omit"`), so it never does that — regardless
-of anything done server-side. No storage access → no Art. 5(3) trigger → no consent
-required.
-
-**What's hardcoded for GDPR and the consent-exempt audience-measurement frameworks:**
-
-- **first-party / single-site** — no cross-site or cross-day tracking, no fingerprinting
-- client **IP masked to `/24` (IPv4) · `/48` (IPv6)** and **never stored** (used transiently, then discarded)
-- short-lived **in-month identifier** (random monthly salt, deleted at month end), **≤ 13 months**, no per-visit renewal
-- **country-level geo only** (no region/city), **aggregate-only output**
-- **Global Privacy Control (GPC) honoured** by default
-
-| Region | Framework | Status |
-|---|---|---|
-| 🇪🇺 EU | GDPR + ePrivacy | **No banner** (no device storage); transient IP/UA on the consent-exempt audience-measurement basis |
-| 🇮🇹 Italy | **Garante** — cookie guidelines (2021) | Met: IP masked on ≥ 4th octet, single-site, aggregate-only |
-| 🇫🇷 France | **CNIL** — *Sheet n°16* | Met: last IP octet dropped (`/24`), ≤ 13-month identifier, ≤ 25-month retention |
-| 🇬🇧 UK | PECR + DUAA 2025 (statistical purposes) | No banner; first-party, transparency + opt-out |
-| 🇺🇸 US | CCPA/CPRA + state laws | No sale/share, no cross-context ads, **GPC honoured** → privacy-policy disclosure only |
-| 🇨🇦 / 🇦🇺 | PIPEDA · Québec Law 25 / Privacy Act (APPs) | No banner; transparency notice, no sensitive data |
-
-Details: [docs/privacy.md](docs/privacy.md) (legal basis, model privacy notice) ·
-[docs/data-processing-record.md](docs/data-processing-record.md) (authority-ready data inventory).
-
-### 📉 Accuracy trade-off: visitor counts are deliberately conservative
-
-Because the IP is **masked to `/24` and never stored**, Mantecato cannot distinguish
-visitors who share the same network block **and** the same browser — it counts them
-as **one** visitor. As a result, **unique-visitor counts read lower than full-IP tools**
-(Google Analytics, Umami, …); the gap **grows with the time range** and is **largest on
-desktop / shared networks** (offices, ISPs, campuses, mobile CGNAT). This is the
-privacy ↔ precision trade-off — **by design, not a bug**:
-
-- **Pageviews, visits and trends are unaffected** — only the *distinct-visitor* figure is conservative.
-- That masking is exactly what keeps the no-banner, consent-exempt posture valid; recovering those visitors would require the **full IP**, which steps outside the EU audience-measurement exemption.
-- It is the "cookieless ceiling" every cookieless tool has — Mantecato simply errs on the side of privacy. More in [docs/accuracy.md](docs/accuracy.md).
-
----
-
-## 🖥️ Dashboard
-
-A full-featured, responsive analytics dashboard with interactive charts and maps. No JavaScript framework — just fast, server-rendered pages with HTMX for instant interactivity.
-
-| | |
+| View | Data |
 |---|---|
-| 📋 **Overview** | Exact visitors, visits, bounce rate, avg. duration, pages/visit and pageviews at a glance, with tabs for quick drill-downs |
-| 📄 **Pages** | Top pages by views |
-| 📂 **Sections** | Hierarchical URL grouping — see how `/blog/`, `/docs/`, `/pricing/` perform as a whole |
-| 🎯 **Events** | Custom event breakdown (event name + counts) and time series |
-| 📱 **Devices** | Browsers, operating systems, device types |
-| 🌍 **Geo** | Interactive world map at **country level only** (no region/city, to avoid re-identification) |
-| ⚖️ **Compare** | Period-over-period comparison (previous period or previous year) with % change |
-| ⚡ **Realtime** | Live aggregate pageview count and current pages |
-| 🗓️ **Heatmap** | Traffic heatmap by hour of day × day of week |
-| 🎨 **Custom Dashboards** | Build your own views with the metrics that matter to you |
+| Overview | Visitors, visits, bounce rate, duration, pages per visit and pageviews |
+| Pages | Page-level traffic |
+| Sections | URL-prefix groups and content groups |
+| Events | Named-event counts and time series |
+| Devices | Browsers, operating systems and device types |
+| Geo | Country-level map, without city or region data |
+| Compare | Period comparisons with percentage changes |
+| Realtime | Current aggregate traffic |
+| Heatmap | Traffic by hour and weekday |
+| Custom dashboards | Configurable metric views |
 
-> Unique visitors are exact **per day**; over a multi-day range the figure is the
-> sum of daily uniques. Returning-visitor / cross-day metrics, sessions lists,
-> journeys, funnels, retention and revenue are intentionally **not** offered —
-> they require a persistent identifier. See [docs/privacy.md](docs/privacy.md).
+### Filtering and bot detection
 
-### 🔍 Filtering
+Analytics views support stored dimensions such as page path, title, hostname,
+content group, browser, operating system, device and country. Visitor-derived
+metrics depend on retained keys; older anonymous aggregates cannot supply every
+dimensional breakdown.
 
-Every analytics view supports filtering on the dimensions actually stored:
+Bot detection uses known User-Agent patterns and other configured heuristics.
+Per-site settings control the read-time bot filter and country exclusions. API v1
+traffic-quality indicators describe measured patterns; they do not rewrite the
+stored bot classification.
 
-| Filter | Examples |
-|---|---|
-| **Content** | `url_path`, `page_title`, `hostname`, `event_name` |
-| **Devices** | `browser`, `os`, `device` |
-| **Geo** | `country` |
+## REST API
 
-Operators: `eq`, `neq`, `contains`, `not_contains`, `starts_with`, `not_starts_with`.
+Clients authenticate with `Authorization: Bearer mtk_...`. API v1 is additive;
+the existing endpoints remain available.
 
-> Note: visitor/visit/bounce KPIs are shown without a content/device/geo filter
-> active; with such a filter they read `N/A` (exact counts come from aggregate
-> tables that cannot be sliced by those dimensions).
-
-### 🤖 Bot Detection
-
-Built-in heuristics to keep your data clean:
-
-- 🕷️ **User-agent matching** — detects Googlebot, Bingbot, Yandex, Baidu, Selenium, Puppeteer, and 30+ known crawler patterns
-- 🫥 **Empty user-agent** — flags requests with no User-Agent
-- 🌍 **Country exclusion** — optionally drop traffic from selected countries
-
-Configurable per website — toggle each heuristic on or off from the settings page.
-
----
-
-## 💻 CLI
-
-Query your analytics from the terminal. Every command supports `--format table|json|csv`, making it easy to pipe data into scripts, notebooks, or dashboards.
-
-```bash
-mantecato overview -w <website-id> -r 7d --format table
-mantecato top-pages -w <website-id> --filter country:IT --format json
-mantecato events -w <website-id> -r today --format csv > events.csv
-```
-
-### 📊 Analytics Commands
-
-High-level commands that mirror the dashboard views:
-
-| Command | Description |
-|---|---|
-| `overview` | Site-wide overview metrics (exact visitors, visits, bounce, duration) |
-| `pages` | Page-level analytics with pagination |
-| `events` | Custom event breakdown |
-| `devices` | Browser, OS, device type |
-| `geo` | Country-level geographic breakdown |
-| `compare` | Period-over-period comparison |
-| `realtime` | Live aggregate pageview data |
-
-### 🔎 Query Commands
-
-Low-level access to the query engine — more granular, more flexible:
-
-| Command | Description |
-|---|---|
-| `stats` | Raw overview stats with derived metrics |
-| `timeseries` | Pageview and visits time series |
-| `top-pages` | Top pages ranked by views (path or title mode) |
-| `top-sections` | Hierarchical URL section analysis |
-| `event-timeseries` | Time series for a single event |
-| `filter-values` | Available filter values for a column |
-| `heatmap` | Traffic heatmap by hour/day |
-
-### 🛠️ CRUD Commands
-
-Manage resources from the terminal:
-
-| Command | Description |
-|---|---|
-| `sites` | List tracked websites |
-| `dashboards` / `dashboard` | List or get custom dashboards |
-| `dashboard-create` / `dashboard-delete` | Create or delete a dashboard |
-| `api-keys` / `api-key-create` / `api-key-delete` | Manage API keys |
-| `scheduled-exports` / `scheduled-export-delete` | Manage scheduled exports |
-| `bot-config` | View bot detection configuration |
-
-### ⚙️ Common Options
-
-| Option | Description |
-|---|---|
-| `-w`, `--website` | Website UUID |
-| `-r`, `--range` | Date range preset (`today`, `7d`, `30d`, `90d`, `12mo`, etc.) |
-| `-l`, `--limit` | Number of results (default: 20) |
-| `--filter` | Repeatable filter (`column:operator:value`) |
-| `--format` | Output format: `table`, `json`, `csv` |
-| `-g`, `--granularity` | Time bucket: `minute`, `hour`, `day`, `week`, `month` |
-
----
-
-## 🔌 REST API
-
-All analytics data is available via a JSON REST API. Authenticate with API keys (`Authorization: Bearer mtk_...`).
-
-### 📊 Analytics Endpoints
-
-All `GET` requests. Pass `website` (UUID), `start_at`, `end_at`, and optional `filter` parameters.
+### Versioned analytics
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/analytics/overview/` | Aggregated site-wide metrics (exact visitors/visits/bounce) |
-| `GET /api/analytics/pages/` | Page-level analytics (paginated) |
-| `GET /api/analytics/events/` | Custom event analytics |
-| `GET /api/analytics/devices/` | Device/browser/OS breakdowns |
-| `GET /api/analytics/geo/` | Country-level geographic breakdown |
-| `GET /api/analytics/compare/` | Period comparison |
-| `GET /api/analytics/realtime/` | Live aggregate pageview activity |
+| `GET /api/v1/capabilities/` | Metrics, dimensions, filters and server limits |
+| `GET /api/v1/schema/` | Request schema discovery |
+| `POST /api/v1/analytics/query/` | Totals, breakdowns and time series |
+| `POST /api/v1/analytics/compare/` | Period comparisons and ranked changes |
+| `POST /api/v1/analytics/traffic-quality/` | Behavioral diagnostics |
+| `POST /api/v1/analytics/dimension-values/` | Bounded dimension discovery |
 
-### 🛠️ Management Endpoints
+The analytics POST endpoints query data; they do not modify it. API key
+validation may update the key's last-used timestamp. Analytics SQL runs in a
+read-only transaction with statement and lock timeouts.
+
+V1 derives visit metrics from events within the requested range and filters.
+Do not assume every metric has the same definition as a dashboard metric. Read
+the metric metadata and unavailable-value explanations returned by the API.
+
+### Existing analytics endpoints
+
+These GET endpoints accept `website`, `start_at`, `end_at` and optional `filter`
+parameters:
+
+| Endpoint | Description |
+|---|---|
+| `/api/analytics/overview/` | Site-wide metrics |
+| `/api/analytics/pages/` | Paginated page analytics |
+| `/api/analytics/events/` | Custom-event analytics |
+| `/api/analytics/devices/` | Device, browser and OS breakdowns |
+| `/api/analytics/geo/` | Country breakdown |
+| `/api/analytics/compare/` | Period comparison |
+| `/api/analytics/realtime/` | Current aggregate activity |
+
+### Management and collection
 
 | Endpoint | Description |
 |---|---|
 | `GET /api/sites/` | List tracked websites |
-| `GET/POST /api/dashboards/` | List / create dashboards |
-| `GET/POST /api/dashboards/<id>/` | Get / update / delete a dashboard |
-| `GET/POST /api/api-keys/` | List / create API keys |
+| `GET/POST /api/dashboards/` | List or create dashboards |
+| `GET/POST /api/dashboards/<id>/` | Read or manage a dashboard |
+| `GET/POST /api/api-keys/` | List or create API keys |
 | `POST /api/api-keys/<id>/delete/` | Revoke an API key |
-| `GET/POST /api/bot-config/` | Get / save bot detection config |
+| `GET/POST /api/bot-config/` | Read or save bot configuration |
+| `POST /api/send` | Collect events using the Umami-compatible wire protocol |
+| `GET /api/script` | Serve the tracker bundle |
 
-### 📡 Tracker Endpoints
+See the [API documentation](apps/api/README.md). The former Python SDK is retired;
+custom integrations can call the REST API directly.
 
-| Endpoint | Description |
-|---|---|
-| `POST /api/send` | Event ingestion (Umami-compatible wire protocol) |
-| `GET /api/script` | Serve the JavaScript tracker bundle |
+## Tracker packages
 
----
+### `@mantecato/tracker`
 
-## 🤖 MCP Server — AI Agents as First-Class Citizens
-
-Mantecato ships with a built-in [MCP](https://modelcontextprotocol.io/) server exposing **41 tools**. This means any MCP-compatible AI assistant — Claude, Cursor, Windsurf, Claude Code, custom agents — can query, analyze, and manage your analytics data directly, without writing code or calling APIs.
-
-This isn't a wrapper around the dashboard. It's the same query engine, the same filters, the same data — just surfaced through a protocol that AI agents speak natively.
-
-**What an agent can do:**
-
-| | |
-|---|---|
-| 📊 **Query** | "Show me top pages for the last 7 days, filtered by country:IT" |
-| 📈 **Compare** | "How did visits and bounce rate change compared to last month?" |
-| 🎯 **Events** | "Which custom events fired most this week?" |
-| 🌍 **Geo analysis** | "Break down pageviews by country for Q1" |
-| 📱 **Devices** | "What's the browser and OS split for `/pricing`?" |
-| 🛠️ **Manage** | "Create a new dashboard tracking weekly KPIs for the marketing team" |
-| ⚡ **Realtime** | "How many aggregate pageviews are happening right now and on which pages?" |
-
-**Why this matters:**
-
-Traditional analytics tools require a human to open a browser, navigate to the right page, set the right filters, and interpret the charts. With Mantecato's MCP server, an AI agent can do all of that in a single conversation turn — and chain multiple queries together to answer complex questions that would take a human several clicks and tab switches.
-
-Build autonomous workflows: an agent that monitors traffic drops and alerts you, a weekly report generator that highlights anomalies, a content strategy assistant that correlates page performance with traffic sources — all powered by the same data as your dashboard.
-
----
-
-## 📦 Packages
-
-### 🟨 @mantecato/tracker
-
-Lightweight JavaScript tracker (~2 KB minified). Cookie-free, Umami-compatible.
-
-```html
-<script defer src="https://your-mantecato.com/api/script"
-        data-website-id="your-website-id"></script>
-```
-
-**Features:**
-- ✅ Automatic pageview tracking
-- ✅ SPA route change detection
-- ✅ Custom event tracking (event **name only** — no event properties)
-- ✅ Content groups via `data-groups` — site-declared page labels, no visitor data
-- ✅ Click tracking via `data-mantecato-event` attributes (with `data-umami-event` fallback)
-- ✅ Global Privacy Control (GPC) respected **by default** (legacy DNT opt-in)
-- ✅ Client-side bot filtering
-- ✅ CORS-enabled for cross-origin tracking
-- ✅ No cookies, no `localStorage`/`sessionStorage`, no fingerprinting
-
-> Not supported by design (cookieless, aggregate): revenue tracking, visitor
-> identification, and event properties/payloads.
-
-**JavaScript API:**
+The JavaScript tracker supports automatic pageviews, SPA navigation, named events,
+content groups and click attributes. It respects GPC by default; legacy Do Not
+Track support is opt-in. It does not use cookies or browser storage.
 
 ```javascript
-// 📄 Track a pageview
 mantecato.pageview();
-
-// 🎯 Track a custom event (name only)
 mantecato.event("signup");
-
-// ⏸️ Toggle tracking
 mantecato.disable();
 mantecato.enable();
 ```
 
-### ⚛️ @mantecato/tracker-react
+### `@mantecato/tracker-react`
 
-React/Next.js hooks for pageview and event tracking:
+React and Next.js applications can use the tracker hook:
 
 ```jsx
 import { useTracker } from '@mantecato/tracker-react';
@@ -406,61 +344,33 @@ import { useTracker } from '@mantecato/tracker-react';
 function App() {
   const { track } = useTracker();
 
-  return (
-    <button onClick={() => track('signup')}>
-      Sign Up
-    </button>
-  );
+  return <button onClick={() => track('signup')}>Sign up</button>;
 }
 ```
 
-### 🐍 mantecato-client (Python SDK)
+## Self-hosting
 
-Full-featured Python SDK built on httpx. Access every API endpoint programmatically.
+### Deploy on Railway
 
-```python
-from mantecato_client import MantecatoClient
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/mantecato-analytics?referralCode=UmPu3s&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-with MantecatoClient("https://analytics.example.com", api_key="mtk_xxx") as client:
-    # 📊 Analytics
-    overview = client.analytics.overview(site_id, date_range="30d")
-    pages = client.analytics.pages(site_id, date_range="7d", page=1)
-    geo = client.analytics.geo(site_id, date_range="30d", country="IT")
-    compare = client.analytics.compare(site_id, date_range="30d")
-    realtime = client.analytics.realtime(site_id)
+The template provisions PostgreSQL and Mantecato. The included `railway.toml`
+uses Railpack, runs migrations before deployment, collects static files at build
+time and serves Gunicorn on Railway's `$PORT`. Health checks use `/health/`.
 
-    # 🌐 Sites
-    sites = client.sites.list()
+See the [Railway deployment guide](docs/RAILWAY.md).
 
-    # 🎨 Dashboards
-    dashboards = client.dashboards.list(website_id=site_id)
-    client.dashboards.create(name="Weekly KPIs", website_id=site_id, config={...})
+### Deploy on Render
 
-    # 🔑 API Keys
-    keys = client.api_keys.list()
-    new_key = client.api_keys.create(name="CI pipeline")
+The included `render.yaml` is a Blueprint that deploys the repository containing
+it. No repository URL edit is needed.
 
-    # 🤖 Bot Config
-    config = client.bot_config.get(website_id=site_id)
-```
-
----
-
-## 🏠 Self-Hosting
-
-### ☁️ Deploy on Render
-
-The included `render.yaml` is a self-contained Blueprint. Its `repo` field is
-intentionally omitted, so Render deploys the repository that contains the
-Blueprint directly; no fork or repository URL edit is required.
-
-1. In Render, create a new Blueprint from this repository.
+1. Create a new Blueprint from this repository.
 2. Set `CSRF_TRUSTED_ORIGINS` to the final HTTPS URL.
 3. Set `INIT_ADMIN_PASS` to create the initial `admin` account.
-4. Deploy. Render provisions a private PostgreSQL database, runs migrations,
-   and starts Mantecato. This also works on Render's free web service plan.
+4. Deploy. Render provisions PostgreSQL, runs migrations and starts Mantecato.
 
-To import an existing Umami database during Render startup, set:
+To import Umami data during startup, set:
 
 ```env
 UMAMI_DATABASE_URL=postgresql://user:password@umami-db.example.com:5432/umami
@@ -468,129 +378,100 @@ UMAMI_IMPORT_ON_DEPLOY=True
 ```
 
 The default `UMAMI_IMPORT_MODE=data` imports analytics only and is idempotent.
-For a new Mantecato database that also needs Umami users, websites and reports,
-explicitly set:
+For a new database that also needs users, sites and reports, set
+`UMAMI_IMPORT_MODE=full` and `UMAMI_IMPORT_ALLOW_CONFIG=True`.
 
-```env
-UMAMI_IMPORT_MODE=full
-UMAMI_IMPORT_ALLOW_CONFIG=True
-```
+After a successful import, set `UMAMI_IMPORT_ON_DEPLOY=False` and remove
+`UMAMI_DATABASE_URL` unless another import needs it. Render must be able to reach
+the source database.
 
-After the import succeeds, set `UMAMI_IMPORT_ON_DEPLOY=False` and remove
-`UMAMI_DATABASE_URL` from Render unless it is needed again. The Umami database
-must be reachable from Render.
+### Docker Compose
 
-### 🐳 With Docker (recommended)
-
-The fastest way to get Mantecato running. You need [Docker](https://docs.docker.com/get-docker/) and Docker Compose.
-
-**1. Clone and configure**
+Install Docker and Docker Compose, then clone and configure the server:
 
 ```bash
-git clone https://github.com/your-org/mantecato.git
-cd mantecato
+git clone https://github.com/g-battaglia/mantecato-analytics.git
+cd mantecato-analytics
 cp .env.example .env
 ```
 
-**2. Edit `.env`**
+Set `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` in
+`.env`. Generate a secret with:
 
-Set at least these values:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(64))"
+```
 
-| Variable | Description |
-|---|---|
-| `SECRET_KEY` | 🔑 A random string, 50+ chars. Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
-| `DEBUG` | Set to `False` for production |
-| `ALLOWED_HOSTS` | Your domain, e.g. `analytics.example.com` |
-| `CSRF_TRUSTED_ORIGINS` | Full URL, e.g. `https://analytics.example.com` |
-
-<details>
-<summary>📋 Full list of environment variables</summary>
-
-| Variable | Default | Description |
-|---|---|---|
-| `SECRET_KEY` | — | Django secret key (required) |
-| `DEBUG` | `True` | Debug mode |
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `ALLOWED_HOSTS` | — | Comma-separated list of allowed hostnames |
-| `PRODUCTION_HOSTS` | — | Hosts that trigger production security settings |
-| `CSRF_TRUSTED_ORIGINS` | — | Comma-separated HTTPS origins for CSRF |
-| `SECURE_SSL_REDIRECT` | `True` | Redirect HTTP to HTTPS |
-| `SESSION_COOKIE_SECURE` | `True` | Secure flag on session cookies |
-| `CSRF_COOKIE_SECURE` | `True` | Secure flag on CSRF cookies |
-| `SECURE_HSTS_SECONDS` | `31536000` | HSTS header duration (1 year) |
-| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `True` | Include subdomains in HSTS |
-| `SECURE_HSTS_PRELOAD` | `False` | HSTS preload flag |
-| `USE_SECURE_PROXY_SSL_HEADER` | `True` | Trust `X-Forwarded-Proto` header |
-| `MAXMIND_LICENSE_KEY` | — | MaxMind license key for GeoIP |
-| `GEO_DATABASE_URL` | — | Custom GeoIP database URL |
-| `GEOIP_PATH` | `./geo/GeoLite2-City.mmdb` | Path to GeoIP database file |
-| `CLIENT_IP_HEADER` | — | Custom IP header (e.g. `CF-Connecting-IP`) |
-| `SENTRY_DSN` | — | Sentry DSN for error tracking |
-| `LANGUAGE_CODE` | `en-us` | Default language |
-| `TIME_ZONE` | `UTC` | Server time zone |
-| `UMAMI_DATABASE_URL` | — | Source Umami PostgreSQL connection string |
-| `UMAMI_IMPORT_ON_DEPLOY` | `False` | Run an idempotent Umami import during deploy |
-| `UMAMI_IMPORT_MODE` | `data` | `data` for analytics only, or `full` for configuration too |
-| `UMAMI_IMPORT_ALLOW_CONFIG` | `False` | Required acknowledgement for `full` imports |
-| `UMAMI_SOURCE_WEBSITE_ID` | — | Optional source site UUID for a data-only import |
-| `MANTECATO_TARGET_WEBSITE_ID` | — | Optional destination site UUID for a data-only import |
-| `UMAMI_IMPORT_SINCE` | — | Optional analytics cutoff date in `YYYY-MM-DD` format |
-
-</details>
-
-**3. Start everything**
+Start PostgreSQL and the web server, then create an account and a website:
 
 ```bash
 docker compose up -d
-```
-
-This starts two containers:
-- 🐘 **PostgreSQL 16** — database with persistent volume
-- 🌐 **Mantecato** — web server with Gunicorn
-
-The database schema is created automatically on first boot. Health checks are built in.
-
-**4. Create admin + first website**
-
-```bash
 docker compose exec web python manage.py createsuperuser
 docker compose exec web python manage.py createwebsite \
-  --name "My Site" --domain "example.com"
+  --name "My site" --domain "example.com"
 ```
 
-**5. (Optional) Enable geolocation 🌍**
+Startup runs migrations. Open `http://localhost:8000` for local development;
+use HTTPS and the production settings for a public deployment.
+
+For country lookup, set `MAXMIND_LICENSE_KEY` and download the GeoIP database:
 
 ```bash
 docker compose exec web python manage.py downloadgeo
 ```
 
-Requires a free [MaxMind license key](https://www.maxmind.com/en/geolite2/signup) — set `MAXMIND_LICENSE_KEY` in `.env`.
-
-**6. Open the dashboard** — visit `http://localhost:8000` and log in 🎉
-
-### 🔐 Reverse Proxy (production)
-
-For HTTPS, put Mantecato behind a reverse proxy. Here are examples for the most common options:
-
 <details>
-<summary>🔷 Caddy (automatic HTTPS)</summary>
+<summary>Environment variables</summary>
 
-```
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_KEY` | Required | Django secret key |
+| `DEBUG` | `True` | Set to `False` in production |
+| `DATABASE_URL` | Required | PostgreSQL connection string |
+| `ALLOWED_HOSTS` | Configure | Comma-separated allowed hostnames |
+| `PRODUCTION_HOSTS` | Unset | Hosts that trigger production security settings |
+| `CSRF_TRUSTED_ORIGINS` | Configure | Comma-separated HTTPS origins |
+| `SECURE_SSL_REDIRECT` | `True` | Redirect HTTP to HTTPS |
+| `SESSION_COOKIE_SECURE` | `True` | Secure flag on dashboard session cookies |
+| `CSRF_COOKIE_SECURE` | `True` | Secure flag on dashboard CSRF cookies |
+| `SECURE_HSTS_SECONDS` | `31536000` | HSTS duration in seconds |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `True` | Include subdomains in HSTS |
+| `SECURE_HSTS_PRELOAD` | `False` | HSTS preload flag |
+| `USE_SECURE_PROXY_SSL_HEADER` | `True` | Trust `X-Forwarded-Proto` |
+| `MAXMIND_LICENSE_KEY` | Unset | MaxMind license key |
+| `GEO_DATABASE_URL` | Unset | Custom GeoIP database URL |
+| `GEOIP_PATH` | `./geo/GeoLite2-City.mmdb` | GeoIP database path |
+| `CLIENT_IP_HEADER` | Unset | Custom IP header, such as `CF-Connecting-IP` |
+| `SENTRY_DSN` | Unset | Optional error reporting |
+| `LANGUAGE_CODE` | `en-us` | Default language |
+| `TIME_ZONE` | `UTC` | Server time zone |
+| `UMAMI_DATABASE_URL` | Unset | Source Umami PostgreSQL connection string |
+| `UMAMI_IMPORT_ON_DEPLOY` | `False` | Import during deployment |
+| `UMAMI_IMPORT_MODE` | `data` | Analytics only, or `full` for configuration too |
+| `UMAMI_IMPORT_ALLOW_CONFIG` | `False` | Required acknowledgement for full imports |
+| `UMAMI_SOURCE_WEBSITE_ID` | Unset | Source site for a data-only import |
+| `MANTECATO_TARGET_WEBSITE_ID` | Unset | Destination site for a data-only import |
+| `UMAMI_IMPORT_SINCE` | Unset | Import cutoff date in `YYYY-MM-DD` format |
+
+Dashboard login cookies are separate from the cookieless site tracker.
+
+</details>
+
+### Reverse proxy
+
+For example, Caddy can terminate HTTPS:
+
+```caddyfile
 analytics.example.com {
     reverse_proxy localhost:8000
 }
 ```
 
-That's it — Caddy handles SSL certificates automatically.
-
-</details>
-
-<details>
-<summary>🟩 Nginx</summary>
+With Nginx, configure your certificate and forward the request to Gunicorn:
 
 ```nginx
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
     server_name analytics.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/analytics.example.com/fullchain.pem;
@@ -612,102 +493,65 @@ server {
 }
 ```
 
-</details>
+Configure trusted proxy handling for your deployment. Do not trust client-supplied
+forwarding headers without checking the proxy chain. If your proxy provides a
+custom client-IP header, set `CLIENT_IP_HEADER` to that header.
 
-Make sure your `.env` has the production security settings enabled (they are by default when `DEBUG=False`).
+### Without Docker
 
-If your proxy sets a custom IP header (e.g. Cloudflare's `CF-Connecting-IP`), configure it:
-
-```env
-CLIENT_IP_HEADER=CF-Connecting-IP
-```
-
-### 🐍 Without Docker
-
-If you prefer to run Mantecato directly on your machine:
+Use Python 3.12+ and PostgreSQL 16+. Configure `.env`, then run:
 
 ```bash
-# 📦 Install dependencies
 pip install -e .
-
-# 🗃️ Set up the database
 python manage.py migrate
-
-# 👤 Create admin user
 python manage.py createsuperuser
-
-# 🌐 Create a website to track
-python manage.py createwebsite --name "My Site" --domain "example.com"
-
-# 🌍 (Optional) Download GeoIP database
-python manage.py downloadgeo
-
-# 📁 Collect static files (production only)
+python manage.py createwebsite --name "My site" --domain "example.com"
 python manage.py collectstatic --noinput
-
-# 🚀 Start the server
 gunicorn mantecato.wsgi:application --bind 0.0.0.0:8000 --workers 3
 ```
 
-Requires Python 3.12+ and PostgreSQL 16+.
+### Management commands
 
-### ⚙️ Management Commands
-
-| Command | Description |
+| Command | Purpose |
 |---|---|
-| `createuser <username> [--role admin\|user]` | 👤 Create a platform user |
-| `createwebsite --name "..." [--domain "..."]` | 🌐 Create a tracked website |
-| `downloadgeo` | 🌍 Download the MaxMind GeoLite2 database |
-| `importumami [--source-db <dsn>] --include-config` | 🔄 Full import from an Umami PostgreSQL database |
-| `importumamidata [--source-db <dsn>]` | 📥 Import analytics data only |
-| `importumamienv` | ☁️ Run the optional environment-configured deploy import |
+| `createuser <username> [--role admin\|user]` | Create a platform user |
+| `createwebsite --name "..." [--domain "..."]` | Create a tracked website |
+| `downloadgeo` | Download the MaxMind GeoIP database |
+| `rollup_visitors` | Roll up visitor aggregates and enforce digest retention |
+| `importumami --include-config` | Import Umami users, sites, reports and analytics |
+| `importumamidata` | Import analytics only |
+| `importumamienv` | Run the environment-configured deployment import |
 
-### 💾 System Requirements
+Run these on the server with `python manage.py`. They are separate from the remote
+`mantecato` CLI.
 
-| | Minimum | Recommended |
-|---|---|---|
-| **CPU** | 1 core | 2+ cores |
-| **RAM** | 512 MB | 1 GB+ |
-| **Disk** | 1 GB | 10 GB+ (depends on traffic) |
-| **PostgreSQL** | 16 | 16+ |
-| **Python** | 3.12 | 3.12+ |
+### Resources and tuning
 
-Runs comfortably on a small VPS — a $5/month server handles tens of thousands of pageviews per day.
+PostgreSQL 16+ and Python 3.12+ are required. Size memory and disk for your traffic,
+retention and query workload. `GUNICORN_WORKERS` defaults to `3` and
+`GUNICORN_TIMEOUT` to `60` seconds. Measure resource use before increasing workers.
 
-### 🔧 Tuning
+## Migrating from Umami
 
-| Variable | Default | Description |
-|---|---|---|
-| `GUNICORN_WORKERS` | 3 | Number of Gunicorn worker processes |
-| `GUNICORN_TIMEOUT` | 60 | Request timeout in seconds |
-
-Rule of thumb: set workers to `(2 × CPU cores) + 1`.
-
----
-
-## 🔄 Migrating from Umami
-
-Already using Umami? Mantecato can import your existing data.
-
-Set the source PostgreSQL connection string once:
+Set the source PostgreSQL connection string:
 
 ```bash
 export UMAMI_DATABASE_URL="postgresql://user:password@umami-db.example.com:5432/umami"
 ```
 
-**Full import** into a new database (users, sites, reports and historical data):
+For a new database, import users, sites, reports and historical data:
 
 ```bash
 python manage.py importumami --include-config
 ```
 
-**Data only** (safe, additive and idempotent):
+For an additive, idempotent analytics-only import:
 
 ```bash
 python manage.py importumamidata
 ```
 
-For a single site, map an Umami site onto an existing Mantecato site:
+To map a single source site to an existing Mantecato site:
 
 ```bash
 export UMAMI_SOURCE_WEBSITE_ID="<umami-website-uuid>"
@@ -716,93 +560,63 @@ export UMAMI_IMPORT_SINCE="2024-01-01"
 python manage.py importumamidata --noinput
 ```
 
-Your existing `data-umami-event` HTML attributes keep working — the tracker is wire-compatible. Just swap the script URL and you're done.
+Existing `data-umami-event` click attributes keep working. Replace the tracker
+script URL to send events to Mantecato. Visitor counts can differ because
+Mantecato masks IP addresses before computing digests. See
+[what visitor counts mean](#what-visitor-counts-mean).
 
-> **Heads-up on the numbers:** for its consent-exempt privacy posture Mantecato masks
-> the IP to `/24`, whereas Umami hashes the full IP. So after migrating, **unique-visitor
-> counts read somewhat lower than Umami** (most on desktop / shared networks; the gap
-> grows with the date range) — **pageviews and trends stay comparable**. This is by
-> design — see [Privacy & Compliance](#-privacy--compliance).
+Mantecato is an independent project, not affiliated with or endorsed by Umami.
+It implements Umami's tracker wire protocol and can import an Umami database.
+Umami is [MIT-licensed](https://github.com/umami-software/umami); its trademarks
+belong to their respective owners.
 
-> **Mantecato is an independent project — not affiliated with or endorsed by Umami.** It is a from-scratch Django implementation that speaks Umami's tracker wire protocol and can import an Umami database, so you can migrate without re-instrumenting your sites. Umami is [MIT-licensed](https://github.com/umami-software/umami) and a trademark of its respective owners.
+## Architecture
 
----
-
-## 🏗️ Architecture
-
-```
-                   ┌───────────────────┐
-                   │   Browser / App   │
-                   └────────┬──────────┘
-                            │
-              POST /api/send (JS tracker)
-                            │
-                            ▼
-┌──────────────────┐   ┌────────┐   ┌──────────────────┐
-│  Web Dashboard   │   │        │   │   CLI / MCP /     │
-│  (HTMX + Django  │◄─►│   DB   │◄─►│   Python SDK     │
-│   templates)     │   │  (Pg)  │   │                  │
-└──────────────────┘   └────────┘   └──────────────────┘
-                            ▲
-                            │
-                     Query Engine
-                   (raw SQL, 3000+ lines)
+```text
+Browser tracker -> POST /api/send -> Django -> PostgreSQL
+Web dashboard   -> Django views and query engine -> PostgreSQL
+Remote CLI      -> HTTPS and API key -> Django REST API
+Agent host      -> local MCP over stdio -> HTTPS and API key -> Django REST API
 ```
 
-- The **JS tracker** sends events to `POST /api/send` (Umami-compatible wire protocol)
-- The **web dashboard** reads data through the query engine and renders it with HTMX
-- The **CLI** and **MCP server** access the same data via the query engine (local) or JSON API (remote)
-- The **Python SDK** uses the JSON API over HTTP
-- The **query engine** is 3000+ lines of optimized raw SQL — CTEs, window functions, `PERCENTILE_CONT`, and more
+The server owns collection and analytics queries. CLI and MCP are independent
+Python packages with private HTTP adapters. Neither package depends on the other
+or accesses PostgreSQL. API v1 adds analytics operations without changing tracker
+payloads or existing dashboard routes.
 
----
-
-## 🛠️ Tech Stack
-
-| | |
+| Component | Technology |
 |---|---|
-| 🐍 **Backend** | Django 6, Python 3.12+ |
-| 🐘 **Database** | PostgreSQL 16+ |
-| ⚡ **Frontend** | HTMX 2, Tailwind CSS 4, vanilla JS |
-| 📊 **Charts** | Chart.js, Leaflet (maps), d3-sankey (Sankey diagrams) |
-| 💻 **CLI** | Typer + Rich + Textual |
-| 📡 **Tracker** | ~2 KB, cookie-free, Umami-compatible |
-| 🐍 **Python SDK** | httpx-based, async-ready |
-| 🌍 **GeoIP** | MaxMind GeoLite2-City |
-| ⚙️ **Tasks** | Management commands + cron |
+| Server | Django 6, Python 3.12+ |
+| Database | PostgreSQL 16+ |
+| Dashboard | HTMX 2, Tailwind CSS 4, vanilla JavaScript |
+| CLI | Typer, Rich, httpx |
+| MCP | Official Python MCP SDK, stdio, httpx |
+| GeoIP | Local MaxMind database |
+| Scheduled work | Management commands and cron |
 
-No JavaScript framework. No task queue. No Redis. No build step.
-
----
-
-## 🧑‍💻 Development
+## Development
 
 ```bash
-# 📦 Install with dev dependencies
 pip install -e ".[dev]"
-
-# 🗃️ Set up database — PostgreSQL is required (the only supported backend)
 cp .env.example .env
-docker compose up -d db          # or point DATABASE_URL at your own PostgreSQL
-python manage.py migrate
 
-# 🚀 Run the dev server
+# PostgreSQL is the only supported database backend.
+docker compose up -d db
+python manage.py migrate
 python manage.py runserver
 
-# ✅ Run tests (pytest creates an isolated PostgreSQL test database)
+# pytest creates an isolated PostgreSQL test database.
 pytest tests
 
-# Python SDK tests use a separate tests package
-(cd packages/mantecato-client && pytest tests)
+# Independent client tests.
+uv run --project packages/mantecato-cli --extra dev pytest packages/mantecato-cli/tests
+uv run --project packages/mantecato-mcp --extra dev pytest packages/mantecato-mcp/tests
 
-# 🧹 Lint and format
 ruff check .
 ruff format .
 ```
 
----
+## License
 
-## 📄 License
-
-[Apache License 2.0](LICENSE) — free to use, modify, and distribute, with an
-explicit patent grant and the usual attribution/NOTICE requirements.
+[Apache License 2.0](LICENSE). You can use, modify and distribute Mantecato under
+its terms, including the attribution and NOTICE requirements and patent grant.

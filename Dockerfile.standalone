@@ -11,7 +11,6 @@ RUN addgroup --system mantecato \
 
 COPY pyproject.toml ./
 COPY apps ./apps
-COPY cli ./cli
 COPY core ./core
 COPY mantecato ./mantecato
 COPY manage.py ./manage.py

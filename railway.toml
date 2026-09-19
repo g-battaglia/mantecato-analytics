@@ -13,7 +13,6 @@ buildCommand = "uv run python manage.py collectstatic --noinput"
 watchPatterns = [
   "apps/**",
   "core/**",
-  "cli/**",
   "mantecato/**",
   "static/**",
   "templates/**",

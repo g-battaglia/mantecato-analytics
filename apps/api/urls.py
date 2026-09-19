@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from django.urls import path
+from django.urls import include, path
 
 from apps.api.views import (
     AnalyticsCompareView,
@@ -29,6 +29,8 @@ from apps.api.views import (
 )
 
 urlpatterns = [
+    # Additive, versioned contract for remote CLI and MCP clients.
+    path("v1/", include("apps.api.v1.urls")),
     # Sites (legacy MCP path without trailing slash kept for compat)
     path("sites", SitesListView.as_view(), name="api_sites_list_legacy"),
     path("sites/", SitesListView.as_view(), name="api_sites_list"),
