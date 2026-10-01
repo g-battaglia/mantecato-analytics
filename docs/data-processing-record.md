@@ -56,9 +56,10 @@ The server additionally sees, from the HTTP request itself, the **client IP** an
 | `Sec-GPC` / `DNT` headers | server-side opt-out | A `Sec-GPC: 1` request is **dropped, not counted** |
 
 The visitor digest is `HMAC-SHA256(monthly_random_salt, website_id | truncated_IP |
-User-Agent)`. The salt is random, shared across workers, and **deleted by the
-rollup at month end** → after that the digest can never be recomputed or linked to
-an IP/UA (forward secrecy).
+User-Agent)`. The salt is random and shared across workers. An offline daily
+rollup deletes it **after all sites' finished-month day/scope state is finalized**.
+Only then can the digest no longer be recomputed from an IP/UA. Web requests and
+startup never run maintenance; successful daily scheduling must be monitored.
 
 ## 4. What is actually stored (data inventory)
 
@@ -114,8 +115,9 @@ sale or sharing; no third-party processors; no international transfer (self-host
 ## 7. Retention, rights, security
 
 - **Retention:** `visitor_key` digest NULLed at **396 days**; aggregates are anonymous
-  and permanent. The monthly salt is destroyed at month end. Run `manage.py
-  rollup_visitors` daily to enforce this.
+  and permanent. The monthly salt is destroyed after offline finalization leaves
+  no site's state for that period. Run `manage.py rollup_visitors` in a separate
+  daily job and monitor success/backlog; deployment is not a retention scheduler.
 - **Data-subject rights:** because no stored field identifies a person (the digest is
   pseudonymous only while the month's salt exists, then anonymous), there is normally
   no data to access/erase/rectify per-person; document this position. Honour GPC/opt-out.

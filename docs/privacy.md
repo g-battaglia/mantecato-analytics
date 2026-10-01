@@ -10,11 +10,11 @@
 Mantecato is **cookieless** and stores **no persistent per-person identifier**.
 It measures aggregate web traffic and produces **exact** daily counts of
 visitors, visits and bounce rate without cookies, browser storage, fingerprint
-persistence, or cross-site/cross-day tracking.
+persistence, or cross-site/cross-month tracking.
 
 ## What is collected
 
-For every pageview the server records one anonymous row (`website_event`) with:
+For every pageview the server records one row (`website_event`) with:
 
 - `url_path` (path only — see below), `page_title`, `hostname`
 - `content_groups`: optional labels the **site owner** declares for the page on
@@ -74,23 +74,20 @@ compute-and-discard scheme:
    counted exactly at **any** time granularity (e.g. per hour) and in realtime
    ("visitors online"). The digest is not an IP/UA and is not reversible without
    the salt.
-4. A **rollup** folds the counters into permanent, fully anonymous aggregates
-   (`visitor_daily` per day, `visitor_period` per window — exact window uniques),
-   **deletes** the window's salt and ephemeral state, and **NULLs the per-event
-   digests** of finalised windows. Once the salt is gone and the digests are
-   nulled they can never be recomputed or linked (forward secrecy). No
-   cross-window or returning-visitor linkage is possible; finalised event rows
-   are fully anonymous.
+4. An **offline daily rollup** folds finished-window counters into permanent
+   anonymous aggregates (`visitor_daily` per day, `visitor_period` per window).
+   Each site's aggregates and state deletion commit together. The window's salt
+   is deleted only once no site's day/scope state remains. Separately, digests
+   older than **396 days** are NULLed in bounded batches; event rows are never
+   deleted by maintenance. No cross-month or returning-visitor linkage is added.
 
-The salt is independent from `SECRET_KEY`. During the live window the event log
-carries the window digest (pseudonymous within the window); the rollup discards
-it once the digest ages past retention. `VISITOR_KEY_RETENTION_DAYS` (default
-**396 ≈ 13 months**, the CNIL ceiling for a consent-free audience-measurement
-identifier) bounds how long the digests are kept so visitor metrics stay exact
-and **filterable** at read time; after that the rollup folds the data into the
-permanent anonymous aggregates and nulls the digests — schedule `rollup_visitors`.
-The **salt is still discarded at window end**, so a retained digest from a past
-window can no longer be re-linked to an IP/User-Agent.
+The salt is independent from `SECRET_KEY`. The event log carries a monthly
+pseudonymous digest, retained for **396 days** (fixed, not configurable) so visitor
+metrics remain exact and **filterable** at read time. After a finished window is
+fully rolled up, its salt is discarded and its digest cannot be recomputed from
+an IP/User-Agent. Salt destruction is not automatic at midnight: it depends on
+a successful offline job. Neither HTTP requests nor deployment/web startup runs
+rollup or retention. Schedule and monitor daily `rollup_visitors`.
 
 **Imported data:** the Umami importer hashes each event's `session_id` into the
 same `visitor_key`, so imported pageviews carry visitor attribution; the import
@@ -100,9 +97,9 @@ sessionises those into the permanent aggregates and then discards the digests
 ### What "exact" means
 
 - **Visits** and **bounce rate** are additive → exact for any date range.
-- **Unique visitors** are exact **for the exactness window** (default `day`) and
-  for any sub-range of the live window. A range spanning several windows sums
-  per-window uniques (with the day default, the sum of daily uniques). Exact
+- **Unique visitors** are exact **within a calendar month** and for any sub-range
+  with retained digests. A range spanning several months sums per-month uniques.
+  The API's separately named `daily_unique_visitors` sums daily uniques. Exact
   cross-window uniques / returning visitors are intentionally **not** offered —
   they need a persistent identifier (consent).
 - Per-page / per-section / per-entry-page / per-event unique visitors (and the
@@ -124,25 +121,21 @@ This ceiling applies to every cookieless analytics tool.
 
 ## Retention
 
-- The per-event digest (`website_event.visitor_key`) is kept for
-  ~`VISITOR_KEY_RETENTION_DAYS` (default **396 ≈ 13 months**) so visitor metrics
-  stay exact and filterable at read time, then the rollup folds the data into the
-  permanent anonymous aggregates and **NULLs the digest**. The window **salt** is
-  discarded much sooner (at window end), so a retained digest from a past window
-  is no longer re-linkable to an IP/User-Agent — the extra-retained data is an
-  unlinkable token. The rollup runs automatically (throttled, on each deploy);
-  **for a strict guarantee, schedule it** (Railway/Render/system cron):
+- The per-event digest (`website_event.visitor_key`) is retained for **396 days**,
+  then **NULLed**, independently of whether rollup has completed. The fixed
+  retention is not an environment setting. Monthly salts are deleted after all
+  finished-window state has been finalized, not necessarily at midnight.
+- Run a separate daily Railway/Render/system cron:
 
-  ```
-  python manage.py rollup_visitors
+  ```bash
+  python manage.py rollup_visitors --max-runtime 900 --sql-timeout-ms 60000
   ```
 
-  Trade-off: a longer retention keeps richer (filterable) history but holds the
-  pseudonymous digests at rest for that long. 13 months is the consent-free
-  audience-measurement ceiling; lower it via the env var if you want less.
-
-- `website_event` rows are anonymous aggregates with no identifier; they are
-  kept until you purge them. A per-site purge is available in Settings.
+  Monitor job success, finished-period backlog and pending expired digests.
+  A dry-run performs no writes. Requests and web startup never provide a fallback
+  scheduler. See [Railway](RAILWAY.md#e-daily-maintenance-required).
+- `website_event` rows remain stored after digest expiry. A per-site purge is
+  available in Settings.
 
 ## Do Not Track / Global Privacy Control
 
@@ -190,8 +183,8 @@ processing and the live visitor digest still need transparency and a lawful
 basis. Mantecato fixes the privacy-critical parameters so the basis cannot be
 misconfigured — they are **not configurable**:
 
-- **Dedup window = one calendar month**, salt discarded at month end → the
-  identifier lives at most ~31 days and never renews per visit.
+- **Dedup window = one calendar month**, never renewed per visit. Salt destruction
+  follows successful offline finalization; operators must monitor job failures.
 - **IP always truncated** to `/24` (IPv4) / `/48` (IPv6) before hashing.
 - **Digest retention = 396 days (~13 months)**, then NULLed; aggregates are anonymous.
 
@@ -241,13 +234,13 @@ confirm before making a consent-free claim, especially for Italy.
 ## Model privacy-notice snippet (for site owners)
 
 > Mantecato deduplicates returning visitors within a **calendar month** using an
-> anonymous in-month digest that is discarded at month end; the wording below
-> reflects that.
+> in-month digest. Its salt is destroyed after offline finalization, while
+> event digests expire after 396 days; the wording below reflects that.
 
 > We use Mantecato, a privacy-first, cookieless analytics tool, to measure
 > aggregate traffic on this site. It does not use cookies or browser storage and
 > does not store your IP address, your full browser User-Agent, or any
-> identifier that can recognise you across days or across sites. We only see
+> identifier that can recognise you across months or across sites. We only see
 > anonymous, aggregate statistics (e.g. total pageviews and visits, bounce rate,
 > average time on page, coarse device type, country, and the domain of the site
 > that referred you — never the full address). Because this analytics tool stores

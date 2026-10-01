@@ -115,6 +115,28 @@ def test_open_hosts_warning() -> None:
         assert "myapp.up.railway.app,healthcheck.railway.app" in msg
 
 
+def test_maintenance_has_a_separate_cron_and_no_web_startup_hooks() -> None:
+    import tomllib
+
+    web = tomllib.loads((ROOT / "railway.toml").read_text())
+    job = tomllib.loads((ROOT / "railway.rollup.toml").read_text())
+    assert "rollup_visitors" not in web["deploy"]["preDeployCommand"]
+    assert "railway.toml" in web["build"]["watchPatterns"]
+    assert "rollup_visitors" not in (ROOT / "render.yaml").read_text()
+    assert job["deploy"]["cronSchedule"] == "15 2 * * *"
+    assert job["deploy"]["restartPolicyType"] == "NEVER"
+    assert "--max-runtime" in job["deploy"]["startCommand"]
+    assert "healthcheckPath" not in job["deploy"]
+    assert "preDeployCommand" not in job["deploy"]
+    assert "gunicorn" not in job["deploy"]["startCommand"]
+
+
+def test_access_logs_do_not_export_ip_user_agent_or_queries() -> None:
+    for name in ("railway.toml", "render.yaml"):
+        config = (ROOT / name).read_text()
+        assert "--access-logformat '%(m)s %(s)s %(D)s'" in config
+
+
 def test_health_endpoint_exempt_from_ssl_redirect() -> None:
     # Platform health checks hit /health/ over plain HTTP; it must not 301-redirect,
     # otherwise the check fails even though the app is healthy.

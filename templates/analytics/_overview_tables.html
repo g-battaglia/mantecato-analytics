@@ -14,8 +14,11 @@
     <div class="panel-content flex-1 p-2" id="sections-tab">
       {% include "analytics/_tab_sections.html" %}
     </div>
-    <div class="panel-content hidden flex-1 p-2" id="pages-tab">
-      {% include "analytics/_tab_pages.html" %}
+    <div class="panel-content hidden flex-1 p-2" id="pages-tab"
+         {% if lazy_tabs %}data-lazy-panel hx-get="{% url 'overview_tab' %}?{% view_query %}&amp;tab=pages"
+         hx-trigger="panelshown" hx-sync="closest main:queue all"{% endif %}>
+      {% if lazy_tabs %}<p class="py-4 text-center text-xs text-muted-foreground">{% trans "Loading…" %}</p>
+      {% else %}{% include "analytics/_tab_pages.html" %}{% endif %}
     </div>
   </div>
 
@@ -78,8 +81,11 @@
     <div class="panel-content flex-1 p-2" id="referrers-tab">
       {% include "analytics/_tab_referrers.html" %}
     </div>
-    <div class="panel-content hidden flex-1 p-2" id="channels-tab">
-      {% include "analytics/_tab_sources.html" %}
+    <div class="panel-content hidden flex-1 p-2" id="channels-tab"
+         {% if lazy_tabs %}data-lazy-panel hx-get="{% url 'overview_tab' %}?{% view_query %}&amp;tab=sources"
+         hx-trigger="panelshown" hx-sync="closest main:queue all"{% endif %}>
+      {% if lazy_tabs %}<p class="py-4 text-center text-xs text-muted-foreground">{% trans "Loading…" %}</p>
+      {% else %}{% include "analytics/_tab_sources.html" %}{% endif %}
     </div>
   </div>
 </div>

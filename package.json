@@ -1,8 +1,14 @@
 {
   "private": true,
-  "workspaces": ["packages/tracker", "packages/tracker-react"],
+  "workspaces": [
+    "packages/tracker",
+    "packages/tracker-react"
+  ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces"
+    "test": "node --test tests/js/*.test.cjs && npm run test --workspaces"
+  },
+  "devDependencies": {
+    "htmx.org": "^2.0.11"
   }
 }

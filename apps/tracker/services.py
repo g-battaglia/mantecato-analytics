@@ -52,10 +52,6 @@ _MAX_ENGAGEMENT_S = 3600
 MAX_CONTENT_GROUPS = 12
 MAX_CONTENT_GROUP_LEN = 96
 
-# Throttle for the lazy, scheduler-free rollup piggybacked on ingestion.
-_ROLLUP_MIN_INTERVAL_S = 3600
-_last_rollup_attempt = None
-
 # Short-lived process-local cache of active website UUIDs so the unauthenticated
 # ingest endpoint can cheaply reject events for unknown sites — blocking metric
 # poisoning of arbitrary UUIDs and unbounded storage growth for non-existent
@@ -94,42 +90,6 @@ def is_trackable_website(website_id: str) -> bool:
                 )
                 _website_cache_at = now
     return normalized in _website_cache
-
-
-def _maybe_rollup() -> None:
-    """Best-effort, throttled discard of finished-day visitor state.
-
-    Piggybacks the compute-and-discard rollup on the write path so it runs
-    without a scheduler: at most once per hour per process, never blocking or
-    breaking ingestion. A scheduled ``manage.py rollup_visitors`` is the
-    deterministic backstop for the strict ≤24h discard guarantee.
-    """
-    global _last_rollup_attempt  # noqa: PLW0603  process-local throttle, intentional
-    now = timezone.now()
-    if (
-        _last_rollup_attempt is not None
-        and (now - _last_rollup_attempt).total_seconds() < _ROLLUP_MIN_INTERVAL_S
-    ):
-        return
-    _last_rollup_attempt = now
-    try:
-        from core.mantecato_core.visitor_counting import (
-            _finished_period_keys,
-            discard_expired_digests,
-            rollup_finished_periods,
-        )
-
-        # Expire over-retention digests every throttle tick, not only when a month
-        # finalises — otherwise a fixed monthly window would null them just once a
-        # month. Cheap when caught up (matches no rows); independent of the rollup.
-        discard_expired_digests(now)
-        # Compute the finished-window set once and reuse it as both the guard and the
-        # rollup input, so the period keys are scanned a single time per tick.
-        finished = _finished_period_keys(now)
-        if finished:
-            rollup_finished_periods(now, finished_keys=finished)
-    except Exception:
-        logger.warning("Lazy visitor rollup failed; will retry later", exc_info=True)
 
 
 def _parse_url(url: str) -> dict[str, str | None]:
@@ -345,7 +305,6 @@ def ingest_pageview(
             )
     except Exception:
         logger.warning("visit-state fold failed; pageview already stored", exc_info=True)
-    _maybe_rollup()
 
 
 def ingest_custom_event(

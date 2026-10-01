@@ -84,7 +84,10 @@ Keep tracker fetch credentials at `omit`, and strip inbound `Cookie` headers
 if you proxy the collector through the tracked site's origin. Check your proxy
 and access-log retention too.
 
-Schedule `python manage.py rollup_visitors` daily to enforce digest retention.
+Schedule `python manage.py rollup_visitors` daily in a **separate terminating job**
+to enforce digest retention and finalize finished months. Collection and web startup
+never run maintenance. Railway setup: [daily cron](docs/RAILWAY.md#e-daily-maintenance-required).
+See [performance and recovery](docs/PERFORMANCE.md) for budgets and verification.
 Read the [privacy guide](docs/privacy.md) and
 [data inventory](docs/data-processing-record.md) before deployment.
 

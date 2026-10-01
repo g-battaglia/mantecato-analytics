@@ -352,9 +352,29 @@
           p.classList.add("hidden");
         });
         var target = container.querySelector("#" + panelId);
-        if (target) target.classList.remove("hidden");
+        if (target) {
+          target.classList.remove("hidden");
+          if (target.hasAttribute("data-lazy-panel") && target.dataset.loaded !== "true") {
+            target.dispatchEvent(new Event("panelshown"));
+          }
+        }
       });
     })();
+  </script>
+  <script>
+    document.body.addEventListener("htmx:beforeRequest", function (event) {
+      var target = event.detail.elt;
+      // Recheck queued selections: an earlier request may have loaded this panel.
+      if (target && target.hasAttribute("data-lazy-panel") && target.dataset.loaded === "true") {
+        event.preventDefault();
+      }
+    });
+    document.body.addEventListener("htmx:afterRequest", function (event) {
+      var target = event.detail.elt;
+      if (target && target.hasAttribute("data-lazy-panel") && event.detail.successful) {
+        target.dataset.loaded = "true";
+      }
+    });
   </script>
   {% block extra_scripts %}{% endblock %}
 

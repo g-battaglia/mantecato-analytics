@@ -11,6 +11,17 @@ from apps.api.v1.execution import fetch_all
 if TYPE_CHECKING:
     from apps.api.v1.contracts import FilterSpec, QuerySpec, ResolvedRange
 
+_SESSION_METRICS = frozenset(
+    {
+        "visits",
+        "bounces",
+        "bounce_rate",
+        "total_duration",
+        "average_visit_duration",
+        "pages_per_visit",
+    }
+)
+
 _SIMPLE_DIMENSIONS = {
     "country": "we.country",
     "referrer_domain": "we.referrer_domain",
@@ -61,6 +72,30 @@ def dimension_values(spec: QuerySpec, dimension: str, search: str | None = None)
 
 def _aggregate_sql(spec: QuerySpec, *, hard_limit: int) -> tuple[str, list[object]]:
     dims = list(spec.dimensions)
+    requested = set(spec.metrics)
+    needs_sessions = spec.dataset == "pageviews" and bool(requested & _SESSION_METRICS)
+    needs_uniques = "daily_unique_visitors" in requested
+    needs_keys = needs_sessions or needs_uniques
+    visitor_column = "we.visitor_key" if needs_keys else "NULL::text AS visitor_key"
+    unique_count = (
+        "COUNT(DISTINCT ((created_at AT TIME ZONE 'UTC')::date, visitor_key)) "
+        "FILTER (WHERE visitor_key IS NOT NULL)::bigint"
+        if needs_uniques
+        else "0::bigint"
+    )
+    missing_count = (
+        "COUNT(*) FILTER (WHERE visitor_key IS NULL)::bigint" if needs_keys else "0::bigint"
+    )
+    human_count = (
+        "COUNT(*) FILTER (WHERE COALESCE(is_bot, false) = false)::bigint"
+        if "human_pageviews" in requested
+        else "0::bigint"
+    )
+    bot_count = (
+        "COUNT(*) FILTER (WHERE COALESCE(is_bot, false) = true)::bigint"
+        if "bot_pageviews" in requested
+        else "0::bigint"
+    )
     dimension_selects, joins, dimension_params = _dimension_sources(spec)
     filters_sql, filter_params = _filter_groups_sql(spec.filter_groups)
     event_type = 2 if spec.dataset == "events" else 1
@@ -116,7 +151,7 @@ def _aggregate_sql(spec: QuerySpec, *, hard_limit: int) -> tuple[str, list[objec
     session_columns = (
         "NULL::bigint AS visits, NULL::bigint AS bounces, NULL::double precision AS total_duration"
     )
-    if spec.dataset == "pageviews":
+    if needs_sessions:
         session_ctes = f""",
     marked AS (
       SELECT *, LAG(created_at) OVER (
@@ -163,7 +198,7 @@ def _aggregate_sql(spec: QuerySpec, *, hard_limit: int) -> tuple[str, list[objec
         )
 
     sql = f"""WITH source AS (
-      SELECT we.event_id, we.created_at, we.visitor_key, we.is_bot,
+      SELECT we.event_id, we.created_at, {visitor_column}, we.is_bot,
              we.referrer_domain AS source_referrer_domain{source_dim_select}{source_time}
       FROM website_event we
       {" ".join(joins)}
@@ -176,15 +211,14 @@ def _aggregate_sql(spec: QuerySpec, *, hard_limit: int) -> tuple[str, list[objec
     event_agg AS (
       SELECT {event_key_select}
              COUNT(*)::bigint AS event_count,
-             COUNT(*) FILTER (WHERE COALESCE(is_bot, false) = false)::bigint AS human_count,
-             COUNT(*) FILTER (WHERE COALESCE(is_bot, false) = true)::bigint AS bot_count,
+             {human_count} AS human_count,
+             {bot_count} AS bot_count,
              COUNT(*) FILTER (
                WHERE source_referrer_domain IS NULL OR source_referrer_domain = ''
              )::bigint
                AS direct_count,
-             COUNT(DISTINCT ((created_at AT TIME ZONE 'UTC')::date, visitor_key))
-               FILTER (WHERE visitor_key IS NOT NULL)::bigint AS daily_unique_visitors,
-             COUNT(*) FILTER (WHERE visitor_key IS NULL)::bigint AS missing_visitor_keys
+             {unique_count} AS daily_unique_visitors,
+             {missing_count} AS missing_visitor_keys
       FROM source
       {event_group}
     )

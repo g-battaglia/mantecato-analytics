@@ -56,6 +56,8 @@ function createTracker(config) {
   let activeMs = 0;
   let activeStart = 0;
   let heartbeatTimer = null;
+  let lastEngagementSeconds = -1;
+  let engagementPage = 0;
   function isVisible() {
     return typeof document === "undefined" || document.visibilityState !== "hidden";
   }
@@ -74,6 +76,8 @@ function createTracker(config) {
     return Math.round(ms / 1e3);
   }
   function resetActive() {
+    engagementPage += 1;
+    lastEngagementSeconds = -1;
     activeMs = 0;
     activeStart = isVisible() ? Date.now() : 0;
   }
@@ -154,7 +158,14 @@ function createTracker(config) {
   function sendEngagement() {
     if (!engagement || !shouldTrack()) return;
     const seconds = activeSeconds();
-    if (seconds <= 0) return;
+    if (seconds <= 0 || seconds === lastEngagementSeconds) return;
+    lastEngagementSeconds = seconds;
+    const page = engagementPage;
+    const allowRetry = () => {
+      if (engagementPage === page && lastEngagementSeconds === seconds) {
+        lastEngagementSeconds = -1;
+      }
+    };
     const url = currentUrl || normalize(getUrl());
     const body = JSON.stringify({
       type: "engagement",
@@ -173,8 +184,11 @@ function createTracker(config) {
         body,
         keepalive: true,
         credentials: "omit"
-      });
+      }).then((response) => {
+        if (!response.ok) allowRetry();
+      }).catch(allowRetry);
     } catch {
+      allowRetry();
     }
   }
   function nextPage() {

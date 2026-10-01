@@ -194,6 +194,8 @@ MIDDLEWARE += [
 # Set to 0 to log every query (useful during local profiling), or raise it
 # in production to reduce log noise.
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
+# Detailed per-request summaries are opt-in; individual slow/error logs remain.
+QUERY_SUMMARY_LOG = _env_bool("QUERY_SUMMARY_LOG", default=False)
 
 # Cookieless unique-visitor counting has a FIXED, NON-CONFIGURABLE privacy posture
 # so it cannot be misconfigured into needing a consent banner or wrong counts:

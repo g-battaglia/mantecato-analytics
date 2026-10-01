@@ -184,8 +184,9 @@ def get_overview_data(
     filters: list[Filter] | None = None,
     *,
     granularity: str = "auto",
+    lazy_tabs: bool = False,
 ) -> dict[str, Any]:
-    """Execute all read-only queries for the main overview/dashboard page.
+    """Execute visible dashboard queries; hidden tabs can defer their own work.
 
     Returns pageview counts, exact visitor/visit/bounce KPIs, trends, top
     pages, top sections, device breakdowns, geo data, heatmap, and realtime
@@ -225,7 +226,9 @@ def get_overview_data(
     country_data = get_country_breakdown(website_id, start, end, limit=10, filters=filters)
     _add_percentage(country_data, "pageviews")
 
-    top_pages = get_top_pages(website_id, start, end, limit=10, filters=filters)
+    top_pages = (
+        [] if lazy_tabs else get_top_pages(website_id, start, end, limit=10, filters=filters)
+    )
     _attach_scope_visitors(
         website_id,
         start,
@@ -260,7 +263,9 @@ def get_overview_data(
         "country": country_data,
         "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
         "top_referrers": get_referrer_metrics(website_id, start, end, limit=10, filters=filters),
-        "channels": get_channel_metrics(website_id, start, end, filters=filters),
+        "channels": []
+        if lazy_tabs
+        else get_channel_metrics(website_id, start, end, filters=filters),
         "realtime": get_active_pageviews(website_id, filters=filters),
         "recent_events": get_recent_pageviews(website_id, filters=filters),
         "current_pages": get_current_pages(website_id, filters=filters),
@@ -780,12 +785,13 @@ def get_overview_tab_sources(
     }
 
 
-def get_realtime_data(website_id: str) -> dict[str, Any]:
-    """Fetch realtime aggregate pageview data."""
-    from django.utils import timezone
-
-    now = timezone.now()
-    from core.mantecato_core.date_utils import DateRange
-
-    dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
-    return get_overview_data(website_id, dr, granularity="hour")
+def get_realtime_data(
+    website_id: str,
+    filters: list[Filter] | None = None,
+) -> dict[str, Any]:
+    """Only the three datasets rendered by realtime, never the full dashboard."""
+    return {
+        "realtime": get_active_pageviews(website_id, filters=filters),
+        "recent_events": get_recent_pageviews(website_id, filters=filters),
+        "current_pages": get_current_pages(website_id, filters=filters),
+    }

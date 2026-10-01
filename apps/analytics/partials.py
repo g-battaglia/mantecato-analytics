@@ -129,12 +129,9 @@ class RealtimePartialView(
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
         if not self.website_id:
             return HttpResponse("")
-        from apps.analytics.services import get_overview_data
-        from core.mantecato_core.date_utils import DateRange
-        from django.utils import timezone
-        now = timezone.now()
-        dr = DateRange(start_date=now.replace(hour=0, minute=0, second=0, microsecond=0), end_date=now)
-        data = get_overview_data(self.website_id, dr, self.filters, granularity="hour")
+        from apps.analytics.services import get_realtime_data
+
+        data = get_realtime_data(self.website_id, self.filters)
         return render(
             request,
             "analytics/_realtime_data.html",

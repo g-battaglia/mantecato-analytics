@@ -49,13 +49,12 @@ def _patch_middleware_user(client: Client) -> None:
     """Patch the middleware to resolve the session user without DB."""
     user = MantecatoUser(username="admin", role="admin")
     user.pk = ADMIN_USER_ID
-    patcher = patch(
-        "django.contrib.auth.middleware.AuthenticationMiddleware.process_request"
-    )
+    patcher = patch("django.contrib.auth.middleware.AuthenticationMiddleware.process_request")
     mock_process = patcher.start()
 
     def _set_user(request):
         request.user = user
+
     mock_process.side_effect = _set_user
     return patcher
 
@@ -68,11 +67,13 @@ def _patch_middleware_user(client: Client) -> None:
 class TestOverviewRouting:
     def test_overview_url_resolves(self) -> None:
         from django.urls import resolve
+
         match = resolve("/")
         assert match.url_name == "overview"
 
     def test_overview_tab_url_resolves(self) -> None:
         from django.urls import resolve
+
         match = resolve("/overview/tab/")
         assert match.url_name == "overview_tab"
 
@@ -162,7 +163,7 @@ class TestServiceOrchestration:
             }
             yield mocks
 
-    def _run(self):
+    def _run(self, **options):
         from apps.analytics.services import get_overview_data
         from core.mantecato_core.date_utils import DateRange
         from core.mantecato_core.filters import Filter
@@ -174,7 +175,10 @@ class TestServiceOrchestration:
         # A content filter disables the anonymous-visitor estimate path (which
         # only runs for a bot-only filter), keeping the test DB-free.
         return get_overview_data(
-            WEBSITE_ID, date_range, [Filter(column="country", operator="eq", value="US")]
+            WEBSITE_ID,
+            date_range,
+            [Filter(column="country", operator="eq", value="US")],
+            **options,
         )
 
     def test_uses_comparison_helpers_once(self) -> None:
@@ -187,6 +191,15 @@ class TestServiceOrchestration:
         assert result["stats"]["pageviews"]["value"] == "100"
         # With a content filter the anonymous-visitor estimate is unavailable.
         assert result["stats"]["visitors"]["value"] == "N/A"
+
+    def test_hidden_panels_do_not_query_until_requested(self) -> None:
+        with self._patched() as mocks:
+            result = self._run(lazy_tabs=True)
+        mocks["get_top_pages"].assert_not_called()
+        mocks["get_channel_metrics"].assert_not_called()
+        assert result["top_pages"] == []
+        assert result["channels"] == []
+        mocks["get_top_sections"].assert_called_once()
 
     def test_device_metrics_multi_once(self) -> None:
         with self._patched() as mocks:
@@ -215,7 +228,9 @@ class TestOverviewTemplateContent:
         assert '{% extends "base.html" %}' in self.content
 
     def test_has_chart_canvas(self) -> None:
-        assert "timeseries-canvas" in self.content, "Must have canvas for Chart.js"
+        assert '{% include "analytics/_overview_timeseries.html" %}' in self.content
+        chart = (TEMPLATES_DIR / "analytics" / "_overview_timeseries.html").read_text()
+        assert 'id="timeseries-canvas"' in chart, "Must have canvas for Chart.js"
 
     def test_has_json_script_for_timeseries(self) -> None:
         assert "json_script" in self.content, "Must use json_script for chart data"
@@ -322,16 +337,19 @@ class TestAnalyticsNoWriteSql:
 
     def test_views_no_write_sql(self) -> None:
         import apps.analytics.views as module
+
         source = Path(module.__file__).read_text(encoding="utf-8")
         assert self.WRITE_PATTERN.search(source) is None
 
     def test_services_no_write_sql(self) -> None:
         import apps.analytics.services as module
+
         source = Path(module.__file__).read_text(encoding="utf-8")
         assert self.WRITE_PATTERN.search(source) is None
 
     def test_urls_no_write_sql(self) -> None:
         import apps.analytics.urls as module
+
         source = Path(module.__file__).read_text(encoding="utf-8")
         assert self.WRITE_PATTERN.search(source) is None
 
@@ -436,9 +454,7 @@ class TestOverviewViewRendered:
 
         # The content filter now slices visitor counts at read time (from the
         # event digests), so the request reads the DB — and still renders.
-        response = client.get(
-            "/overview/tab/?tab=pages&f=country:eq:US&website=" + WEBSITE_ID
-        )
+        response = client.get("/overview/tab/?tab=pages&f=country:eq:US&website=" + WEBSITE_ID)
         content = response.content.decode()
 
         assert "42" in content
@@ -574,21 +590,25 @@ class TestSitePicker:
 class TestServiceHelpers:
     def test_percentage_change_positive(self) -> None:
         from apps.analytics.services import _percentage_change
+
         result = _percentage_change(150, 100)
         assert result == {"value": "50.0%", "trend": "up"}
 
     def test_percentage_change_negative(self) -> None:
         from apps.analytics.services import _percentage_change
+
         result = _percentage_change(50, 100)
         assert result == {"value": "50.0%", "trend": "down"}
 
     def test_percentage_change_zero_previous(self) -> None:
         from apps.analytics.services import _percentage_change
+
         result = _percentage_change(10, 0)
         assert result == {"value": "100%", "trend": "up"}
 
     def test_percentage_change_both_zero(self) -> None:
         from apps.analytics.services import _percentage_change
+
         assert _percentage_change(0, 0) is None
 
     def test_visitors_note_only_on_multi_month_ranges(self) -> None:

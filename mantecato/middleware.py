@@ -182,13 +182,15 @@ class QueryTimingMiddleware:
 
         from core.mantecato_core.database import get_query_log, reset_query_log
 
-        reset_query_log()
+        debug = getattr(settings, "DEBUG", False)
+        summary_logging = getattr(settings, "QUERY_SUMMARY_LOG", False)
+        reset_query_log(enabled=debug or summary_logging)
         started = _now_ms()
         response = self.get_response(request)
         total_ms = _now_ms() - started
 
         entries = get_query_log()
-        if entries and logger.isEnabledFor(logging.INFO):
+        if entries and summary_logging and logger.isEnabledFor(logging.INFO):
             slowest_label, slowest_ms = max(entries, key=lambda e: e[1])
             logger.info(
                 "%s %d queries %.1fms (slowest: %s %.1fms)",
@@ -199,7 +201,7 @@ class QueryTimingMiddleware:
                 slowest_ms,
             )
 
-        if getattr(settings, "DEBUG", False):
+        if debug:
             response["Server-Timing"] = _build_server_timing(
                 total_ms, entries, self._MAX_HEADER_ENTRIES
             )

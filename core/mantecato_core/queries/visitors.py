@@ -26,7 +26,6 @@ from django.utils import timezone
 
 from core.mantecato_core.helpers import compute_derived_stats
 from core.mantecato_core.visitor_counting import (
-    SESSION_TIMEOUT_S,
     _period_bounds,
     current_window,
     event_landing_stats,
@@ -163,21 +162,9 @@ def read_scope_visitors(
         for sec, keys in seen.items():
             out[sec] = len(keys)
     elif scope == "group":
-        # Content groups live in a JSON list, so the distinct-count is done in
-        # Python like the section branch rather than by the database. A visitor
-        # who read two pages of the same group counts once for that group.
-        seen_groups: dict[str, set[str]] = defaultdict(set)
-        for groups, vkey in ev_qs.values_list("content_groups", "visitor_key").iterator():
-            if not isinstance(groups, list):
-                continue
-            for group in groups:
-                # `want` is a set: an unhashable member (a dict or list stored
-                # by something other than the tracker) would raise TypeError
-                # rather than simply not matching.
-                if isinstance(group, str) and group in want:
-                    seen_groups[group].add(vkey)
-        for group, keys in seen_groups.items():
-            out[group] = len(keys)
+        from core.mantecato_core.scope_reads import group_uniques
+
+        out.update(group_uniques(ev_qs, list(want)))
     else:
         field = "event_name" if scope == "event" else "url_path"
         rows = (
@@ -323,41 +310,13 @@ def visits_by_bucket(
     attributed to the bucket of its first pageview. The bucket truncation matches
     :func:`visitors_by_bucket` so keys align with the pageview/visitors series.
     """
-    from itertools import groupby
-
-    from apps.core.models import WebsiteEvent
     from core.mantecato_core.queries.event_querysets import pageview_queryset
+    from core.mantecato_core.visitor_reads import session_buckets
 
-    gran = granularity if granularity in _GRANULARITIES else "day"
-    rows = (
-        pageview_queryset(website_id, start_date, end_date, filters)
-        .filter(visitor_key__isnull=False)
-        .order_by("visitor_key", "created_at")
-        .values_list("event_id", "visitor_key", "created_at")
-        .iterator()
+    qs = pageview_queryset(website_id, start_date, end_date, filters).filter(
+        visitor_key__isnull=False
     )
-    start_ids: list[Any] = []
-    for _key, grp in groupby(rows, key=lambda r: r[1]):
-        last = None
-        for event_id, _k, created_at in grp:
-            if last is None or (created_at - last).total_seconds() > SESSION_TIMEOUT_S:
-                start_ids.append(event_id)
-            last = created_at
-    if not start_ids:
-        return {}
-
-    agg = (
-        WebsiteEvent.objects.filter(event_id__in=start_ids)
-        .annotate(bucket=Trunc("created_at", gran, tzinfo=UTC))
-        .values("bucket")
-        .annotate(v=Count("event_id"))
-    )
-    out: dict[str, int] = {}
-    for r in agg:
-        bucket = r["bucket"]
-        key = bucket.isoformat() if hasattr(bucket, "isoformat") else str(bucket)
-        out[key] = r["v"] or 0
-    return out
+    return session_buckets(qs, granularity)
 
 
 def visit_metrics(

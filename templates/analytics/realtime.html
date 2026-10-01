@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n fmt %}
+{% load i18n fmt static %}
 
 {% block title %}{% trans "Realtime" %}{% endblock %}
 {% block page_title %}{% trans "Realtime" %}{% endblock %}
@@ -11,7 +11,9 @@
 
 <div id="realtime-content"
      hx-get="{% url 'analytics_realtime_partial' %}{% if selected_website %}?website={{ selected_website }}{% endif %}"
-     hx-trigger="every 5s"
+     hx-trigger="every 5s [!document.hidden]"
+     hx-sync="this:drop"
+     data-poll-enabled="{% if selected_website %}true{% else %}false{% endif %}"
      hx-target="#realtime-content"
      hx-swap="innerHTML">
 
@@ -25,4 +27,8 @@
 
 </div>
 
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/realtime.js' %}"></script>
 {% endblock %}

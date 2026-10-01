@@ -112,7 +112,7 @@ class TestRealtimeLoginRequired:
                     return_value=[{"id": WEBSITE_ID, "name": "Test", "domain": "t.com"}],
                 ),
                 patch(
-                    "apps.analytics.services.get_overview_data",
+                    "apps.analytics.services.get_realtime_data",
                     return_value=_REALTIME_DATA,
                 ),
             ):
@@ -136,7 +136,7 @@ class TestRealtimeViewRendered:
         if hasattr(self, "_patcher"):
             self._patcher.stop()
 
-    @patch("apps.analytics.services.get_overview_data", return_value=_REALTIME_DATA)
+    @patch("apps.analytics.services.get_realtime_data", return_value=_REALTIME_DATA)
     @patch("apps.analytics.views.resolve_websites_for_user")
     def test_realtime_renders_polling_and_count(
         self, mock_websites: MagicMock, mock_data: MagicMock, client: Client,
@@ -152,7 +152,7 @@ class TestRealtimeViewRendered:
         # The active-pageview count renders from the ``realtime`` context key.
         assert "7" in content
 
-    @patch("apps.analytics.services.get_overview_data", return_value=_REALTIME_DATA)
+    @patch("apps.analytics.services.get_realtime_data", return_value=_REALTIME_DATA)
     @patch("apps.analytics.partials.resolve_websites_for_user")
     def test_realtime_partial_renders_data(
         self, mock_websites: MagicMock, mock_data: MagicMock, client: Client,
@@ -167,7 +167,7 @@ class TestRealtimeViewRendered:
         assert "7" in content
         mock_data.assert_called_once()
 
-    @patch("apps.analytics.services.get_overview_data")
+    @patch("apps.analytics.services.get_realtime_data")
     @patch("apps.analytics.partials.resolve_websites_for_user")
     def test_realtime_partial_rejects_inaccessible_website(
         self, mock_websites: MagicMock, mock_data: MagicMock, client: Client,

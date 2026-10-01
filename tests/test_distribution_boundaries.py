@@ -40,5 +40,5 @@ def test_tracker_bundle_matches_recorded_baseline() -> None:
 
     bundle = ROOT / "packages" / "tracker" / "dist" / "script.js"
     assert hashlib.sha256(bundle.read_bytes()).hexdigest() == (
-        "c567e25198a0db6466b27a493183673a36f10030d62c40b762869b421f93f74a"
+        "848dbfa803bf85f6a5f74c0abc68ba6bd2e13a19e5c9d4d602e9e24eb285ae2d"
     )

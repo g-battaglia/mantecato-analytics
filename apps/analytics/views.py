@@ -97,7 +97,11 @@ class OverviewView(AnalyticsBase):
 
     def get_service_data(self) -> dict:
         data = get_overview_data(
-            self.website_id, self.date_range, self.filters, granularity=self.granularity
+            self.website_id,
+            self.date_range,
+            self.filters,
+            granularity=self.granularity,
+            lazy_tabs=True,
         )
         return {
             "stats": data["stats"],
@@ -119,6 +123,7 @@ class OverviewView(AnalyticsBase):
             "current_pages": data["current_pages"],
             "heatmap": data["heatmap"],
             "active_tab": self.request.GET.get("tab", "pages"),
+            "lazy_tabs": True,
             # Referrers/Channels panel (referrer-domain only — no UTM).
             "top_referrers": data.get("top_referrers", []),
             "channels": data.get("channels", []),
@@ -320,15 +325,9 @@ class RealtimeView(
             ctx["no_data"] = True
             return ctx
 
-        from django.utils import timezone
+        from apps.analytics.services import get_realtime_data
 
-        from apps.analytics.services import get_overview_data
-        from core.mantecato_core.date_utils import DateRange
-
-        now = timezone.now()
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        dr = DateRange(start_date=start, end_date=now)
-        data = get_overview_data(self.website_id, dr, self.filters, granularity="hour")
+        data = get_realtime_data(self.website_id, self.filters)
         return {**ctx, **data}
 
 

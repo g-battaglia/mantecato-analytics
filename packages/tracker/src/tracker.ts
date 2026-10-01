@@ -186,6 +186,8 @@ export function createTracker(config: TrackerConfig): Tracker {
   let activeMs = 0;
   let activeStart = 0;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let lastEngagementSeconds = -1;
+  let engagementPage = 0;
 
   function isVisible(): boolean {
     return typeof document === "undefined" || document.visibilityState !== "hidden";
@@ -205,6 +207,8 @@ export function createTracker(config: TrackerConfig): Tracker {
     return Math.round(ms / 1000);
   }
   function resetActive(): void {
+    engagementPage += 1;
+    lastEngagementSeconds = -1;
     activeMs = 0;
     activeStart = isVisible() ? Date.now() : 0;
   }
@@ -303,7 +307,17 @@ export function createTracker(config: TrackerConfig): Tracker {
   function sendEngagement(): void {
     if (!engagement || !shouldTrack()) return;
     const seconds = activeSeconds();
-    if (seconds <= 0) return;
+    if (seconds <= 0 || seconds === lastEngagementSeconds) return;
+    // visibilitychange + pagehide can report the same cumulative time. Send it
+    // once, without changing the heartbeat interval or retaining browser storage.
+    lastEngagementSeconds = seconds;
+    const page = engagementPage;
+    const allowRetry = (): void => {
+      // A late failure from an earlier page/send must not clear newer state.
+      if (engagementPage === page && lastEngagementSeconds === seconds) {
+        lastEngagementSeconds = -1;
+      }
+    };
     const url = currentUrl || normalize(getUrl());
     const body = JSON.stringify({
       type: "engagement",
@@ -325,9 +339,11 @@ export function createTracker(config: TrackerConfig): Tracker {
         body,
         keepalive: true,
         credentials: "omit",
-      });
+      }).then((response) => {
+        if (!response.ok) allowRetry();
+      }).catch(allowRetry);
     } catch {
-      // Silently ignore tracking failures
+      allowRetry();
     }
   }
 

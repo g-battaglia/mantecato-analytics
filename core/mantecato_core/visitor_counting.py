@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Count, F, Min, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 
 if TYPE_CHECKING:
@@ -268,73 +268,22 @@ def record_visit(
     if is_bot:
         return None
 
-    from apps.core.models import VisitorDayState
+    from core.mantecato_core.visitor_writes import fold_visit
 
     day = utc_day(occurred_at)
     period = _period_key_for_date(day, _window())
     salt = get_or_create_salt(period)
     key = compute_visitor_key(salt, website_id=website_id, ip=ip, user_agent=user_agent)
-    entry = (url_path or "/")[:500]
-
-    with transaction.atomic():
-        row, created = VisitorDayState.objects.select_for_update().get_or_create(
-            website_id=website_id,
-            day=day,
-            visitor_key=key,
-            defaults={
-                "period": period,
-                "entry_path": entry,
-                "first_seen": occurred_at,
-                "last_seen": occurred_at,
-                "visits": 1,
-                "bounces": 0,
-                "cur_visit_pageviews": 1,
-                "cur_visit_duration_s": 0,
-                "cur_page_engaged_s": 0,
-                "total_pageviews": 1,
-                "total_duration_s": 0,
-            },
-        )
-        if created:
-            return key
-
-        threshold = _bounce_threshold()
-        gap = max(0, int((occurred_at - row.last_seen).total_seconds()))
-        fields = [
-            "visits",
-            "bounces",
-            "cur_visit_pageviews",
-            "cur_visit_duration_s",
-            "cur_page_engaged_s",
-            "total_pageviews",
-            "total_duration_s",
-            "last_seen",
-        ]
-        if gap > SESSION_TIMEOUT_S:
-            # Close the previous visit, then open a new one (new landing page).
-            # Its duration = folded completed pages + the last page's engaged time.
-            prev_dur = row.cur_visit_duration_s + row.cur_page_engaged_s
-            if row.cur_visit_pageviews <= 1 and (threshold <= 0 or prev_dur < threshold):
-                row.bounces += 1
-            row.total_duration_s += prev_dur
-            row.visits += 1
-            row.cur_visit_pageviews = 1
-            row.cur_visit_duration_s = 0
-            row.cur_page_engaged_s = 0
-            row.entry_path = entry
-            fields.append("entry_path")
-        else:
-            # Same visit, new page: fold the page that just ended. Prefer its
-            # measured active (engaged) time; fall back to the wall-clock gap when
-            # no engagement beacon was received for it (older clients / imports).
-            page_dur = row.cur_page_engaged_s if row.cur_page_engaged_s > 0 else gap
-            row.cur_visit_duration_s += page_dur
-            row.cur_page_engaged_s = 0
-            row.cur_visit_pageviews += 1
-        row.total_pageviews += 1
-        row.last_seen = occurred_at
-        row.save(update_fields=fields)
-        return key
+    fold_visit(
+        website_id=website_id,
+        day=day,
+        period=period,
+        key=key,
+        occurred_at=occurred_at,
+        entry=(url_path or "/")[:500],
+        threshold=_bounce_threshold(),
+    )
+    return key
 
 
 def record_engagement(
@@ -359,32 +308,19 @@ def record_engagement(
         return
     seconds = max(0, int(seconds or 0))
 
-    from apps.core.models import VisitorDayState
+    from core.mantecato_core.visitor_writes import fold_engagement
 
     day = utc_day(occurred_at)
     period = _period_key_for_date(day, _window())
     salt = get_or_create_salt(period)
     key = compute_visitor_key(salt, website_id=website_id, ip=ip, user_agent=user_agent)
-
-    with transaction.atomic():
-        row = (
-            VisitorDayState.objects.select_for_update()
-            .filter(website_id=website_id, day=day, visitor_key=key)
-            .first()
-        )
-        if row is None:
-            return  # engagement with no recorded pageview → ignore
-        if (occurred_at - row.last_seen).total_seconds() > SESSION_TIMEOUT_S:
-            return  # beacon after the visit closed → don't revive a dead visit
-        fields: list[str] = []
-        if seconds > row.cur_page_engaged_s:
-            row.cur_page_engaged_s = seconds
-            fields.append("cur_page_engaged_s")
-        if occurred_at > row.last_seen:
-            row.last_seen = occurred_at
-            fields.append("last_seen")
-        if fields:
-            row.save(update_fields=fields)
+    fold_engagement(
+        website_id=website_id,
+        day=day,
+        key=key,
+        occurred_at=occurred_at,
+        seconds=seconds,
+    )
 
 
 def record_scope_presence(
@@ -482,147 +418,23 @@ def _finished_period_keys(now: datetime | None = None) -> set[str]:
 
 
 def discard_expired_digests(now: datetime | None = None) -> int:
-    """NULL the per-event ``visitor_key`` digests older than the retention window.
+    """Expire event digests in bounded batches; only for offline maintenance."""
+    from core.mantecato_core.visitor_rollup import expire_digests
 
-    Split out of :func:`rollup_finished_periods` so the lazy write-path can run it on
-    its own throttled cadence — otherwise, with a fixed monthly window, the only
-    digest-expiry pass would fire once a month (when a finished month exists to roll
-    up) instead of keeping pace as events cross the retention cutoff. Returns the
-    number of rows nulled. Idempotent: once caught up it matches nothing.
-    """
-    from apps.core.models import WebsiteEvent
-
-    retention = int(getattr(settings, "VISITOR_KEY_RETENTION_DAYS", 396))
-    cutoff = (now or timezone.now()) - timedelta(days=retention)
-    return WebsiteEvent.objects.filter(created_at__lt=cutoff, visitor_key__isnull=False).update(
-        visitor_key=None
-    )
+    return expire_digests(now)
 
 
 def rollup_finished_periods(
-    now: datetime | None = None, finished_keys: set[str] | None = None
-) -> dict[str, int]:
-    """Finalise every window before the current one, then discard its digests.
+    now: datetime | None = None, finished_keys: set[str] | None = None, **options: Any
+) -> dict[str, Any]:
+    """Offline set-based rollup, committing one finished site/window at a time.
 
-    Writes per-day site aggregates (:class:`VisitorDaily`, for the daily trend),
-    per-window aggregates (:class:`VisitorPeriod`, with **exact** window-unique
-    visitors and per-scope/landing breakdowns), then deletes the window's
-    ephemeral state, scope-presence rows and salt. A Postgres advisory lock
-    serialises concurrent calls; idempotent (a second run finds no state).
-
-    *finished_keys* lets a caller that has already computed the finished set (e.g.
-    the write-path guard) pass it in, avoiding a second scan of the period keys.
-
-    Returns ``{"periods", "rows", "salts", "scope_rows"}``.
+    A non-blocking advisory lock coordinates with imports. Event digests remain
+    until the fixed retention cutoff. Never invoke this from an HTTP request.
     """
-    from apps.core.models import (
-        VisitorDaily,
-        VisitorDayState,
-        VisitorPeriod,
-        VisitorSalt,
-        VisitorScopeState,
-    )
+    from core.mantecato_core.visitor_rollup import run_rollup
 
-    window = _window()
-    threshold = _bounce_threshold()
-    month_start, _ = _period_bounds(utc_day(now or timezone.now()), window)
-    if finished_keys is None:
-        finished_keys = _finished_period_keys(now)
-    result = {"periods": 0, "rows": 0, "salts": 0, "scope_rows": 0}
-
-    with transaction.atomic():
-        if connection.vendor == "postgresql":
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_ROLLUP_LOCK_KEY])
-
-        # Finalise only windows that have *ended* (by calendar bounds, robust to
-        # legacy day/week keys); current-month rows — whatever their key — stay live.
-        finished = VisitorDayState.objects.filter(period__in=finished_keys)
-
-        # Aggregates store **all** visitors (humans + bots). The bot filter — and
-        # every other filter — is applied **downstream at read time**, never baked
-        # into the stored data, so the DB is identical whatever the filter.
-
-        # 1) Per-day site aggregates (daily trend).
-        for g in finished.values("website_id", "day").annotate(
-            unique_visitors=Count("visitor_key", distinct=True),
-            visits=Sum("visits"),
-            closed_bounces=Sum("bounces"),
-            open_bounces=Count("id", filter=_open_bounce_filter(threshold)),
-            total_pageviews=Sum("total_pageviews"),
-            closed_duration=Sum("total_duration_s"),
-            open_duration=Sum("cur_visit_duration_s"),
-            open_engaged=Sum("cur_page_engaged_s"),
-        ):
-            _upsert_daily(VisitorDaily, g, website_id=g["website_id"], day=g["day"])
-
-        # 2) Per-window site aggregates (exact window uniques).
-        for g in finished.values("website_id", "period").annotate(
-            unique_visitors=Count("visitor_key", distinct=True),
-            visits=Sum("visits"),
-            closed_bounces=Sum("bounces"),
-            open_bounces=Count("id", filter=_open_bounce_filter(threshold)),
-            total_pageviews=Sum("total_pageviews"),
-            closed_duration=Sum("total_duration_s"),
-            open_duration=Sum("cur_visit_duration_s"),
-            open_engaged=Sum("cur_page_engaged_s"),
-            min_day=Min("day"),
-        ):
-            p_start, _ = _period_bounds(g["min_day"], window)
-            _upsert_period(VisitorPeriod, g, website_id=g["website_id"], period_start=p_start)
-            result["periods"] += 1
-
-        # 3) Per-window landing-page bounce (entry page of each visitor's last visit).
-        for g in (
-            finished.values("website_id", "period", "entry_path")
-            .annotate(
-                visits=Count("id"),
-                bounces=Count("id", filter=_open_bounce_filter(threshold)),
-                min_day=Min("day"),
-            )
-            .exclude(entry_path__isnull=True)
-        ):
-            p_start, _ = _period_bounds(g["min_day"], window)
-            _upsert_period_counts(
-                VisitorPeriod,
-                website_id=g["website_id"],
-                period_start=p_start,
-                scope="landing",
-                scope_value=g["entry_path"] or "/",
-                visits=g["visits"] or 0,
-                bounces=g["bounces"] or 0,
-            )
-
-        # 4) Per-window per-scope unique visitors (pages/sections/groups/events).
-        scope_qs = VisitorScopeState.objects.filter(period__in=finished_keys)
-        for g in scope_qs.values("website_id", "period", "scope", "scope_value").annotate(
-            unique_visitors=Count("visitor_key", distinct=True),
-        ):
-            p_start, _ = _period_bounds(_first_day_of_period(g["period"], window), window)
-            _upsert_period_counts(
-                VisitorPeriod,
-                website_id=g["website_id"],
-                period_start=p_start,
-                scope=g["scope"],
-                scope_value=g["scope_value"],
-                unique_visitors=g["unique_visitors"] or 0,
-            )
-
-        # 5) NULL the per-event digests beyond the retention window (kept until then
-        #    so visitor metrics stay exact and filterable), then discard the finalised
-        #    windows' ephemeral state and their salts. Only salts whose own window has
-        #    ended are dropped, so a still-open legacy day-key's salt is preserved.
-        discard_expired_digests(now)
-        result["scope_rows"], _ = scope_qs.delete()
-        result["rows"], _ = finished.delete()
-        expired_salts = [
-            p
-            for p in VisitorSalt.objects.values_list("period", flat=True)
-            if _period_ended(p, month_start)
-        ]
-        result["salts"], _ = VisitorSalt.objects.filter(period__in=expired_salts).delete()
-
-    return result
+    return run_rollup(now, finished_keys=finished_keys, **options)
 
 
 def aggregate_events_into_daily(website_id: str | None = None) -> dict[str, int]:
@@ -900,53 +712,16 @@ def _upsert_counts(model: Any, keys: dict[str, Any], vals: dict[str, int]) -> No
 def event_visitor_stats(qs: Any) -> dict[str, int]:
     """Sessionise a ``website_event`` queryset into visitor/visit/bounce/duration totals.
 
-    Pure-Python sessioniser (30-min inactivity gap) over ``(visitor_key, created_at)``.
+    PostgreSQL sessioniser (30-min inactivity gap), returning aggregates only.
     This is the read-time visitor counter: callers pass a **filtered** pageview
     queryset (any country/device/bot filter applied) and get exact unique visitors,
     sessionised visits, single-pageview bounces and gap-based duration — the
     session-based product's numbers, on the cookieless digest. Returns the five
     count fields.
     """
-    from itertools import groupby
+    from core.mantecato_core.visitor_reads import session_totals
 
-    out = {
-        "unique_visitors": 0,
-        "visits": 0,
-        "bounces": 0,
-        "total_pageviews": 0,
-        "total_duration_s": 0,
-    }
-    rows = (
-        qs.order_by("visitor_key", "created_at").values_list("visitor_key", "created_at").iterator()
-    )
-    for _key, grp in groupby(rows, key=lambda r: r[0]):
-        times = [t for _k, t in grp]
-        visits = 1
-        visit_pv = 1
-        total_dur = 0
-        cur_dur = 0
-        last = times[0]
-        visit_pvs: list[int] = []
-        for t in times[1:]:
-            gap = max(0, int((t - last).total_seconds()))
-            if gap > SESSION_TIMEOUT_S:
-                visit_pvs.append(visit_pv)
-                total_dur += cur_dur
-                visits += 1
-                visit_pv = 1
-                cur_dur = 0
-            else:
-                visit_pv += 1
-                cur_dur += gap
-            last = t
-        visit_pvs.append(visit_pv)
-        total_dur += cur_dur
-        out["unique_visitors"] += 1
-        out["visits"] += visits
-        out["bounces"] += sum(1 for pv in visit_pvs if pv <= 1)
-        out["total_pageviews"] += len(times)
-        out["total_duration_s"] += total_dur
-    return out
+    return session_totals(qs)
 
 
 def event_landing_stats(qs: Any) -> dict[str, dict[str, int]]:
@@ -960,37 +735,9 @@ def event_landing_stats(qs: Any) -> dict[str, dict[str, int]]:
     refinement does not apply to historical event rows. Returns
     ``{entry_path: {"visits": int, "bounces": int}}``.
     """
-    from itertools import groupby
+    from core.mantecato_core.visitor_reads import session_landings
 
-    acc: dict[str, dict[str, int]] = {}
-
-    def _close(entry: str, pv: int) -> None:
-        row = acc.setdefault(entry or "/", {"visits": 0, "bounces": 0})
-        row["visits"] += 1
-        if pv <= 1:
-            row["bounces"] += 1
-
-    rows = (
-        qs.order_by("visitor_key", "created_at")
-        .values_list("visitor_key", "created_at", "url_path")
-        .iterator()
-    )
-    for _key, grp in groupby(rows, key=lambda r: r[0]):
-        events = [(t, p) for _k, t, p in grp]
-        entry = events[0][1]
-        visit_pv = 1
-        last = events[0][0]
-        for t, p in events[1:]:
-            gap = max(0, int((t - last).total_seconds()))
-            if gap > SESSION_TIMEOUT_S:
-                _close(entry, visit_pv)
-                entry = p
-                visit_pv = 1
-            else:
-                visit_pv += 1
-            last = t
-        _close(entry, visit_pv)
-    return acc
+    return session_landings(qs)
 
 
 # ---------------------------------------------------------------------------

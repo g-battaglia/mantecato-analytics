@@ -18,7 +18,9 @@ def run_query(spec: QuerySpec) -> dict[str, Any]:
     if cardinality_overflow:
         raise QueryLimitError("dimension cardinality exceeds the server limit")
     selected, truncated = _limit_rows(spec, rows)
-    totals = _independent_totals(spec)
+    totals = (
+        _totals_from_rows(spec, rows) if spec.operation == "totals" else _independent_totals(spec)
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "query": {**spec.query_metadata(), "truncated": truncated},
@@ -226,6 +228,10 @@ def _limit_rows(spec: QuerySpec, rows: list[dict[str, Any]]) -> tuple[list[dict[
 def _independent_totals(spec: QuerySpec) -> dict[str, Any]:
     total_spec = replace(spec, operation="totals", dimensions=(), granularity=None, limit=1)
     rows, _ = aggregate(total_spec, hard_limit=1)
+    return _totals_from_rows(spec, rows)
+
+
+def _totals_from_rows(spec: QuerySpec, rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {metric: 0 for metric in spec.metrics}
     return {metric: rows[0].get(metric) for metric in spec.metrics} | (

@@ -13,6 +13,7 @@ What the config does:
   manifest storage works in production.
 - **Pre-deploy** — `migrate` runs once, before the new version receives traffic. The umami hook
   (`importumamienv`) and the optional admin bootstrap (`createuser`) run here too.
+  Visitor maintenance is deliberately absent: provision the separate daily job in section E.
 - **Start** — gunicorn serves `mantecato.wsgi:application` on Railway's injected `$PORT`.
 - **Health check** — Railway probes `/health/`, which runs `SELECT 1` against PostgreSQL.
 
@@ -125,3 +126,56 @@ community support).
 
 - **First-boot health check.** `/health/` returns `503` until Postgres accepts connections. The
   config uses `healthcheckTimeout = 300` and `restartPolicyType = "ON_FAILURE"` to ride this out.
+  This is a deployment check, not continuous proof of successful event collection.
+
+## E. Daily maintenance (required)
+
+Create a **new, separate cron service** from the same repository/revision as the web
+service. Do not change the web service to a cron or clone its startup/bootstrap hooks.
+Select `/railway.rollup.toml` as this service's config file. Railway config as code
+is per-service and overrides dashboard values; the file does not provision a service.
+
+Configure the job with a private reference to the same PostgreSQL service's
+`DATABASE_URL`, `SECRET_KEY`, `DEBUG=False`, and `DJANGO_SETTINGS_MODULE=mantecato.settings`.
+Use Railway secret/reference variables; never copy values into tracked files or logs.
+No public domain, API key, admin password, Umami import configuration or HTTP health
+check is needed. Verify there is **no pre-deploy migration/import** on this job;
+the web release migrates once before the matching job revision is used.
+
+The manifest runs:
+
+```bash
+uv run python manage.py rollup_visitors --max-runtime 900 --sql-timeout-ms 60000
+```
+
+Schedule: `15 2 * * *`, **02:15 UTC daily**, not local time. The job expires only
+digests older than 396 days, then aggregates/deletes state for finished periods.
+The current calendar month remains live. All pageview/event rows remain stored.
+Per-site/period commits make interrupted runs resumable without adding counts twice.
+Salts are deleted only after all day/scope state for their period has been finalized.
+
+The job exits and closes DB connections. `restartPolicyType=NEVER` avoids restart
+loops. Railway skips a scheduled run if the preceding run is still active, so
+alert on failures, incomplete/busy results, missing success for >24 h, and persistent
+finished-period backlog. Cron timings are approximate; budget/SQL timeouts prevent
+unbounded maintenance, not an absolute hard real-time deadline.
+
+For controlled recovery after a backup and explicit authorization:
+
+```bash
+# Replace YYYY-MM with a finished calendar month before running.
+uv run python manage.py rollup_visitors --period YYYY-MM --dry-run
+uv run python manage.py rollup_visitors --period YYYY-MM --max-runtime 900
+```
+
+Replace the period with the actual finished period. `--website UUID` restricts the
+site; retention follows the site selector but is independent of the period selector.
+Dry-run performs no writes. JSON output distinguishes `completed`, `dry_run`,
+`busy`, and `budget_exhausted`. Retention batches share the backfill lock: a busy
+job preserves both backfill inputs and previously committed batch progress.
+Incomplete runs exit 2; failures exit 1. Re-run
+incomplete work in the job, never increase the web timeout to run it in requests.
+
+For Render, containers or direct hosting, configure the same command in an external
+daily cron with private DB access; web startup does not provide a fallback scheduler.
+See [performance/recovery](PERFORMANCE.md) for rollout checks and benchmark limits.

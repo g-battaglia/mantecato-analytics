@@ -82,6 +82,112 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("engagement efficiency", () => {
+  it.each(["throw", "reject", "http"])("retries a failed %s send while hidden", async (failure) => {
+    const ready = document.readyState;
+    const visibility = document.visibilityState;
+    Object.defineProperty(document, "readyState", { value: "complete", configurable: true });
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    let attempts = 0;
+    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+      if (JSON.parse(String(init.body)).type === "engagement" && ++attempts === 1) {
+        if (failure === "throw") throw new Error("offline");
+        if (failure === "reject") return Promise.reject(new Error("offline"));
+        return Promise.resolve(new Response(null, { status: 503 }));
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }));
+    const tracker = createTracker(makeConfig({ autoTrack: true, heartbeatMs: 0 }));
+    try {
+      now.mockReturnValue(17_000);
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(attempts).toBe(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      window.dispatchEvent(new Event("pagehide"));
+      expect(attempts).toBe(2);
+      window.dispatchEvent(new Event("pagehide"));
+      expect(attempts).toBe(2); // The retry itself remains deduplicated in flight.
+      await Promise.resolve();
+      await Promise.resolve();
+      window.dispatchEvent(new Event("pagehide"));
+      expect(attempts).toBe(2); // Successful cumulative time is not sent again.
+    } finally {
+      tracker.destroy();
+      Object.defineProperty(document, "readyState", { value: ready, configurable: true });
+      Object.defineProperty(document, "visibilityState", { value: visibility, configurable: true });
+    }
+  });
+
+  it("does not let a late old-page failure clear the new page's deduplication", async () => {
+    const ready = document.readyState;
+    const visibility = document.visibilityState;
+    Object.defineProperty(document, "readyState", { value: "complete", configurable: true });
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    let attempts = 0;
+    let rejectOld: (reason: Error) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+      if (JSON.parse(String(init.body)).type === "engagement" && ++attempts === 1) {
+        return new Promise<Response>((_resolve, reject) => { rejectOld = reject; });
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }));
+    const tracker = createTracker(makeConfig({ autoTrack: true, heartbeatMs: 0 }));
+    try {
+      now.mockReturnValue(2_000);
+      window.dispatchEvent(new Event("pagehide"));
+      await tracker.pageview({ url: "/second" });
+      now.mockReturnValue(3_000);
+      window.dispatchEvent(new Event("pagehide"));
+      expect(attempts).toBe(2);
+      rejectOld(new Error("late failure"));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      window.dispatchEvent(new Event("pagehide"));
+      expect(attempts).toBe(2);
+    } finally {
+      tracker.destroy();
+      Object.defineProperty(document, "readyState", { value: ready, configurable: true });
+      Object.defineProperty(document, "visibilityState", { value: visibility, configurable: true });
+    }
+  });
+
+  it("deduplicates visibility + pagehide but keeps the 15s heartbeat", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    const ready = document.readyState;
+    const visibility = document.visibilityState;
+    Object.defineProperty(document, "readyState", { value: "complete", configurable: true });
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    const tracker = createTracker(makeConfig({ autoTrack: true }));
+    try {
+      await vi.advanceTimersByTimeAsync(15000);
+      const heartbeats = () => sentPayloads.filter(p => JSON.parse(p.body).type === "engagement");
+      expect(heartbeats()).toHaveLength(1);
+      expect(JSON.parse(heartbeats()[0].body).payload.seconds).toBe(15);
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("pagehide"));
+      expect(heartbeats()).toHaveLength(1);
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(heartbeats()).toHaveLength(2);
+      expect(JSON.parse(heartbeats()[1].body).payload.seconds).toBe(30);
+    } finally {
+      tracker.destroy();
+      vi.useRealTimers();
+      Object.defineProperty(document, "readyState", { value: ready, configurable: true });
+      Object.defineProperty(document, "visibilityState", { value: visibility, configurable: true });
+    }
+  });
+});
+
 describe("createTracker", () => {
   it("exposes only privacy-first methods", () => {
     const tracker = createTracker(makeConfig()) as unknown as Record<string, unknown>;

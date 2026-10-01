@@ -49,13 +49,13 @@ def _slow_threshold_ms() -> float:
         return DEFAULT_SLOW_QUERY_THRESHOLD_MS
 
 
-def reset_query_log() -> None:
+def reset_query_log(*, enabled: bool = True) -> None:
     """Clear the per-thread query log.
 
     Called by :class:`mantecato.middleware.QueryTimingMiddleware` at the start
     of every request so that the next request's timing list starts empty.
     """
-    _query_log.entries = []
+    _query_log.entries = [] if enabled else None
 
 
 def get_query_log() -> list[tuple[str, float]]:
@@ -65,7 +65,7 @@ def get_query_log() -> list[tuple[str, float]]:
     function/module that produced the SQL.  Returns an empty list when the
     middleware has not initialised the log for the current thread.
     """
-    return getattr(_query_log, "entries", [])
+    return getattr(_query_log, "entries", None) or []
 
 
 def _caller_label() -> str:
