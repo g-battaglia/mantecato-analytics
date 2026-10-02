@@ -6,6 +6,7 @@ from authlib.oauth2.rfc6749 import ClientMixin
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 
 class OAuthClient(models.Model, ClientMixin):
@@ -44,7 +45,7 @@ class AIConnection(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     client = models.ForeignKey(OAuthClient, on_delete=models.PROTECT)
     auth_method = models.CharField(
-        max_length=16, choices=[("oauth", "OAuth"), ("personal", "Token")]
+        max_length=16, choices=[("oauth", _("OAuth connector")), ("personal", _("Personal token"))]
     )
     scopes = models.JSONField(default=list)
     website_ids = models.JSONField(default=list)
@@ -54,13 +55,24 @@ class AIConnection(models.Model):
     notice_version = models.CharField(max_length=40)
     notice_hash = models.CharField(max_length=64)
     created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField(db_index=True)
+    expires_at = models.DateTimeField(null=True, db_index=True)
     verified_at = models.DateTimeField(null=True)
     last_used_at = models.DateTimeField(null=True)
     revoked_at = models.DateTimeField(null=True, db_index=True)
 
+    def is_expired(self):
+        if self.expires_at is None:
+            return self.auth_method != "personal"
+        return self.expires_at <= timezone.now()
+
     class Meta:
         indexes = [models.Index(fields=["user", "-created_at", "-id"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(expires_at__isnull=False) | models.Q(auth_method="personal"),
+                name="ai_conn_expiry_or_personal",
+            )
+        ]
 
 
 class OAuthCredential(models.Model):
@@ -68,7 +80,7 @@ class OAuthCredential(models.Model):
     kind = models.CharField(max_length=16)
     connection = models.ForeignKey(AIConnection, null=True, on_delete=models.CASCADE)
     payload = models.JSONField(default=dict)
-    expires_at = models.DateTimeField(db_index=True)
+    expires_at = models.DateTimeField(null=True, db_index=True)
     consumed_at = models.DateTimeField(null=True)
 
     def get_redirect_uri(self):
@@ -89,7 +101,18 @@ class OAuthCredential(models.Model):
         return self.connection.client_id == client.client_id
 
     def is_expired(self):
+        if self.expires_at is None:
+            return self.kind != "personal"
         return self.expires_at <= timezone.now()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(expires_at__isnull=False)
+                | models.Q(kind="personal", connection__isnull=False),
+                name="ai_cred_expiry_or_personal",
+            )
+        ]
 
 
 class AIActivity(models.Model):

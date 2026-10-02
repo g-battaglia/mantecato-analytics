@@ -97,7 +97,7 @@ def credential_for_grant(raw, kind, client_id):
     if conn.client_id != client_id or row.payload.get("resource") != resource():
         return None
     row = OAuthCredential.objects.select_for_update().filter(pk=row.pk).first()
-    if row is None or row.expires_at <= timezone.now():
+    if row is None or row.is_expired():
         return None
     if row.consumed_at:
         revoke_locked(conn)
@@ -345,7 +345,7 @@ def pending(request, lock=False):
     if (
         not row
         or row.consumed_at
-        or row.expires_at <= timezone.now()
+        or row.is_expired()
         or not nonce
         or row.payload.get("browser") != digest(nonce, "browser")
         or row.payload.get("initiating_user") not in (None, str(request.user.pk))

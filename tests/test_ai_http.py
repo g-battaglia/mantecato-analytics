@@ -1,7 +1,9 @@
 """Real official SDK/OAuth clients against two native Gunicorn ASGI workers."""
 
 import asyncio
+import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -331,7 +333,8 @@ def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):
     asyncio.run(scenario())
 
 
-def test_real_browser_token_history_mobile_and_lazy_activity(http_server):
+@pytest.mark.parametrize("expiry", ["30", "never"])
+def test_real_browser_token_history_mobile_and_lazy_activity(http_server, expiry):
     playwright = pytest.importorskip("playwright.sync_api")
     origin, cookie, _, _ = http_server
     with playwright.sync_playwright() as pw:
@@ -380,6 +383,7 @@ def test_real_browser_token_history_mobile_and_lazy_activity(http_server):
             page.set_viewport_size({"width": 1280, "height": 1000})
             page.get_by_text("Create a personal token", exact=True).click()
             page.locator("input[name=name]").fill("Synthetic desktop")
+            page.locator("#ai-days").select_option(expiry)
             page.locator("input[name=sites]").first.check()
             page.locator("input[name=acknowledged]").check()
             with page.expect_navigation() as navigation:
@@ -393,13 +397,31 @@ def test_real_browser_token_history_mobile_and_lazy_activity(http_server):
                 "document.querySelector('[data-ai-copy-status]').textContent.includes('manually')"
             )
             assert page.locator("#ai-new-token").evaluate("e => e.selectionEnd") == len(token)
-            page.get_by_role("link", name="Connections", exact=True).click()
+            assert page.get_by_role("heading", name="Your connections & tokens").is_visible()
+            if expiry == "never":
+                assert "Never expires" in page.locator(".ai-connection").inner_text()
+            assert page.locator("[data-ai-revoke] > summary").is_visible()
+            assert page.locator("[data-ai-revoke]").evaluate("e => !e.closest('[data-ai-access]')")
+            page.get_by_role("link", name="Connections & tokens", exact=True).click()
+            page.wait_for_selector("#ai-new-token", state="detached")
             page.wait_for_selector("[data-ai-access]")
             assert token not in page.content()
+            page.screenshot(
+                path=f"/tmp/mantecato-ai-tokens-desktop-{expiry}.png",
+                full_page=True,
+                animations="disabled",
+            )
+            page.set_viewport_size({"width": 320, "height": 740})
+            assert page.locator("#ai-content").evaluate("e => e.scrollWidth <= e.clientWidth + 1")
             page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_timeout(350)
             assert page.locator("#ai-content").evaluate("e => e.scrollWidth <= e.clientWidth + 1")
             assert page.locator("#ai-content").bounding_box()["x"] >= 0
+            page.screenshot(
+                path=f"/tmp/mantecato-ai-tokens-mobile-{expiry}.png",
+                full_page=True,
+                animations="disabled",
+            )
             page.get_by_role("link", name="Add connector", exact=True).click()
             page.wait_for_selector("[data-ai-enhanced]")
             page.locator("[data-ai-provider=chatgpt]").click()
@@ -412,8 +434,73 @@ def test_real_browser_token_history_mobile_and_lazy_activity(http_server):
             page.screenshot(
                 path="/tmp/mantecato-ai-mobile.png", full_page=True, animations="disabled"
             )
+            page.get_by_role("link", name="Connections & tokens", exact=True).click()
+            page.wait_for_selector("[data-ai-revoke]")
+            page.locator("[data-ai-revoke] > summary").press("Enter")
+            with page.expect_navigation():
+                page.get_by_role("button", name="Confirm revocation", exact=True).click()
+            page.get_by_text("Revoked", exact=True).wait_for()
+            assert page.locator("[data-ai-revoke]").count() == 0
+            assert (
+                httpx.post(
+                    origin + "/mcp", headers={"Authorization": "Bearer " + token}, timeout=10
+                ).status_code
+                == 401
+            )
         finally:
             browser.close()
+
+
+def test_no_expiry_personal_token_authenticates_official_sdk_and_can_be_revoked(http_server):
+    from apps.ai_connections.models import AIConnection, OAuthCredential
+
+    origin, cookie, site_id, _ = http_server
+    with httpx.Client(cookies={"sessionid": cookie}, timeout=15) as browser:
+        assert browser.get(origin + "/settings/ai-connections/").status_code == 200
+        response = browser.post(
+            origin + "/settings/ai-connections/tokens/",
+            data={
+                "csrfmiddlewaretoken": browser.cookies["csrftoken"],
+                "name": "No expiry SDK",
+                "days": "never",
+                "sites": site_id,
+                "scopes": "analytics:read",
+                "acknowledged": "yes",
+                "notice_hash": NOTICE_HASH,
+                "notice_version": NOTICE_VERSION,
+            },
+        )
+        assert response.status_code == 200
+        raw = re.search(r'id="ai-new-token"[^>]*value="([^"]+)"', response.text).group(1)
+        conn = AIConnection.objects.get(client__name="No expiry SDK")
+        assert conn.expires_at is None
+        assert OAuthCredential.objects.get(connection=conn).expires_at is None
+
+        async def scenario():
+            async with (
+                httpx.AsyncClient(headers={"Authorization": "Bearer " + raw}, timeout=15) as client,
+                streamable_http_client(origin + "/mcp", http_client=client) as (read, write, _),
+                ClientSession(read, write) as session,
+            ):
+                await session.initialize()
+                assert len((await session.list_tools()).tools) == 8
+                result = await session.call_tool("get_connection_status", {})
+                assert not result.isError
+                assert json.loads(result.content[0].text)["expires_at"] is None
+
+        asyncio.run(scenario())
+        assert (
+            browser.post(
+                origin + f"/settings/ai-connections/{conn.pk}/revoke/",
+                data={"csrfmiddlewaretoken": browser.cookies["csrftoken"]},
+            ).status_code
+            == 302
+        )
+        assert (
+            browser.post(origin + "/mcp", headers={"Authorization": "Bearer " + raw}).status_code
+            == 401
+        )
+        assert not OAuthCredential.objects.filter(connection=conn).exists()
 
 
 def test_concurrent_http_closes_database_connections(http_server):

@@ -131,6 +131,8 @@ def validate_grant(user, selected, selected_scopes):
 
 def create_connection(user, client, method, selected_sites, selected_scopes, lifetime):
     """Caller owns an atomic transaction; serialize quota checks on the user."""
+    if lifetime is None and method != "personal":
+        raise AccessDenied("invalid_expiry")
     fresh = MantecatoUser.objects.select_for_update().get(pk=user.pk)
     if not fresh.is_active or not hmac.compare_digest(fingerprint(fresh), fingerprint(user)):
         raise AccessDenied("authentication_required")
@@ -138,9 +140,9 @@ def create_connection(user, client, method, selected_sites, selected_scopes, lif
     now = timezone.now()
     if (
         AIConnection.objects.filter(
+            Q(expires_at__gt=now) | Q(auth_method="personal", expires_at__isnull=True),
             user=fresh,
             revoked_at__isnull=True,
-            expires_at__gt=now,
             auth_fingerprint=fingerprint(fresh),
         ).count()
         >= settings.AI_MAX_ACTIVE_CONNECTIONS
@@ -157,7 +159,7 @@ def create_connection(user, client, method, selected_sites, selected_scopes, lif
         auth_fingerprint=fingerprint(fresh),
         notice_version=NOTICE_VERSION,
         notice_hash=NOTICE_HASH,
-        expires_at=now + lifetime,
+        expires_at=now + lifetime if lifetime is not None else None,
     )
 
 
@@ -207,13 +209,20 @@ def validate_redirect(uri):
 
 
 def issue(kind, payload, lifetime, connection=None, raw=None):
+    if lifetime is None and (
+        kind != "personal"
+        or connection is None
+        or connection.auth_method != "personal"
+        or connection.expires_at is not None
+    ):
+        raise AccessDenied("invalid_expiry")
     raw = raw or ("mai_" + secrets.token_urlsafe(48))
     OAuthCredential.objects.create(
         digest=digest(raw, kind),
         kind=kind,
         payload=payload,
         connection=connection,
-        expires_at=timezone.now() + lifetime,
+        expires_at=timezone.now() + lifetime if lifetime is not None else None,
     )
     return raw
 
@@ -238,7 +247,7 @@ def validate_connection(conn):
     if (
         conn is None
         or conn.revoked_at
-        or conn.expires_at <= timezone.now()
+        or conn.is_expired()
         or not conn.user.is_active
         or not hmac.compare_digest(conn.auth_fingerprint, fingerprint(conn.user))
     ):
@@ -258,7 +267,7 @@ def verify(raw):
         )
         .first()
     )
-    if not credential or credential.expires_at <= timezone.now() or credential.consumed_at:
+    if not credential or credential.is_expired() or credential.consumed_at:
         raise AccessDenied("authentication_required")
     conn = validate_connection(credential.connection)
     if credential.payload.get("resource") != resource():

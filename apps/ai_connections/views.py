@@ -77,7 +77,7 @@ def paginate(query, user, purpose, cursor):
 def state(conn, user):
     if conn.revoked_at:
         return "revoked", _("Revoked")
-    if conn.expires_at <= timezone.now():
+    if conn.is_expired():
         return "expired", _("Expired")
     if not user.is_active or conn.auth_fingerprint != fingerprint(user):
         return "invalidated", _("Invalidated after account change")
@@ -91,13 +91,15 @@ def page_context(request, new_token=None):
     websites = available_sites(user)
     website_map = {w["id"]: w for w in websites}
     queryset = AIConnection.objects.filter(user=user)
-    valid = Q(
-        revoked_at__isnull=True, expires_at__gt=timezone.now(), auth_fingerprint=fingerprint(user)
+    valid = Q(revoked_at__isnull=True, auth_fingerprint=fingerprint(user)) & (
+        Q(expires_at__gt=timezone.now()) | Q(auth_method="personal", expires_at__isnull=True)
     )
     counts = queryset.aggregate(
         total=Count("pk"),
         verified=Count("pk", filter=valid & Q(verified_at__isnull=False)),
         authorized=Count("pk", filter=valid & Q(verified_at__isnull=True)),
+        personal=Count("pk", filter=Q(auth_method="personal")),
+        oauth=Count("pk", filter=Q(auth_method="oauth")),
     )
     counts["inactive"] = counts["total"] - counts["verified"] - counts["authorized"]
     try:
@@ -105,14 +107,26 @@ def page_context(request, new_token=None):
     except AccessDenied:
         endpoint = ""
     enabled = settings.AI_CONNECTIONS_ENABLED and bool(endpoint)
-    tab = request.GET.get("tab", "connect")
+    tab = (
+        "connections"
+        if new_token
+        else request.GET.get("tab", "connections" if counts["total"] else "connect")
+    )
     if tab not in ("connect", "connections", "activity"):
         tab = "connect"
+    connection_filter = request.GET.get("kind", "all")
+    if connection_filter not in ("all", "personal", "oauth"):
+        connection_filter = "all"
     rows, next_cursor = [], ""
     operations = []
     if tab == "connections":
+        if connection_filter != "all":
+            queryset = queryset.filter(auth_method=connection_filter)
         connections, next_cursor = paginate(
-            queryset.select_related("client"), user, "ai-connections", request.GET.get("cursor", "")
+            queryset.select_related("client"),
+            user,
+            "ai-connections:" + connection_filter,
+            request.GET.get("cursor", ""),
         )
         for conn in connections:
             code, label = state(conn, user)
@@ -121,6 +135,9 @@ def page_context(request, new_token=None):
                     "id": conn.pk,
                     "name": conn.client.name,
                     "method": conn.get_auth_method_display(),
+                    "personal": conn.auth_method == "personal",
+                    "revocable": conn.revoked_at is None,
+                    "created_at": conn.created_at,
                     "state": code,
                     "state_label": label,
                     "active": code in ("verified", "authorized"),
@@ -156,6 +173,7 @@ def page_context(request, new_token=None):
         ]
     return {
         "tab": tab,
+        "connection_filter": connection_filter,
         "counts": counts,
         "connections": rows,
         "operations": operations,
@@ -199,12 +217,17 @@ def create_personal_token(request):
         name = request.POST.get("name", "").strip()
         if not name or len(name) > 120 or any(ord(c) < 32 or ord(c) == 127 for c in name):
             raise AccessDenied("invalid_name")
-        try:
-            days = int(request.POST.get("days", "30"))
-        except ValueError:
-            raise AccessDenied("invalid_expiry") from None
-        if not 1 <= days <= 90:
-            raise AccessDenied("invalid_expiry")
+        expiry = request.POST.get("days", "30")
+        if expiry == "never":
+            lifetime = None
+        else:
+            try:
+                days = int(expiry)
+            except ValueError:
+                raise AccessDenied("invalid_expiry") from None
+            if not 1 <= days <= 90:
+                raise AccessDenied("invalid_expiry")
+            lifetime = timedelta(days=days)
         with transaction.atomic():
             client = OAuthClient.objects.create(
                 client_id="personal:" + secrets.token_urlsafe(32), name=name, redirect_uris=[]
@@ -215,12 +238,12 @@ def create_personal_token(request):
                 "personal",
                 request.POST.getlist("sites"),
                 request.POST.getlist("scopes"),
-                timedelta(days=days),
+                lifetime,
             )
             raw = issue(
                 "personal",
                 {"resource": resource(), "scopes": conn.scopes},
-                timedelta(days=days),
+                lifetime,
                 conn,
             )
             activity(conn, "connection.token")
@@ -236,7 +259,7 @@ def create_personal_token(request):
             render(
                 request,
                 "settings/ai_connections.html",
-                {**page_context(request), "action_error": exc.code},
+                {**page_context(request), "tab": "connect", "action_error": exc.code},
                 status=400,
             )
         )

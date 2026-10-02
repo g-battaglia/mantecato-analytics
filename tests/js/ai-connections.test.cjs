@@ -9,6 +9,7 @@ function fixture() {
     <button data-ai-copy="token">Copy</button><button data-ai-reveal="token">Show</button>
     <p data-ai-copy-status data-success="Copied" data-failure="Select manually"></p>
     <details data-ai-access id="one"></details><details data-ai-access id="two"></details>
+    <details data-ai-revoke id="revoke-one"></details><details data-ai-revoke id="revoke-two"></details>
     <a data-ai-provider="claude" href="#ai-guide-claude" aria-current="true"></a>
     <a data-ai-provider="chatgpt" href="#ai-guide-chatgpt"></a>
     <details id="ai-guide-claude" data-ai-guide="claude" open></details>
@@ -87,6 +88,31 @@ test('provider enhancement initializes again after an HTMX replacement', async (
   doc.dispatchEvent(new dom.window.Event('htmx:afterSwap'));
   assert.equal(doc.getElementById('ai-guide-grok').open, true);
   assert.equal(doc.getElementById('ai-content').dataset.aiEnhanced, 'true');
+  dom.window.close();
+});
+
+test('personal-token deep links open the creation method on load and replacement', async () => {
+  const dom = fixture();
+  const doc = dom.window.document;
+  dom.reconfigure({url: 'https://analytics.example.test/settings/ai-connections/?tab=connect#ai-personal-token'});
+  doc.getElementById('token-method').id = 'ai-personal-token';
+  await tick();
+  assert.equal(doc.getElementById('ai-personal-token').open, true);
+  doc.getElementById('ai-content').outerHTML = '<section id="ai-content"><details id="ai-personal-token" data-ai-method></details></section>';
+  doc.dispatchEvent(new dom.window.Event('htmx:afterSwap'));
+  assert.equal(doc.getElementById('ai-personal-token').open, true);
+  dom.window.close();
+});
+
+test('revocation confirmations are independent of access editors with one open at a time', async () => {
+  const dom = fixture();await tick();
+  const doc = dom.window.document;
+  doc.getElementById('one').open = true;
+  doc.getElementById('revoke-one').open = true;await tick();
+  doc.getElementById('revoke-two').open = true;await tick();
+  assert.equal(doc.getElementById('revoke-one').open, false);
+  assert.equal(doc.getElementById('revoke-two').open, true);
+  assert.equal(doc.getElementById('one').open, true);
   dom.window.close();
 });
 

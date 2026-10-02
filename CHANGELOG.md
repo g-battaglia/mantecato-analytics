@@ -12,6 +12,12 @@ and [GitHub announcement](docs/releases/ai-connections-announcement.md). These a
 - **Opt-in AI connections** — Settings → AI connections provides browser consent,
   explicitly selected sites/read scopes, rotating OAuth credentials, show-once
   personal tokens, access reduction/revocation and metadata-only activity.
+- **Optional no-expiry personal AI tokens** — explicit “Never expires” choice,
+  with a finite 30-day default, live account/site/scope checks, active-grant quotas
+  and immediate revocation. OAuth credentials remain time-limited.
+- **Visible credential inventory** — opens by default when access exists, with
+  personal/OAuth filters, creation/last-use/expiry metadata and direct inline
+  revocation, including expired or invalidated entries. Secrets remain show-once.
 - **Read-only remote MCP** — eight official-SDK tools reuse existing aggregate
   analytics services on exact `/mcp`; legacy REST keys, CLI and local stdio MCP
   remain separate and compatible.

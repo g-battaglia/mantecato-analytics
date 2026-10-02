@@ -3,6 +3,7 @@
   --ai-line: color-mix(in oklch, oklch(var(--foreground)) 16%, oklch(var(--background)));
   --ai-muted: color-mix(in oklch, oklch(var(--foreground)) 68%, oklch(var(--background)));
   --ai-surface: oklch(var(--card));
+  --ai-danger: color-mix(in oklch, oklch(var(--destructive)) 70%, oklch(var(--foreground)));
   max-width: 72rem;
   line-height: 1.6;
   font-size: .875rem;
@@ -20,7 +21,7 @@
 .ai-page-heading p { color: var(--ai-muted); margin-top: .6rem; max-width: 58ch; }
 .ai-read-only { display: inline-flex; flex-shrink: 0; gap: .45rem; align-items: center; font-size: .75rem; color: var(--ai-muted); }
 .ai-read-only svg { color: oklch(var(--primary)); }
-.ai-tabs { display: flex; gap: 1.8rem; border-bottom: 1px solid var(--ai-line); margin-bottom: 1.8rem; }
+.ai-tabs { display: flex; flex-wrap: wrap; gap: .4rem 1.8rem; border-bottom: 1px solid var(--ai-line); margin-bottom: 1.8rem; }
 .ai-tabs a { display: flex; gap: .4rem; align-items: center; padding: .7rem 0 .9rem; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--ai-muted); font-weight: 550; }
 .ai-tabs a[aria-current] { color: oklch(var(--foreground)); border-color: oklch(var(--primary)); }
 .ai-tabs a:hover { color: oklch(var(--foreground)); }
@@ -94,7 +95,7 @@
 .ai-method-content > p { color: var(--ai-muted); margin-bottom: 1rem; }
 .ai-method-content form { margin-top: 1.1rem; }
 .ai-form-row { display: grid; grid-template-columns: minmax(0, 1fr) 10rem; gap: 1rem; }
-.ai-panel :where(input:not([type=checkbox]):not([type=hidden]), textarea) { border: 1px solid var(--ai-line); border-radius: .45rem; padding: .65rem .75rem; width: 100%; min-width: 0; font-size: .875rem; }
+.ai-panel :where(input:not([type=checkbox]):not([type=hidden]), textarea, select) { border: 1px solid var(--ai-line); border-radius: .45rem; padding: .65rem .75rem; width: 100%; min-width: 0; font-size: .875rem; }
 .ai-panel textarea { min-height: 10rem; max-height: 24rem; resize: vertical; margin-bottom: .65rem; }
 .ai-panel button, .ai-button, .ai-consent button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; padding: .6rem .9rem; border: 1px solid var(--ai-line, oklch(var(--border))); border-radius: .45rem; font-size: .8rem; line-height: 1.4; font-weight: 550; background: var(--ai-surface, oklch(var(--card))); cursor: pointer; }
 .ai-panel button:hover, .ai-button:hover { background: oklch(var(--muted)); }
@@ -108,6 +109,12 @@
 .ai-panel .ai-choices label { padding: .55rem .7rem; background: oklch(var(--background)); border: 1px solid var(--ai-line); border-radius: .4rem; }
 .ai-notice { padding: .9rem; margin: 1rem 0 !important; background: oklch(var(--muted)); color: var(--ai-muted); font-size: .8rem; border-radius: .4rem; }
 .ai-check { margin: 1rem 0 1.25rem; }
+.ai-panel .ai-expiry-note { margin-top: .7rem; max-width: 78ch; }
+.ai-inventory-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.ai-inventory-filters { display: flex; flex-wrap: wrap; gap: .45rem; }
+.ai-inventory-filters a { display: inline-flex; align-items: center; gap: .45rem; padding: .45rem .65rem; border: 1px solid var(--ai-line); border-radius: .4rem; color: var(--ai-muted); font-size: .75rem; }
+.ai-inventory-filters a[aria-current] { border-color: oklch(var(--primary)); color: oklch(var(--foreground)); background: oklch(var(--muted)); }
+.ai-inventory-filters span { font-variant-numeric: tabular-nums; }
 .ai-note { color: var(--ai-muted, oklch(var(--muted-foreground))); font-size: .8rem; }
 .ai-panel .ai-footer-note { color: var(--ai-muted); font-size: .75rem; margin-top: 1rem; max-width: 85ch; }
 .ai-text-link { text-decoration: underline; text-underline-offset: .2rem; }
@@ -135,12 +142,14 @@
 .ai-connection-dates { display: flex; flex-wrap: wrap; gap: 2rem; font-size: .75rem; margin: 0; }
 .ai-connection-dates dt { color: var(--ai-muted); }
 .ai-connection-dates dd { margin: .2rem 0 0; }
-[data-ai-access] { border-top: 1px solid var(--ai-line); margin-top: 1.2rem; padding-top: .9rem; }
+.ai-connection-actions { border-top: 1px solid var(--ai-line); margin-top: 1.2rem; padding-top: .9rem; }
+.ai-connection-actions > details + details { margin-top: .9rem; }
 [data-ai-access] > summary, .ai-revoke > summary { cursor: pointer; font-weight: 550; font-size: .8rem; }
 [data-ai-access] > p { margin-top: .75rem; }
-.ai-revoke { margin-top: 1.2rem; border-top: 1px solid var(--ai-line); padding-top: .9rem; }
+.ai-revoke > summary { display: inline-flex; border: 1px solid var(--ai-line); border-radius: .45rem; padding: .5rem .8rem; list-style: none; }
+.ai-revoke > summary::-webkit-details-marker { display: none; }
 .ai-revoke p { margin: .6rem 0 .9rem; }
-.ai-panel .ai-danger, .ai-error { color: oklch(var(--destructive)); }
+.ai-panel .ai-danger, .ai-error { color: var(--ai-danger, oklch(var(--destructive))); }
 .ai-section-description { color: var(--ai-muted); max-width: 75ch; margin-bottom: 1.4rem !important; }
 .ai-activity { border: 1px solid var(--ai-line); border-radius: .65rem; background: var(--ai-surface); }
 .ai-activity article { display: flex; align-items: center; gap: .9rem; padding: 1rem 1.25rem; }
@@ -157,7 +166,7 @@
 .ai-empty-symbol svg { width: 24px; height: 24px; }
 .ai-pagination { display: flex; justify-content: flex-end; gap: 1.25rem; margin-top: 1rem; font-size: .8rem; }
 .ai-pagination a { text-decoration: underline; text-underline-offset: .2rem; }
-.ai-panel :is(a, button, input, textarea, summary):focus-visible, .ai-consent :is(a, button, input):focus-visible { outline: 2px solid oklch(var(--ring)); outline-offset: 3px; }
+.ai-panel :is(a, button, input, textarea, select, summary):focus-visible, .ai-consent :is(a, button, input):focus-visible { outline: 2px solid oklch(var(--ring)); outline-offset: 3px; }
 .ai-consent { font-family: Geist, system-ui, sans-serif; margin: 0; padding: 1.5rem; line-height: 1.6; }
 .ai-consent main { max-width: 42rem; margin: 2rem auto; }
 .ai-consent h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -.035em; }
@@ -189,7 +198,7 @@
   .ai-providers { gap: .35rem; }
   .ai-provider { align-items: center; padding: .6rem .2rem; border-radius: .5rem; }
   .ai-provider-name { font-size: .75rem; text-align: center; }
-  .ai-tabs { gap: 1.3rem; font-size: .8rem; margin-bottom: 1.4rem; }
+  .ai-tabs { gap: .3rem 1rem; font-size: .75rem; margin-bottom: 1.4rem; }
   .ai-form-row { grid-template-columns: minmax(0, 1fr); }
   .ai-heading { flex-wrap: wrap; }
   .ai-activity article { flex-wrap: wrap; }

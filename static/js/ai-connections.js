@@ -21,6 +21,8 @@
     if (!panel || panel.dataset.aiEnhanced) return;
     var first = panel.querySelector('[data-ai-provider][aria-current]') || panel.querySelector('[data-ai-provider]');
     if (first) selectProvider(panel, first.dataset.aiProvider);
+    var personal = document.getElementById('ai-personal-token');
+    if (personal && window.location.hash === '#ai-personal-token') personal.open = true;
   }
   document.addEventListener('click', async function (event) {
     var copy = event.target.closest('[data-ai-copy]');
@@ -70,7 +72,7 @@
   document.addEventListener('toggle', function (event) {
     var current = event.target;
     if (!current.matches || !current.open) return;
-    var selector = current.matches('[data-ai-access]') ? '[data-ai-access]' : current.matches('[data-ai-method]') ? '[data-ai-method]' : null;
+    var selector = current.matches('[data-ai-access]') ? '[data-ai-access]' : current.matches('[data-ai-method]') ? '[data-ai-method]' : current.matches('[data-ai-revoke]') ? '[data-ai-revoke]' : null;
     if (selector) document.querySelectorAll(selector).forEach(function (other) { if (other !== current) other.open = false; });
   }, true);
   function clearSecrets() {

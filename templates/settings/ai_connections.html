@@ -7,14 +7,14 @@
 <section id="ai-content" class="ai-panel" hx-history="false">
   <header class="ai-heading ai-page-heading">
     <div>
-      <h2>{% if tab == 'connect' %}{% trans "Connect your assistant" %}{% elif tab == 'connections' %}{% trans "Your connections" %}{% else %}{% trans "Connection activity" %}{% endif %}</h2>
+      <h2>{% if tab == 'connect' %}{% trans "Connect your assistant" %}{% elif tab == 'connections' %}{% trans "Your connections & tokens" %}{% else %}{% trans "Connection activity" %}{% endif %}</h2>
       <p>{% trans "Your analytics, in the tools you already use. You choose which sites to share." %}</p>
     </div>
     <span class="ai-read-only"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="m12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>{% trans "Read-only access" %}</span>
   </header>
   <nav class="ai-tabs" aria-label="{% trans 'AI connection sections' %}">
     <a href="{% url 'ai_connections' %}?tab=connect" hx-get="{% url 'ai_connections' %}?tab=connect" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'connect' %}aria-current="page"{% endif %}>{% trans "Add connector" %}</a>
-    <a href="{% url 'ai_connections' %}?tab=connections" hx-get="{% url 'ai_connections' %}?tab=connections" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'connections' %}aria-current="page"{% endif %}>{% trans "Connections" %}{% if counts.total %}<span class="ai-tab-count" aria-hidden="true">{{ counts.total }}</span>{% endif %}</a>
+    <a href="{% url 'ai_connections' %}?tab=connections" hx-get="{% url 'ai_connections' %}?tab=connections" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'connections' %}aria-current="page"{% endif %}>{% trans "Connections & tokens" %}{% if counts.total %}<span class="ai-tab-count" aria-hidden="true">{{ counts.total }}</span>{% endif %}</a>
     <a href="{% url 'ai_connections' %}?tab=activity" hx-get="{% url 'ai_connections' %}?tab=activity" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'activity' %}aria-current="page"{% endif %}>{% trans "Activity" %}</a>
   </nav>
   {% if action_error %}<p role="alert" class="ai-error ai-alert">{% trans "Could not create the token. Check the selected sites, permissions and expiry, then try again." %} <code>{{ action_error }}</code></p>{% endif %}
@@ -22,7 +22,7 @@
   <section class="ai-secret ai-box" aria-label="{% trans 'New personal token' %}">
     <div class="ai-heading"><h3>{% trans "Copy your token now" %}</h3><span class="ai-status">{% trans "Shown once" %}</span></div>
     <p>{% trans "Keep it in protected client settings, never in an AI conversation." %}</p>
-    <label for="ai-new-token">{{ new_token.name }} — {% trans "expires" %} {{ new_token.expires_at|date:"Y-m-d H:i" }} UTC</label>
+    <label for="ai-new-token">{{ new_token.name }} — {% if new_token.expires_at %}{% trans "expires" %} {{ new_token.expires_at|date:"Y-m-d H:i" }} UTC{% else %}{% trans "Never expires" %}{% endif %}</label>
     <div class="ai-copy-row"><input id="ai-new-token" type="password" value="{{ new_token.token }}" readonly autocomplete="off" data-ai-secret><button type="button" data-ai-copy="ai-new-token">{% trans "Copy token" %}</button><button type="button" data-ai-reveal="ai-new-token">{% trans "Show / hide" %}</button></div>
   </section>
   {% endif %}
@@ -73,14 +73,15 @@
   <p class="ai-provider-disclaimer">{% trans "Availability depends on your account and workspace. Setup guides do not imply provider endorsement or a verified connection." %}</p>
   <div class="ai-section-heading ai-alternatives-heading"><h3>{% trans "Other ways to connect" %}</h3><p>{% trans "For clients with different setup options." %}</p></div>
   <div class="ai-alternatives">
-    <details class="ai-method" data-ai-method>
+    <details class="ai-method" id="ai-personal-token" data-ai-method>
       <summary><span class="ai-method-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="8" cy="8" r="5"/><path d="m12 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><span><strong>{% trans "Create a personal token" %}</strong><span>{% trans "For clients that accept Bearer authentication." %}</span></span><svg class="ai-chevron" aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="m9 5 7 7-7 7"/></svg></summary>
       <div class="ai-method-content">
         <p>{% trans "Read-only, site-specific and shown once. This is a Mantecato access token, not a model API key." %}</p>
         <form method="post" action="{% url 'ai_personal_token' %}" autocomplete="off">
           {% csrf_token %}<input type="hidden" name="notice_hash" value="{{ notice_hash }}"><input type="hidden" name="notice_version" value="{{ notice_version }}">
           <fieldset {% if not enabled %}disabled{% endif %}>
-            <div class="ai-form-row"><div><label for="ai-token-name">{% trans "Connection name" %}</label><input id="ai-token-name" name="name" maxlength="120" placeholder="{% trans 'e.g. My desktop assistant' %}" required></div><div><label for="ai-days">{% trans "Expires in days (1–90)" %}</label><input id="ai-days" name="days" type="number" min="1" max="90" value="30" required></div></div>
+            <div class="ai-form-row"><div><label for="ai-token-name">{% trans "Token name" %}</label><input id="ai-token-name" name="name" maxlength="120" placeholder="{% trans 'e.g. My desktop assistant' %}" required></div><div><label for="ai-days">{% trans "Expiration" %}</label><select id="ai-days" name="days" required><option value="1">{% trans "1 day" %}</option><option value="7">{% trans "7 days" %}</option><option value="30" selected>{% trans "30 days" %}</option><option value="90">{% trans "90 days" %}</option><option value="never">{% trans "Never expires" %}</option></select></div></div>
+            <p class="ai-note ai-expiry-note">{% trans "Without expiry, the token stays valid until revoked or invalidated by an account/server change. Keep it secure and revoke it when no longer needed." %}</p>
             <fieldset class="ai-choices"><legend>{% trans "Sites — choose explicitly" %}</legend>{% for site in websites %}<label><input type="checkbox" name="sites" value="{{ site.id }}">{{ site.name }}</label>{% empty %}<p>{% trans "You have no accessible sites. Add a site before creating a connection." %}</p>{% endfor %}</fieldset>
             <fieldset class="ai-choices"><legend>{% trans "Read-only permissions" %}</legend>{% for code,label in scope_choices %}<label><input type="checkbox" name="scopes" value="{{ code }}" checked>{{ label }}</label>{% endfor %}</fieldset>
             <p class="ai-notice">{{ notice }}</p><p class="ai-note">{% trans "Check your provider's data-sharing, training and retention settings." %}</p>
@@ -97,28 +98,32 @@
   </div>
   <p class="ai-footer-note">{% trans "Your assistant may retain the results it reads. Review its data-sharing and retention settings before connecting." %}</p>
   {% elif tab == 'connections' %}
+  <div class="ai-inventory-toolbar"><nav class="ai-inventory-filters" aria-label="{% trans 'Filter connections and tokens' %}"><a href="{% url 'ai_connections' %}?tab=connections&amp;kind=all" {% if connection_filter == 'all' %}aria-current="page"{% endif %}>{% trans "All" %} <span>{{ counts.total }}</span></a><a href="{% url 'ai_connections' %}?tab=connections&amp;kind=personal" {% if connection_filter == 'personal' %}aria-current="page"{% endif %}>{% trans "Personal tokens" %} <span>{{ counts.personal }}</span></a><a href="{% url 'ai_connections' %}?tab=connections&amp;kind=oauth" {% if connection_filter == 'oauth' %}aria-current="page"{% endif %}>{% trans "OAuth connectors" %} <span>{{ counts.oauth }}</span></a></nav><a class="ai-button" href="{% url 'ai_connections' %}?tab=connect#ai-personal-token">{% trans "Create personal token" %}</a></div>
+  <p class="ai-section-description">{% trans "Review names, approved sites, expiry and last use. Secret token values are shown only when created. Revoke access directly below." %}</p>
   {% if counts.total %}<div class="ai-inventory-summary"><span><i class="ai-state-dot ai-state-verified" aria-hidden="true"></i>{{ counts.verified }} {% trans "verified" %}</span><span><i class="ai-state-dot" aria-hidden="true"></i>{{ counts.authorized }} {% trans "not verified yet" %}</span><span><i class="ai-state-dot ai-state-inactive" aria-hidden="true"></i>{{ counts.inactive }} {% trans "inactive" %}</span></div>{% endif %}
   {% for connection in connections %}
   <article class="ai-connection ai-box">
     <div class="ai-heading"><div><h3>{{ connection.name }}</h3><p>{{ connection.method }}</p></div><span class="ai-status ai-state-{{ connection.state }}">{{ connection.state_label }}</span></div>
     <div class="ai-site-tags" aria-label="{% trans 'Approved sites' %}">{% for site in connection.sites %}<span>{{ site.name }}</span>{% empty %}<span>{% trans "No approved sites" %}</span>{% endfor %}</div>
-    <dl class="ai-connection-dates"><div><dt>{% trans "Last used" %}</dt><dd>{% if connection.last_used_at %}{{ connection.last_used_at|date:"Y-m-d H:i" }} UTC{% else %}{% trans "Not used yet" %}{% endif %}</dd></div><div><dt>{% trans "Expires" %}</dt><dd>{{ connection.expires_at|date:"Y-m-d H:i" }} UTC</dd></div></dl>
-    {% if connection.active %}<details data-ai-access><summary>{% trans "Manage access" %}</summary>
-      <p class="ai-note">{% trans "Only remove access here. More sites or permissions require a new connection and explicit approval." %}</p>
-      <form method="post" action="{% url 'ai_reduce' connection.id %}">{% csrf_token %}
-        <fieldset class="ai-choices"><legend>{% trans "Sites" %}</legend>{% for site in connection.sites %}<label><input name="sites" type="checkbox" value="{{ site.id }}" checked>{{ site.name }}</label>{% endfor %}</fieldset>
-        <fieldset class="ai-choices"><legend>{% trans "Permissions" %}</legend>{% for code,label in connection.scopes %}<label><input name="scopes" type="checkbox" value="{{ code }}" checked>{{ label }}</label>{% endfor %}</fieldset>
-        <button type="submit">{% trans "Save reduced access" %}</button>
-      </form>
-      <details class="ai-revoke"><summary>{% trans "Revoke connection" %}</summary><p class="ai-note">{% trans "Stops future access and refresh. Previously received results cannot be recalled." %}</p><form method="post" action="{% url 'ai_revoke' connection.id %}">{% csrf_token %}<button type="submit" class="ai-danger">{% trans "Confirm revocation" %}</button></form></details>
-    </details>{% endif %}
+    <dl class="ai-connection-dates"><div><dt>{% trans "Created" %}</dt><dd>{{ connection.created_at|date:"Y-m-d H:i" }} UTC</dd></div><div><dt>{% trans "Last used" %}</dt><dd>{% if connection.last_used_at %}{{ connection.last_used_at|date:"Y-m-d H:i" }} UTC{% else %}{% trans "Not used yet" %}{% endif %}</dd></div><div><dt>{% trans "Expires" %}</dt><dd>{% if connection.expires_at %}{{ connection.expires_at|date:"Y-m-d H:i" }} UTC{% else %}<strong>{% trans "Never expires" %}</strong>{% endif %}</dd></div></dl>
+    <div class="ai-connection-actions">
+      {% if connection.revocable %}<details class="ai-revoke" data-ai-revoke><summary class="ai-danger">{% if connection.personal %}{% trans "Revoke token" %}{% else %}{% trans "Revoke connection" %}{% endif %}</summary><p class="ai-note">{% trans "Stops future access and refresh. Previously received results cannot be recalled." %}</p><form method="post" action="{% url 'ai_revoke' connection.id %}">{% csrf_token %}<button type="submit" class="ai-danger">{% trans "Confirm revocation" %}</button></form></details>{% endif %}
+      {% if connection.active %}<details data-ai-access><summary>{% trans "Manage access" %}</summary>
+        <p class="ai-note">{% trans "Only remove access here. More sites or permissions require a new connection and explicit approval." %}</p>
+        <form method="post" action="{% url 'ai_reduce' connection.id %}">{% csrf_token %}
+          <fieldset class="ai-choices"><legend>{% trans "Sites" %}</legend>{% for site in connection.sites %}<label><input name="sites" type="checkbox" value="{{ site.id }}" checked>{{ site.name }}</label>{% endfor %}</fieldset>
+          <fieldset class="ai-choices"><legend>{% trans "Permissions" %}</legend>{% for code,label in connection.scopes %}<label><input name="scopes" type="checkbox" value="{{ code }}" checked>{{ label }}</label>{% endfor %}</fieldset>
+          <button type="submit">{% trans "Save reduced access" %}</button>
+        </form>
+      </details>{% endif %}
+    </div>
   </article>
-  {% empty %}<div class="ai-empty"><span class="ai-empty-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m10 13 4-4m-5 7-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 4a4 4 0 0 1 6 0l5-5a4 4 0 0 0-6-6l-2 2" transform="translate(2 3) scale(.8)"/></svg></span><h3>{% trans "No assistants connected yet" %}</h3><p>{% trans "Choose an assistant, approve your sites and your connection will appear here." %}</p><a class="ai-button ai-primary" href="{% url 'ai_connections' %}?tab=connect">{% trans "Add connector" %}</a></div>{% endfor %}
+  {% empty %}<div class="ai-empty"><span class="ai-empty-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m10 13 4-4m-5 7-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 4a4 4 0 0 1 6 0l5-5a4 4 0 0 0-6-6l-2 2" transform="translate(2 3) scale(.8)"/></svg></span><h3>{% trans "No connections or tokens in this view" %}</h3><p>{% trans "Choose an assistant or create a personal token. Approved access will appear here." %}</p><a class="ai-button ai-primary" href="{% url 'ai_connections' %}?tab=connect">{% trans "Add connector" %}</a></div>{% endfor %}
   {% elif tab == 'activity' %}
   <p class="ai-section-description">{% trans "Requests and access changes, kept up to 90 days. No prompts, analytics values, tokens or IP addresses." %}</p>
   <div class="ai-activity">{% for operation in operations %}<article><span class="ai-activity-dot" aria-hidden="true"></span><div class="ai-activity-description"><h4>{{ operation.action }}</h4><p>{{ operation.name }}</p></div><div class="ai-activity-result"><span {% if operation.code != 'success' %}class="ai-error"{% endif %}>{{ operation.outcome }}</span>{% if operation.code != 'success' %}<small>{{ operation.code }}</small>{% endif %}<time>{{ operation.time|date:"Y-m-d H:i" }} UTC</time></div></article>{% empty %}<div class="ai-empty"><h3>{% trans "No activity yet" %}</h3><p>{% trans "Connection requests and access changes will appear here." %}</p></div>{% endfor %}</div>
   {% endif %}
-  {% if tab != 'connect' and counts.total %}<nav class="ai-pagination" aria-label="{% trans 'Pagination' %}"><a href="{% url 'ai_connections' %}?tab={{ tab }}">{% trans "First page" %}</a>{% if next_cursor %}<a href="{% url 'ai_connections' %}?tab={{ tab }}&amp;cursor={{ next_cursor|urlencode }}" hx-get="{% url 'ai_connections' %}?tab={{ tab }}&amp;cursor={{ next_cursor|urlencode }}" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true">{% trans "Next" %}</a>{% endif %}</nav>{% endif %}
+  {% if tab != 'connect' and counts.total %}<nav class="ai-pagination" aria-label="{% trans 'Pagination' %}"><a href="{% url 'ai_connections' %}?tab={{ tab }}{% if tab == 'connections' %}&amp;kind={{ connection_filter }}{% endif %}">{% trans "First page" %}</a>{% if next_cursor %}<a href="{% url 'ai_connections' %}?tab={{ tab }}{% if tab == 'connections' %}&amp;kind={{ connection_filter }}{% endif %}&amp;cursor={{ next_cursor|urlencode }}" hx-get="{% url 'ai_connections' %}?tab={{ tab }}{% if tab == 'connections' %}&amp;kind={{ connection_filter }}{% endif %}&amp;cursor={{ next_cursor|urlencode }}" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true">{% trans "Next" %}</a>{% endif %}</nav>{% endif %}
   <p class="ai-copy-status" data-ai-copy-status role="status" aria-live="polite" data-success="{% trans 'Copied.' %}" data-failure="{% trans 'Copy unavailable. Select the text and copy manually.' %}"></p>
 </section>{% endlocaltime %}
 {% endblock %}

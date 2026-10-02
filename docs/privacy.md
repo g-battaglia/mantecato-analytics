@@ -232,7 +232,10 @@ connection/owner, timestamp and outcome, never prompts, arguments/results,
 raw credentials or IP addresses. Audit is retained up to 90 days through the
 separate cleanup job; expiry/revocation checks do not depend on that job.
 Personal tokens appear once with no-store/history protection, never in setup
-prompts or browser storage. Operator cookies are not visitor-tracking cookies.
+prompts or browser storage. They default to 30 days, with an explicit no-expiry
+option; valid no-expiry credentials are retained until revocation/account deletion
+rather than age-expired. Live access, password and server-identity checks still
+apply. OAuth credentials remain time-limited. Operator cookies are not visitor-tracking cookies.
 See [AI connections](AI-CONNECTIONS.md) before activating external sharing.
 
 ## Operator responsibilities

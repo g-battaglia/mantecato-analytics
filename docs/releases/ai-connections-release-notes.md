@@ -1,6 +1,6 @@
 # Mantecato — scoped, read-only AI connections
 
-**Draft release notes.** This change is unreleased and under review in
+**Draft release notes.** This change is unreleased; implementation is tracked in
 [PR #11](https://github.com/g-battaglia/mantecato-analytics/pull/11).
 No release version/tag or publication date is assigned by this document.
 
@@ -30,7 +30,10 @@ provenance and retained licensing; no new icon package or frontend framework.
 
 OAuth authorization-code flow uses S256 PKCE, short-lived access tokens and
 rotating refresh credentials. Personal Bearer tokens are site-scoped, shown
-once and expire after 1–90 days without refresh. Credentials are persisted only
+once, with 30-day default expiry, a 1–90-day finite range or explicit **Never
+expires**. No-expiry personal tokens remain revocable and subject to live
+account/site/scope checks, are included in active-grant quotas and are not
+age-cleaned while valid. OAuth credentials still expire and rotate. Credentials are persisted only
 as type-separated HMAC digests.
 
 You explicitly choose sites and read scopes. New sites are never automatically
@@ -38,6 +41,11 @@ included, even for administrators. Every tool call checks the grant against
 current access and checks again before returning results. Permissions can only
 be reduced in place; expansion requires new approval. Revocation, expiry,
 password changes and account deletion invalidate AI access.
+
+The inventory opens by default when credentials exist, with personal/OAuth
+filters and clearly visible name, creation, last use, expiry and state. Revocation
+is directly available outside the permission editor, including for expired or
+account-invalidated entries. Token values remain show-once, not recoverable.
 
 Authorization is not verification: a connection becomes verified only after a
 successful authenticated MCP operation.

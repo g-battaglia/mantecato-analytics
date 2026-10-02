@@ -54,7 +54,7 @@ def execute(raw, name, body=None):
                 "read_only": True,
                 "scopes": granted,
                 "approved_site_count": len(allowed),
-                "expires_at": conn.expires_at.isoformat(),
+                "expires_at": conn.expires_at.isoformat() if conn.expires_at else None,
             }
         elif name == "list_sites":
             result = {

@@ -40,7 +40,9 @@ class Verifier:
                 client_id=conn.client_id,
                 subject=str(conn.user_id),
                 scopes=granted,
-                expires_at=int(credential.expires_at.timestamp()),
+                expires_at=(
+                    int(credential.expires_at.timestamp()) if credential.expires_at else None
+                ),
                 resource=resource(),
                 claims={"connection_id": str(conn.pk)},
             )

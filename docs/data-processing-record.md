@@ -104,7 +104,11 @@ session/CSRF cookies separately from the cookie-free collector.
 Audit expires after at most 90 days through offline cleanup. Expired credentials,
 requests, soft-deleted accounts' grants and unused clients are cleaned in bounded
 batches. Grant enforcement checks expiry, current owner/admin access, scope,
-password changes and soft deletion on each read. See [AI connections](AI-CONNECTIONS.md).
+password changes and soft deletion on each read. Personal tokens default to 30
+days; operators may explicitly select no expiry, represented by null expiry.
+Valid no-expiry grants/digests persist until revocation/account deletion; OAuth
+credentials remain time-limited. Revocation deletes the credential immediately.
+See [AI connections](AI-CONNECTIONS.md).
 
 ## 5. What the default collector explicitly does NOT collect
 

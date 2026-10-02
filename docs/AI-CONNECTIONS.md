@@ -128,11 +128,27 @@ token in an AI conversation. Cloud assistants cannot reach a localhost URL.
 ### Clients without OAuth
 
 Create a named personal token with explicitly selected sites/scopes. Default
-lifetime: 30 days; maximum: 90 days; no refresh. It is shown once, only in the
-creation response, with `Cache-Control: no-store` and HTMX history disabled.
+lifetime: 30 days; choose 1–90 days or explicitly select **Never expires**.
+No-expiry applies only to personal tokens, not OAuth access/refresh tokens; it is
+represented by a null expiry, not a distant placeholder date. Such tokens remain
+valid until revoked or invalidated by account, origin or server-key changes;
+site/scope permissions are checked live and can only be reduced. They are
+protected from age-based cleanup while valid. No refresh.
+The secret is shown once, only in the creation response, with `Cache-Control:
+no-store` and HTMX history disabled.
 Copy it to a client's protected Bearer credential setting. It is not a model API
 key and cannot authenticate the generic REST API. Active connections are limited
-to 20 per user by default. This limit includes OAuth grants.
+to 20 per user by default. This limit includes no-expiry tokens and OAuth grants.
+
+When credentials exist, Settings → AI connections opens **Connections & tokens**
+by default. Filter personal tokens and OAuth connectors; each entry shows its
+name, method, approved sites, creation, last use, expiry (including Never expires)
+and state. **Revoke token** is directly visible, outside the access editor, with
+an inline confirmation; expired/account-invalidated entries can also be revoked.
+Metadata remains listable when AI access is disabled; secrets cannot be recovered.
+New tokens appear immediately in the inventory alongside their show-once panel.
+Existing finite tokens keep their original expiry; create a newly approved token
+with Never expires rather than silently extending an existing grant.
 
 The independent `mantecato-mcp` **stdio** package and CLI are unchanged. They use
 legacy `mtk_` API keys and the authenticated REST API; a new remote personal token
@@ -240,4 +256,7 @@ locks and temporary I/O under concurrent MCP, ingestion and maintenance on the
 intended resource limits. Restore-test the backup and monitor the first 24 hours.
 For rollback disable AI access first, preserve the additive tables, and restore
 the previous runtime/revision if needed. Do not drop authentication tables or
-alter analytics retention as an emergency workaround.
+alter analytics retention as an emergency workaround. Older AI-enabled revisions
+that assume non-null expiry are not compatible with no-expiry rows: disable AI
+and use a null-aware revision, or explicitly revoke those grants before reverting
+to such code. Do not silently assign them a placeholder expiry.

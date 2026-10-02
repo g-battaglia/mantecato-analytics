@@ -17,8 +17,11 @@ comparisons, traffic-quality diagnostics and dimension discovery. It does not
 expose raw visitor records, arbitrary SQL or administrative operations.
 
 OAuth uses PKCE and rotating credentials. Clients without OAuth can use an
-expiring, site-scoped personal token, shown once. You can revoke or reduce access,
-and adding another website never silently expands an existing grant.
+site-scoped personal token, shown once: 30 days by default, or an explicit
+**Never expires** option. The inventory lists token names, last use, expiry and
+status with a directly visible revocation action. You can revoke or reduce access,
+and adding another website never silently expands an existing grant. No-expiry
+tokens remain subject to live account/site checks; OAuth credentials stay short-lived.
 
 Mantecato remains a self-hosted analytics server, not an AI chat service. It
 stores no model-provider API keys and makes no calls to model providers. The
