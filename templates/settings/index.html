@@ -7,7 +7,7 @@
 {% block content %}
 <div class="mb-5">
   <h2 class="text-xl font-medium tracking-tight text-foreground">{% trans "Settings" %}</h2>
-  <p class="mt-1 text-[13px] text-muted-foreground">{% trans "Manage API keys, users, and bot detection." %}</p>
+  <p class="mt-1 text-[13px] text-muted-foreground">{% trans "Manage AI connections, API keys, users, and bot detection." %}</p>
 </div>
 
 <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -32,6 +32,18 @@
     <div>
       <div class="text-[15px] font-medium text-foreground">{% trans "API Keys" %}</div>
       <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Manage API keys for CLI and MCP access." %}</p>
+    </div>
+  </a>
+
+  <a href="{% url 'ai_connections' %}"
+     class="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-ring/50">
+    <div class="flex items-center justify-between">
+      <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-primary"><i data-lucide="plug" class="size-4"></i></span>
+      <i data-lucide="arrow-up-right" class="size-4 text-muted-foreground"></i>
+    </div>
+    <div>
+      <div class="text-[15px] font-medium text-foreground">{% trans "AI connections" %}</div>
+      <p class="mt-0.5 text-[13px] text-muted-foreground">{% trans "Connect assistants with read-only access to selected sites." %}</p>
     </div>
   </a>
 

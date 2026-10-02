@@ -5,7 +5,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+AI connections publication drafts: [release notes](docs/releases/ai-connections-release-notes.md)
+and [GitHub announcement](docs/releases/ai-connections-announcement.md). These are not a published release.
+
 ### Added
+- **Opt-in AI connections** — Settings → AI connections provides browser consent,
+  explicitly selected sites/read scopes, rotating OAuth credentials, show-once
+  personal tokens, access reduction/revocation and metadata-only activity.
+- **Optional no-expiry personal AI tokens** — explicit “Never expires” choice,
+  with a finite 30-day default, live account/site/scope checks, active-grant quotas
+  and immediate revocation. OAuth credentials remain time-limited.
+- **Visible credential inventory** — opens by default when access exists, with
+  personal/OAuth filters, creation/last-use/expiry metadata and direct inline
+  revocation, including expired or invalidated entries. Secrets remain show-once.
+- **Read-only remote MCP** — eight official-SDK tools reuse existing aggregate
+  analytics services on exact `/mcp`; legacy REST keys, CLI and local stdio MCP
+  remain separate and compatible.
+- **Connection workbench** — one provider guide at a time, keyboard selection,
+  light/dark and mobile layouts, a dedicated server-address panel and locally
+  served provider marks with pinned provenance and retained licensing.
+- **Offline AI cleanup** — bounded credential/audit cleanup and
+  `run_daily_maintenance` with independent visitor/AI budgets and outcomes.
 - **Remote CLI and MCP clients** — two independent packages now authenticate with
   an API key and use HTTPS. Neither client installs Django or accesses PostgreSQL.
 - **Analytics API v1** — additive, strict endpoints for capabilities, schemas,
@@ -26,6 +46,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the tracker and dropped on ingest, now lands as a single group.
 
 ### Changed
+- Web manifests use native Gunicorn 26 ASGI with bounded connections, keep-alive
+  disabled, explicit HTTP/1 close signalling and per-request ORM cleanup. Remote
+  AI access remains disabled by default; legacy WSGI hosting remains available
+  without remote MCP.
+- HTTPS scheme adaptation for MCP is restricted to explicitly trusted proxy
+  IPs/CIDRs from `FORWARDED_ALLOW_IPS`; Django proxy configuration is separate.
+- Visitor maintenance is offline only: no collector/web-startup rollup or digest
+  expiry. An operational daily scheduler is required; analytics formulas,
+  monthly deduplication, 396-day digest retention and tracker behavior are unchanged.
 - The old database-backed CLI is no longer bundled with the Django server. The
   public Python SDK has been retired in favor of the REST API and separate clients.
 - **Relicensed from MIT to the Apache License 2.0.** Apache 2.0 keeps the same
@@ -58,6 +87,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   inflate pageviews) and how to reconcile fairly with Umami.
 
 ### Fixed
+- Personal-token creation ignores inventory filters/cursors when rendering its
+  show-once response or a validation error, preventing committed tokens from
+  being hidden or reported as failed due to a crafted pagination URL.
+- OAuth redirect validation rejects reserved response parameters even with empty
+  values or encoded names, preventing ambiguous callback URLs.
+- Concurrent collection avoids native ASGI socket-reuse races and leaked ORM
+  connections, verified with isolated local HTTP/resource tests.
+- AI cleanup reports `busy` when eligible records were skipped due to row locks,
+  preserving committed progress instead of incorrectly reporting completion.
+- OAuth revocation remains an idempotent success if cleanup removes the
+  connection between credential lookup and row locking.
+- OAuth rate-limit keys distinguish clients behind an explicitly configured
+  trusted proxy topology without trusting permissive/spoofable forwarding headers.
+- Unexpected tool/JSON encoding failures are audited as unavailable, not completed;
+  daily-retention documentation consistently names `run_daily_maintenance`.
+- HTTP integration tests accept the `DATABASE_URL` fallback and skip unsupported
+  database setups before fixture writes or worker startup.
 - IPv4-mapped IPv6 client addresses (`::ffff:a.b.c.d`) are now unwrapped to IPv4
   before truncation, so they mask to the `/24` block instead of collapsing every
   such client to `::` (which would have merged them into one visitor).
@@ -67,22 +113,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   open month's still-live, day-keyed state finalised and deleted prematurely —
   which would have corrupted that month's visitor totals. Only salts whose own
   window has ended are discarded, preserving a live legacy day-key's salt.
-- Over-retention per-event digests are now nulled on the write-path's throttled
-  cadence (and by the `rollup_visitors` cron), instead of only when a month
-  finalises — so digests no longer linger up to a month past the 396-day cutoff.
+- Over-retention per-event digests are nulled by bounded offline maintenance,
+  independently of month finalization. Timely physical expiry requires the
+  operational daily job; ingestion does not perform retention maintenance.
 - The "Deduplicated within each month" caveat on the Visitors KPI is shown only
   for ranges that actually span more than one month, not on single-month, today,
   or realtime views.
-- The retention sweep (`discard_expired_digests`) now has a dedicated partial
+- The retention sweep (`discard_expired_digests`) uses its dedicated partial
   index (`idx_we_visitor_key_expiry`, on `created_at` where `visitor_key IS NOT
-  NULL`): its age-only `UPDATE` no longer fell back to a sequential scan of
-  `website_event` on every throttled write-path tick.
+  NULL`) during offline expiry batches; it does not run on collector requests.
 - A malformed/unparseable visitor period key (only reachable via DB corruption)
   is now skipped with a warning instead of aborting the whole rollup transaction
   and blocking retention housekeeping.
-- The write-path rollup computes the finished-window set once per tick (used as
-  both the guard and the rollup input) instead of scanning the period keys twice;
-  the now-unused `has_unrolled_past_periods` helper was removed.
+- The independently scheduled visitor rollup uses set-based, atomic site-period
+  units with shared nonblocking advisory locking, resumable progress and finite
+  budgets; completed retries do not add counts twice.
 
 ### Removed
 - The `quarter` and `year` dedup windows (and configurable windows in general);

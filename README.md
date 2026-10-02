@@ -15,8 +15,8 @@ Mantecato tracks pageviews, visits, referrers, countries, devices and named even
 You run the server on your own infrastructure. The dashboard, CLI and MCP tools
 let you filter traffic, compare periods and find which pages gained or lost visitors.
 
-The server uses Django and PostgreSQL. The dashboard uses HTMX. The CLI and MCP
-server are separate Python packages that connect with an API key.
+The server uses Django and PostgreSQL. The dashboard uses HTMX. The CLI and local stdio MCP client are separate Python packages using API keys.
+Optional remote MCP runs alongside Django with explicit site-scoped consent.
 
 <p align="center">
   <img src="screen.png" alt="Mantecato analytics dashboard" width="800">
@@ -84,7 +84,7 @@ Keep tracker fetch credentials at `omit`, and strip inbound `Cookie` headers
 if you proxy the collector through the tracked site's origin. Check your proxy
 and access-log retention too.
 
-Schedule `python manage.py rollup_visitors` daily in a **separate terminating job**
+Schedule `python manage.py run_daily_maintenance` daily in a **separate terminating job**
 to enforce digest retention and finalize finished months. Collection and web startup
 never run maintenance. Railway setup: [daily cron](docs/RAILWAY.md#e-daily-maintenance-required).
 See [performance and recovery](docs/PERFORMANCE.md) for budgets and verification.
@@ -161,7 +161,7 @@ Connect an MCP-compatible agent to ask questions such as
 inspect the available metrics and compare traffic by page, country or device.
 For shell-based agents and scheduled reports, use the CLI.
 
-Both clients use the authenticated REST API. The server validates filters,
+The CLI and local stdio client use the authenticated REST API. The server validates filters,
 resolves date ranges and limits query size. Responses include metric values,
 the resolved ranges and explanations for missing data. Period comparisons
 include pages that received traffic only in the earlier period, within the
@@ -171,7 +171,19 @@ Your agent host may send query results to its model provider, even though the
 MCP process runs locally. Check the provider's data policy before connecting.
 Treat page titles, paths and labels returned by tools as untrusted data.
 
-### MCP server
+### Remote AI connections
+
+Open **Settings → AI connections** for Claude, ChatGPT, Gemini, Grok or another
+remote MCP client. Approve read-only scopes and specific sites, verify the
+connection, and review or revoke access. Personal tokens are scoped, expiring
+and shown once; they are separate from legacy REST API keys.
+
+Remote access is disabled by default and needs public HTTPS, the ASGI runtime
+and operational daily cleanup. Provider instructions are not interoperability
+certification. See [AI connections](docs/AI-CONNECTIONS.md) for setup, limits,
+privacy and rollout requirements.
+
+### MCP server (local stdio)
 
 Install `mantecato-mcp` from a checkout of this repository:
 

@@ -11,7 +11,8 @@ Tracking persists the event before best-effort visitor-state folding. HTTP inges
 never performs historical rollup, salt cleanup or digest expiry. Web deployment
 runs migrations and any explicitly configured bootstrap hooks, not maintenance.
 
-Run `rollup_visitors` separately each day. On Railway explicitly select
+Run `run_daily_maintenance` separately each day (visitor rollup plus independent
+AI authentication/audit cleanup). `rollup_visitors` remains available for targeted recovery. On Railway explicitly select
 `/railway.rollup.toml` on a new cron service; see [Railway setup](RAILWAY.md#e-daily-maintenance-required).
 Other hosts need an equivalent external scheduler. The manifest alone creates
 nothing and does not configure the web service's schedule.
@@ -82,8 +83,29 @@ from earlier pages cannot reset a newer page's deduplication. GPC/DNT behaviour 
 metric formulas are unchanged, including the historical integer-gap boundary
 for dashboard totals/landings and the bucket counter's timestamp comparison.
 
-No shared aggregate cache, new index/table, partitioning, connection pool or
-heartbeat-interval change is introduced without a measured need.
+No shared aggregate cache, analytics index/table, partitioning, connection pool or
+heartbeat-interval change is introduced without a measured need. Optional AI
+connections add four authentication/audit models only; no analytics schema changes.
+
+## Remote MCP runtime
+
+Gunicorn 26's native ASGI worker hosts Django and the official stateless MCP v1
+transport in one service. Keep-alive is disabled after isolated persistent-socket
+stalls. HTTP/1 responses also explicitly advertise `Connection: close`, avoiding
+client socket-reuse races under concurrent load. A reentrant per-request thread
+context closes Django ORM sockets even on disconnect/cancellation, in addition to
+explicit MCP cleanup. These workarounds are not a production throughput guarantee.
+HTTP connections
+are bounded at 16 per worker, Django persistent connections are disabled, and
+synchronous MCP database work closes its connections explicitly off the event loop.
+One MCP tool query runs per worker, using existing read-only v1 services and SQL
+budgets. No self-HTTP, additional queue or provider/model process is introduced.
+
+The AI feature is off by default. Before activation measure flag off/on, authenticated
+MCP and concurrent collection/maintenance under the intended resource limits. Include
+settings/auth query counts, connection peaks and RSS/CPU; localhost smoke tests cannot
+establish the <500 ms p95 collector target or provider interoperability. See
+[AI connections](AI-CONNECTIONS.md) for security and operational gates.
 
 ## Reproduce the synthetic benchmark
 
@@ -132,6 +154,36 @@ services. Verify exact results and aim for representative ingest/script/OPTIONS
 p95 below 500 ms under maintenance load. Do not trade lower Python usage for an
 unmeasured database bottleneck. Larger SQL section aggregation, extra request-local
 reuse and any schema/infrastructure changes remain measurement-driven follow-ups.
+
+## Synthetic ASGI/MCP compatibility check
+
+`tools/benchmark_ai_connections.py` requires empty analytics tables on an explicitly
+configured **socket-only test PostgreSQL** database. It creates and deletes its own
+synthetic site/account, exercises 80 collector POSTs, 80 script GETs and 80 preflights
+per mode, then adds 20 MCP queries and concurrent maintenance over 1,000 historical
+visitor states and 12,000 group states. It never connects provider accounts.
+
+```bash
+uv run --with psutil python tools/benchmark_ai_connections.py --output /tmp/ai-http.json
+```
+
+One illustrative local run with two workers, eight client HTTP connections and
+**current code/settings in every mode** (including `CONN_MAX_AGE=0`):
+
+| Runtime | Collector p95 | Script p95 | OPTIONS p95 | Maximum sampled worker RSS |
+| --- | ---: | ---: | ---: | ---: |
+| WSGI, AI off | 327 ms | 326 ms | 326 ms | 73 MB |
+| ASGI, AI off | 291 ms | 287 ms | 288 ms | 75 MB |
+| ASGI + MCP + offline maintenance | 321 ms | 320 ms | 320 ms | 102 MB |
+
+These client-side burst measurements **include connection-pool queue waiting**;
+they are neither server-only latency nor a comparison with a particular deployed
+revision. All 240 synthetic collector POSTs persisted across the three modes.
+MCP p95 was 109 ms; after each mode web DB sockets returned to zero (only the
+benchmark observer remained). This verifies local compatibility and lifecycle,
+not peak resource guarantees. Repeat runs and representative resource-capped
+staging, database CPU/RAM, SQL EXPLAIN/temp I/O and 24-hour monitoring remain
+necessary before a public rollout. Do not infer a guaranteed <500 ms p95 SLA.
 
 ## Safe rollout and recovery
 
