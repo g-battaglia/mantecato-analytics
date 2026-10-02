@@ -95,6 +95,11 @@ def cleanup(*, max_runtime=120, batch_size=500, timeout_ms=5000, dry_run=False):
                     .values_list("pk", flat=True)[:batch_size]
                 )
                 if not ids:
+                    # SKIP LOCKED may hide an eligible backlog. Report partial
+                    # progress, not successful retention, while rows are busy.
+                    if query.exists():
+                        result["status"] = "busy"
+                        return result
                     break
                 try:
                     _, detail = query.model.objects.filter(pk__in=ids).delete()

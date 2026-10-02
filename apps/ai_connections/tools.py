@@ -42,7 +42,7 @@ def execute(raw, name, body=None):
 
     _, conn, granted, allowed = authorize(raw)
     site = None
-    outcome = "success"
+    outcome = "unavailable"
     try:
         limit("tool:" + str(conn.pk))
         authorize(raw, TOOL_SCOPES[name])
@@ -95,9 +95,11 @@ def execute(raw, name, body=None):
         encoded = json.dumps(result, ensure_ascii=False, cls=DjangoJSONEncoder)
         if len(encoded.encode()) > settings.AI_MAX_RESPONSE_BYTES:
             raise AccessDenied("result_too_large")
+        decoded = json.loads(encoded)
         authorize(raw, TOOL_SCOPES[name], site)
         mark_verified(raw)
-        return json.loads(encoded)
+        outcome = "success"
+        return decoded
     except ContractError:
         outcome = "invalid_arguments"
         raise AccessDenied(outcome) from None

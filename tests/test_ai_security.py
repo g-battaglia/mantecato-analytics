@@ -352,6 +352,48 @@ def test_cleanup_retention_batches_idempotence_and_valid_token_protection(securi
     assert not any(cleanup(batch_size=2)["deleted"].values())
 
 
+@pytest.mark.django_db(transaction=True)
+def test_cleanup_reports_skipped_locked_backlog_and_preserves_progress(security_grant):
+    issue("request", {}, timedelta(seconds=-1))
+    locked = OAuthCredential.objects.get(kind="request")
+    issue("request", {}, timedelta(seconds=-1))
+
+    def cleanup_worker():
+        close_old_connections()
+        try:
+            return cleanup(batch_size=1)
+        finally:
+            close_old_connections()
+
+    with transaction.atomic():
+        OAuthCredential.objects.select_for_update().get(pk=locked.pk)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            result = pool.submit(cleanup_worker).result(timeout=10)
+        assert result["status"] == "busy"
+        assert result["deleted"]["credentials"] == 1
+        assert OAuthCredential.objects.filter(pk=locked.pk).exists()
+    retried = cleanup(batch_size=1)
+    assert retried["status"] == "completed"
+    assert retried["deleted"]["credentials"] == 1
+
+
+def test_token_revocation_is_idempotent_when_connection_disappears_after_lookup(security_grant):
+    _, _, conn, raw = security_grant
+    credential = OAuthCredential.objects.get(kind="access")
+    client_id = conn.client_id
+
+    def lookup_and_remove(token, kind):
+        if kind == "refresh":
+            return None
+        conn.delete()  # Reproduce cleanup committing between lookup and lock.
+        return credential
+
+    with patch("apps.ai_connections.oauth.lookup", side_effect=lookup_and_remove):
+        response = Client().post("/oauth/revoke/", {"token": raw, "client_id": client_id})
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
 def test_cleanup_soft_deleted_owner(security_grant):
     user, _, _, _ = security_grant
     user.deleted_at = timezone.now()

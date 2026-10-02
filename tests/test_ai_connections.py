@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from django.db import transaction
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.utils import timezone
 
 from apps.ai_connections.models import AIActivity, AIConnection, OAuthClient, OAuthCredential
@@ -320,6 +320,124 @@ def test_site_boundary_admin_and_no_implicit_future_sites(account):
     site.user_id = None
     site.save(update_fields=["user_id"])
     assert execute(raw, "list_sites")["websites"] == []
+
+
+@pytest.mark.parametrize(
+    "trust_headers,proxy_count,expected",
+    [
+        (False, 1, "203.0.113.10"),
+        (True, 0, "203.0.113.10"),
+        (True, 1, "198.51.100.7"),
+    ],
+)
+def test_oauth_rate_key_only_uses_explicitly_configured_proxy_topology(
+    settings, trust_headers, proxy_count, expected
+):
+    from apps.ai_connections.oauth import public_request
+    from apps.ai_connections.policy import digest
+
+    settings.TRUST_PROXY_HEADERS = trust_headers
+    settings.TRUSTED_PROXY_COUNT = proxy_count
+    settings.CLIENT_IP_HEADER = ""
+    request = RequestFactory().get(
+        "/oauth/authorize/",
+        REMOTE_ADDR="203.0.113.10",
+        HTTP_X_FORWARDED_FOR="192.0.2.99, 198.51.100.7",
+        HTTP_CF_CONNECTING_IP="192.0.2.88",
+    )
+    with patch("apps.ai_connections.oauth.limit") as limiter:
+        public_request(request)
+    limiter.assert_called_once_with("public:" + digest(expected, "rate"), 60)
+
+
+def test_oauth_rate_limit_does_not_share_bucket_between_configured_proxy_clients(settings):
+    from apps.ai_connections.oauth import public_request
+
+    settings.TRUST_PROXY_HEADERS = True
+    settings.TRUSTED_PROXY_COUNT = 1
+    settings.CLIENT_IP_HEADER = ""
+    factory = RequestFactory()
+    request = factory.get(
+        "/oauth/authorize/",
+        REMOTE_ADDR="203.0.113.10",
+        HTTP_X_FORWARDED_FOR="192.0.2.99, 198.51.100.7",
+    )
+    for _ in range(60):
+        public_request(request)
+    with pytest.raises(AccessDenied, match="rate_limited"):
+        public_request(request)
+    public_request(
+        factory.get(
+            "/oauth/authorize/",
+            REMOTE_ADDR="203.0.113.10",
+            HTTP_X_FORWARDED_FOR="192.0.2.99, 198.51.100.8",
+        )
+    )
+    with pytest.raises(AccessDenied, match="rate_limited"):
+        public_request(
+            factory.get(
+                "/oauth/authorize/",
+                REMOTE_ADDR="203.0.113.10",
+                HTTP_X_FORWARDED_FOR="192.0.2.11, 198.51.100.7",
+            )
+        )
+    assert not AIActivity.objects.exists()
+
+
+@pytest.mark.parametrize("failure", ["service", "encoding"])
+def test_unexpected_tool_failure_is_not_audited_as_success(account, failure):
+    conn, raw = personal(account)
+    behavior = (
+        {"side_effect": RuntimeError("synthetic-private-error")}
+        if failure == "service"
+        else {"return_value": {"private": object()}}
+    )
+    with (
+        patch("apps.ai_connections.tools.run_query", **behavior),
+        pytest.raises((RuntimeError, TypeError)),
+    ):
+        execute(
+            raw,
+            "query_metrics",
+            {
+                "website_id": str(account[1].pk),
+                "range": "24h",
+                "operation": "totals",
+                "metrics": ["pageviews"],
+            },
+        )
+    row = AIActivity.objects.get()
+    assert row.outcome == "unavailable"
+    assert "synthetic-private-error" not in str(row.__dict__) and raw not in str(row.__dict__)
+    conn.refresh_from_db()
+    assert conn.verified_at is None
+
+
+@pytest.mark.parametrize("search", [None, "ALPHA"])
+def test_dimension_discovery_accepts_null_and_filtered_search(account, search):
+    conn, raw = personal(account)
+    paths = ["/synthetic-alpha", "/synthetic-beta"]
+    for path in paths:
+        WebsiteEvent.objects.create(
+            website_id=account[1].pk,
+            url_path=path,
+            created_at=timezone.now() - timedelta(hours=1),
+        )
+    body = {
+        "website_id": str(account[1].pk),
+        "range": "24h",
+        "dimension": "url_path",
+        "search": search,
+        "limit": 50,
+    }
+    result = execute(raw, "list_dimension_values", body)
+    assert sorted(row["value"] for row in result["rows"]) == (
+        paths if search is None else paths[:1]
+    )
+    assert body["search"] == search  # The caller's body is not mutated.
+    assert AIActivity.objects.get().outcome == "success"
+    conn.refresh_from_db()
+    assert conn.verified_at
 
 
 def test_queries_match_rest_contract_and_audit_contains_no_values(account):

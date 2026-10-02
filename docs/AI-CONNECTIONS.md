@@ -57,6 +57,14 @@ cannot change the MCP ASGI scope. Never trust arbitrary forwarding
 headers on an internet-accessible backend. Test `/mcp` through the public proxy
 before activation; incorrect scheme/host configuration denies access.
 
+OAuth rate limits are bounded, per-worker best-effort limits, not global quotas.
+Their keys hash the client IP resolved by the hardened existing resolver when
+`TRUST_PROXY_HEADERS=True` and `TRUSTED_PROXY_COUNT>0` describe the verified proxy
+topology. Otherwise they use the socket peer, never the legacy permissive
+forwarded-header mode. Unknown proxy topology can put clients in a shared bucket;
+configure the real hop count and network trust, or enforce suitable limits at
+the trusted edge. This does not change tracker IP extraction or persist audit IPs.
+
 The switch blocks new grants and MCP reads, but leaves existing inventory and
 revocation available. Changing the canonical origin or `SECRET_KEY` invalidates
 AI credentials and requires reconnection. Password changes and user soft deletion
@@ -212,7 +220,10 @@ The orchestrator always attempts AI cleanup even when visitor rollup is busy or
 fails, and emits separate outcomes. Cleanup batches remove expired requests and
 credentials, audit older than 90 days, soft-deleted users' grants, long-inactive
 connections and unused clients. Valid credentials and pending consent requests
-are protected. Expiry/revocation enforcement works without cron, but timely
+are protected. Eligible rows skipped because another transaction holds their
+locks produce a `busy` outcome, not `completed`; committed batches are retained
+and the next run resumes. Incomplete cleanup exits with status 2 and should be
+monitored/retried. Expiry/revocation enforcement works without cron, but timely
 record deletion requires a working scheduler. `/railway.rollup.toml` now runs
 both jobs; selecting it provisions nothing. See [Railway](RAILWAY.md#e-daily-maintenance-required).
 

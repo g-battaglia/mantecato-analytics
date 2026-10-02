@@ -41,13 +41,61 @@ class MemoryStorage:
         self.client = client
 
 
+def integration_database_url(config, env):
+    """Skip unsupported setups before writing fixtures or launching a worker."""
+    host = config.get("OPTIONS", {}).get("host") or config.get("HOST")
+    if not host or not host.startswith("/"):
+        pytest.skip("HTTP integration requires isolated socket PostgreSQL")
+    name = config["NAME"]
+    if not (name.startswith("test_") or name.endswith("_test")):
+        pytest.skip("HTTP integration requires a test database")
+    database_url = env.get("TEST_DATABASE_URL") or env.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("HTTP integration requires a database URL")
+    parsed = urlsplit(database_url)
+    if (
+        parsed.scheme not in ("postgres", "postgresql")
+        or parsed.hostname
+        or parse_qs(parsed.query).get("host") != [host]
+    ):
+        pytest.skip("HTTP integration URL must match the isolated PostgreSQL socket")
+    return urlunsplit(parsed._replace(path="/" + name))
+
+
+@pytest.mark.parametrize("key", ["TEST_DATABASE_URL", "DATABASE_URL"])
+def test_http_fixture_database_url_selection(key):
+    config = {"NAME": "test_synthetic", "OPTIONS": {"host": "/tmp/synthetic-pg"}}
+    env = {key: "postgresql://postgres@/synthetic?host=/tmp/synthetic-pg"}
+    if key == "TEST_DATABASE_URL":
+        env["DATABASE_URL"] = "postgresql://postgres@db.example.test/other"
+    assert integration_database_url(config, env) == (
+        "postgresql://postgres@/test_synthetic?host=/tmp/synthetic-pg"
+    )
+
+
+@pytest.mark.parametrize(
+    "name,host,url",
+    [
+        ("test_synthetic", "127.0.0.1", "postgresql://postgres@127.0.0.1/test_synthetic"),
+        ("not_a_fixture", "/tmp/synthetic-pg", ""),
+        ("test_synthetic", "/tmp/synthetic-pg", ""),
+        (
+            "test_synthetic",
+            "/tmp/synthetic-pg",
+            "postgresql://postgres@db.example.test/test_synthetic",
+        ),
+        ("test_synthetic", "/tmp/synthetic-pg", "postgresql://postgres@/base?host=/tmp/other-pg"),
+    ],
+)
+def test_http_fixture_skips_unsupported_database_settings(name, host, url):
+    with pytest.raises(pytest.skip.Exception):
+        integration_database_url({"NAME": name, "HOST": host}, {"DATABASE_URL": url})
+
+
 @pytest.fixture
 def http_server(tmp_path, request):
-    config = connection.settings_dict
-    host = config.get("OPTIONS", {}).get("host") or config.get("HOST")
-    assert host and host.startswith("/"), "HTTP integration requires isolated socket PostgreSQL"
-    name = config["NAME"]
-    assert name.startswith("test_") or name.endswith("_test")
+    env = dict(os.environ)
+    database_url = integration_database_url(connection.settings_dict, env)
     user = MantecatoUser.objects.create_user(username="sdk-owner", password="synthetic-password")
     site = Website.objects.create(user_id=user.pk, name="Synthetic", domain="https://example.test")
     browser = Client()
@@ -56,11 +104,9 @@ def http_server(tmp_path, request):
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
-    env = dict(os.environ)
-    parsed = urlsplit(env["TEST_DATABASE_URL"])
     env.update(
-        DATABASE_URL=urlunsplit(parsed._replace(path="/" + name)),
-        TEST_DATABASE_URL=urlunsplit(parsed._replace(path="/" + name)),
+        DATABASE_URL=database_url,
+        TEST_DATABASE_URL=database_url,
         DEBUG="True",
         AI_CONNECTIONS_ENABLED="True",
         MANTECATO_PUBLIC_URL=origin,
@@ -230,6 +276,12 @@ def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):
                     {"website_id": site_id, "metrics": ["pageviews"], "range": "24h"},
                 )
                 assert not stats.isError
+                for search in (None, "synthetic"):
+                    values = await session.call_tool(
+                        "list_dimension_values",
+                        {"website_id": site_id, "dimension": "url_path", "search": search},
+                    )
+                    assert not values.isError
                 denied = await session.call_tool("list_sites", {})
                 assert denied.isError  # User reduced the advertised scope at consent.
             assert storage.tokens and storage.tokens.refresh_token

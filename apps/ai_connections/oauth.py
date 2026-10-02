@@ -46,6 +46,7 @@ from apps.ai_connections.policy import (
     scopes,
     validate_grant,
 )
+from apps.tracker.ip import get_client_ip
 
 
 def no_store(response):
@@ -69,7 +70,12 @@ def public_request(request):
         > settings.AI_MAX_REQUEST_BYTES
     ):
         raise AccessDenied("invalid_request")
-    limit("public:" + digest(request.META.get("REMOTE_ADDR", ""), "rate"), 60)
+    peer = request.META.get("REMOTE_ADDR", "")
+    # Reuse the hardened resolver only for an operator-declared topology.
+    # The legacy count=0 mode trusts spoofable headers and is unsafe for quotas.
+    if settings.TRUST_PROXY_HEADERS and settings.TRUSTED_PROXY_COUNT > 0:
+        peer = get_client_ip(request)
+    limit("public:" + digest(peer, "rate"), 60)
 
 
 def single_parameters(request):
@@ -451,8 +457,14 @@ def revoke_token(request):
         credential = lookup(raw, "refresh") or lookup(raw, "access")
         if credential:
             with transaction.atomic():
-                conn = AIConnection.objects.select_for_update().get(pk=credential.connection_id)
-                if conn.client_id == client_id:
+                conn = (
+                    AIConnection.objects.select_for_update()
+                    .filter(pk=credential.connection_id)
+                    .first()
+                )
+                # Offline cleanup may delete the family after credential lookup.
+                # Unknown/already-removed tokens retain RFC 7009's no-op success.
+                if conn is not None and conn.client_id == client_id:
                     revoke_locked(conn)
         return no_store(JsonResponse({}))
     except AccessDenied as exc:

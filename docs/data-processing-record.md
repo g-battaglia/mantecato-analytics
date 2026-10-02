@@ -137,9 +137,9 @@ anonymity of arbitrary text. Do not send personal or visitor-derived labels.
 
 - **Retention:** `visitor_key` digest NULLed at **396 days**; aggregates are anonymous
   and permanent. The monthly salt is destroyed after offline finalization leaves
-  no site's state for that period. Run `manage.py rollup_visitors` in a separate
-  daily job and monitor success/backlog; deployment is not a retention scheduler.
-  `run_daily_maintenance` runs visitor maintenance and AI cleanup independently.
+  no site's state for that period. Run `manage.py run_daily_maintenance` in a
+  separate daily job and monitor success/backlog; deployment is not a retention
+  scheduler. Visitor maintenance and AI cleanup have independent budgets/outcomes.
 - **Data-subject rights:** because no stored field identifies a person (the digest is
   pseudonymous only while the month's salt exists, then anonymous), there is normally
   no data to access/erase/rectify per-person; document this position. Honour GPC/opt-out.
@@ -151,6 +151,6 @@ anonymity of arbitrary text. Do not send personal or visitor-derived labels.
 
 1. Provide this record + [privacy.md](privacy.md).
 2. Show the published privacy notice (template in privacy.md) and the LIA/DPIA.
-3. Confirm `rollup_visitors` runs daily (retention) and GPC is honoured.
+3. Confirm `run_daily_maintenance` runs daily (visitor/AI retention) and GPC is honoured.
 4. Record any optional AI recipients or other integrations and assess their data
    sharing, processing terms and transfers; never assume self-hosting prevents them.
