@@ -107,14 +107,20 @@ def page_context(request, new_token=None):
     except AccessDenied:
         endpoint = ""
     enabled = settings.AI_CONNECTIONS_ENABLED and bool(endpoint)
+    # Form responses must not inherit a cursor/filter that can hide a newly
+    # committed token or turn its one-time delivery into a false failure.
+    browse = request.method == "GET" and not new_token
+    cursor = request.GET.get("cursor", "") if browse else ""
     tab = (
-        "connections"
+        request.GET.get("tab", "connections" if counts["total"] else "connect")
+        if browse
+        else "connections"
         if new_token
-        else request.GET.get("tab", "connections" if counts["total"] else "connect")
+        else "connect"
     )
     if tab not in ("connect", "connections", "activity"):
         tab = "connect"
-    connection_filter = request.GET.get("kind", "all")
+    connection_filter = request.GET.get("kind", "all") if browse else "all"
     if connection_filter not in ("all", "personal", "oauth"):
         connection_filter = "all"
     rows, next_cursor = [], ""
@@ -126,7 +132,7 @@ def page_context(request, new_token=None):
             queryset.select_related("client"),
             user,
             "ai-connections:" + connection_filter,
-            request.GET.get("cursor", ""),
+            cursor,
         )
         for conn in connections:
             code, label = state(conn, user)
@@ -160,7 +166,7 @@ def page_context(request, new_token=None):
             user=user,
             created_at__gte=timezone.now() - timedelta(days=settings.AI_AUDIT_RETENTION_DAYS),
         ).select_related("connection__client")
-        records, next_cursor = paginate(query, user, "ai-activity", request.GET.get("cursor", ""))
+        records, next_cursor = paginate(query, user, "ai-activity", cursor)
         operations = [
             {
                 "name": row.connection.client.name,

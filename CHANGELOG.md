@@ -87,6 +87,9 @@ and [GitHub announcement](docs/releases/ai-connections-announcement.md). These a
   inflate pageviews) and how to reconcile fairly with Umami.
 
 ### Fixed
+- Personal-token creation ignores inventory filters/cursors when rendering its
+  show-once response or a validation error, preventing committed tokens from
+  being hidden or reported as failed due to a crafted pagination URL.
 - OAuth redirect validation rejects reserved response parameters even with empty
   values or encoded names, preventing ambiguous callback URLs.
 - Concurrent collection avoids native ASGI socket-reuse races and leaked ORM

@@ -304,6 +304,70 @@ def test_personal_token_show_once_and_csrf(browser, account, days):
     assert browser.get("/api/sites/", HTTP_AUTHORIZATION="Bearer " + raw).status_code == 401
 
 
+@pytest.mark.parametrize(
+    "query", ["?cursor=invalid", "?tab=connect&cursor=invalid", "?kind=oauth&cursor=invalid"]
+)
+def test_new_token_delivery_ignores_inventory_query_controls(browser, account, query):
+    response = browser.post(
+        "/settings/ai-connections/tokens/" + query,
+        {
+            "name": "Created now",
+            "days": "never",
+            "sites": [str(account[1].pk)],
+            "scopes": ["sites:read"],
+            "acknowledged": "yes",
+            "notice_version": NOTICE_VERSION,
+            "notice_hash": NOTICE_HASH,
+        },
+    )
+    assert response.status_code == 200
+    assert response.context["connection_filter"] == "all"
+    assert response.context["connections"][0]["name"] == "Created now"
+    raw = response.context["new_token"]["token"]
+    assert raw.encode() in response.content and response["Cache-Control"] == "no-store"
+    assert verify(raw)[1].expires_at is None
+    assert AIConnection.objects.count() == 1
+    assert (
+        browser.get("/settings/ai-connections/?tab=connections&cursor=invalid").status_code == 400
+    )
+
+
+def test_new_token_delivery_starts_on_first_page_even_with_valid_cursor(browser, account):
+    conn, _ = personal(account)
+    with transaction.atomic():
+        for _ in range(11):
+            create_connection(
+                account[0], conn.client, "personal", [str(account[1].pk)], ["sites:read"], None
+            )
+    cursor = browser.get("/settings/ai-connections/?tab=connections").context["next_cursor"]
+    assert cursor
+    response = browser.post(
+        "/settings/ai-connections/tokens/?cursor=" + cursor,
+        {
+            "name": "Newest token",
+            "sites": [str(account[1].pk)],
+            "scopes": ["sites:read"],
+            "acknowledged": "yes",
+            "notice_version": NOTICE_VERSION,
+            "notice_hash": NOTICE_HASH,
+        },
+    )
+    assert response.status_code == 200
+    assert response.context["connections"][0]["name"] == "Newest token"
+    assert response.context["new_token"]["token"].encode() in response.content
+
+
+def test_token_creation_error_ignores_inventory_cursor(browser, account):
+    personal(account)
+    response = browser.post(
+        "/settings/ai-connections/tokens/?tab=connections&cursor=invalid", {"name": "No consent"}
+    )
+    assert response.status_code == 400
+    assert response.context["tab"] == "connect"
+    assert response.context["action_error"] == "consent_required"
+    assert AIConnection.objects.count() == 1
+
+
 def test_no_expiry_survives_years_and_cleanup_then_revokes(browser, account):
     from apps.ai_connections.maintenance import cleanup
 
