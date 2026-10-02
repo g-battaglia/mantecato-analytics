@@ -103,7 +103,10 @@ URL, never credentials. ChatGPT, Gemini, Grok and generic clients have manual
 instructions and official links. Account, region, age and workspace restrictions
 can change. A guide or a declared client name is not provider endorsement or
 proof of a working account-specific integration. Provider labels use locally
-rendered initials, not copied logos or remotely fetched provider assets.
+served identification marks from a pinned public Lobe Icons revision (license
+and provenance in `static/images/providers/README.md`). SVGs are local, decorative
+images beside text labels, with no third-party image requests or runtime icon
+package. Trademark rights remain with their owners; marks do not imply endorsement.
 
 Verify with authenticated `tools/list` or `get_connection_status`; these do not
 read statistics. Issuing a token or accepting consent produces an

@@ -311,6 +311,21 @@ def test_real_browser_token_history_mobile_and_lazy_activity(http_server):
             page = context.new_page()
             response = page.goto(origin + "/settings/ai-connections/")
             assert response.status == 200
+            page.wait_for_selector("[data-ai-enhanced]")
+            assert page.locator("[data-ai-guide]:visible").count() == 1
+            page.wait_for_function(
+                "(() => { const images = Array.from(document.querySelectorAll('.ai-provider img'));"
+                "return images.length === 5 && "
+                "images.every(i => i.complete && i.naturalWidth > 0); })()"
+            )
+            page.locator("[data-ai-provider=grok]").click()
+            page.get_by_role("heading", name="Connect Grok", exact=True).wait_for()
+            page.locator("[data-ai-provider=grok]").press("ArrowLeft")
+            page.get_by_role("heading", name="Connect Gemini", exact=True).wait_for()
+            assert page.locator("[data-ai-guide]:visible").count() == 1
+            page.set_viewport_size({"width": 320, "height": 740})
+            assert page.locator("#ai-content").evaluate("e => e.scrollWidth <= e.clientWidth + 1")
+            page.set_viewport_size({"width": 1280, "height": 1000})
             page.get_by_text("Create a personal token", exact=True).click()
             page.locator("input[name=name]").fill("Synthetic desktop")
             page.locator("input[name=sites]").first.check()
@@ -333,6 +348,11 @@ def test_real_browser_token_history_mobile_and_lazy_activity(http_server):
             page.wait_for_timeout(350)
             assert page.locator("#ai-content").evaluate("e => e.scrollWidth <= e.clientWidth + 1")
             assert page.locator("#ai-content").bounding_box()["x"] >= 0
+            page.get_by_role("link", name="Add connector", exact=True).click()
+            page.wait_for_selector("[data-ai-enhanced]")
+            page.locator("[data-ai-provider=chatgpt]").click()
+            page.get_by_role("heading", name="Connect ChatGPT", exact=True).wait_for()
+            assert page.locator("[data-ai-guide]:visible").count() == 1
             page.get_by_role("link", name="Activity", exact=True).click()
             page.get_by_text("Created personal token", exact=True).wait_for()
             assert token not in page.evaluate("JSON.stringify(localStorage)")

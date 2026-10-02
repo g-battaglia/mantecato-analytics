@@ -1,4 +1,4 @@
-"""Public documented workflows; neither logos nor interoperability claims."""
+"""Public setup workflows and local identification marks, not endorsements."""
 
 from urllib.parse import urlencode, urlsplit
 
@@ -8,15 +8,13 @@ PROVIDERS = [
     {
         "id": "claude",
         "name": "Claude",
-        "symbol": "C",
+        "icon": "images/providers/claude.svg",
+        "hint": _("Custom connector"),
         "guide": "https://claude.com/docs/connectors/building/directory-vs-custom",
-        "description": _(
-            "Use the prefilled form or add a custom connector manually. "
-            "Review the URL before confirming."
-        ),
+        "description": _("Add Mantecato as a custom connector in Claude."),
         "steps": [
             _("Open Claude's connector settings and choose Add custom connector."),
-            _("Enter Mantecato and the MCP address below, or use Open Claude setup."),
+            _("Enter Mantecato as the name and use the MCP server address."),
         ],
         "eligibility": _(
             "Custom connector availability is controlled by your account and organization. "
@@ -26,7 +24,8 @@ PROVIDERS = [
     {
         "id": "chatgpt",
         "name": "ChatGPT",
-        "symbol": "O",
+        "icon": "images/providers/chatgpt.svg",
+        "hint": _("Developer mode"),
         "guide": "https://developers.openai.com/plugins/build/app-quickstart",
         "description": _("Use custom MCP setup in developer mode, not a model API key."),
         "steps": [
@@ -47,12 +46,13 @@ PROVIDERS = [
     {
         "id": "gemini",
         "name": "Gemini",
-        "symbol": "G",
+        "icon": "images/providers/gemini.svg",
+        "hint": _("Connected app"),
         "guide": "https://support.google.com/gemini/answer/17209137?hl=en",
         "description": _("Add a custom connected app in Gemini's web app using its MCP URL."),
         "steps": [
             _("Open Gemini on the web and follow its custom connected-app setup."),
-            _("Enter the MCP address below and complete the authorization prompt."),
+            _("Enter the MCP server address and complete the authorization prompt."),
         ],
         "eligibility": _(
             "Current official requirements: age 18+, US, a personal Google Account, "
@@ -63,14 +63,15 @@ PROVIDERS = [
     {
         "id": "grok",
         "name": "Grok",
-        "symbol": "X",
+        "icon": "images/providers/grok.svg",
+        "hint": _("Custom connector"),
         "guide": "https://docs.x.ai/grok/connectors",
         "description": _(
             "Add a custom MCP connector, separate from the built-in connector catalog."
         ),
         "steps": [
             _("Open grok.com/connectors, choose New Connector, then Custom."),
-            _("Enter the public MCP address below and complete OAuth authorization."),
+            _("Enter the public MCP server address and complete OAuth authorization."),
         ],
         "eligibility": _(
             "Business and Enterprise workspaces require an administrator to provision "
@@ -80,13 +81,14 @@ PROVIDERS = [
     {
         "id": "generic",
         "name": _("Other MCP client"),
-        "symbol": "+",
+        "icon": "images/providers/mcp.svg",
+        "hint": _("Remote MCP"),
         "guide": "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
         "description": _(
             "Use remote Streamable HTTP with OAuth, or a protected Bearer token setting."
         ),
         "steps": [
-            _("Add a remote Streamable HTTP server with the MCP address below."),
+            _("Add a remote Streamable HTTP server with the MCP server address."),
             _(
                 "Use OAuth with S256 PKCE. If your client lacks OAuth, create a personal token "
                 "below and save it only in protected client settings."

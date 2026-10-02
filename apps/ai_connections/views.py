@@ -2,6 +2,7 @@
 
 import secrets
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -164,6 +165,7 @@ def page_context(request, new_token=None):
         "scope_choices": list(SCOPES.items()),
         "enabled": enabled,
         "endpoint": endpoint,
+        "local_endpoint": urlsplit(endpoint).hostname in ("localhost", "127.0.0.1", "::1"),
         "claude_url": claude_url(endpoint) if enabled else "",
         "providers": PROVIDERS,
         "agent_prompt": agent_prompt(endpoint),

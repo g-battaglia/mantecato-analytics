@@ -29,6 +29,31 @@ from apps.core.models import MantecatoUser, Website, WebsiteEvent
 pytestmark = pytest.mark.django_db
 
 
+def test_provider_marks_are_local_small_and_passive():
+    from pathlib import Path
+    from xml.etree import ElementTree
+
+    from apps.ai_connections.providers import PROVIDERS
+
+    root = Path(__file__).resolve().parents[1] / "static"
+    total = 0
+    for provider in PROVIDERS:
+        icon = provider["icon"]
+        assert icon.startswith("images/providers/") and icon.endswith(".svg")
+        data = (root / icon).read_bytes()
+        total += len(data)
+        svg = ElementTree.fromstring(data)
+        assert svg.tag == "{http://www.w3.org/2000/svg}svg"
+        for element in svg.iter():
+            assert element.tag.split("}")[-1] not in ("script", "foreignObject", "image", "use")
+            for attribute in element.attrib:
+                assert not attribute.split("}")[-1].startswith("on")
+                assert attribute.split("}")[-1] != "href"
+    assert total < 12_288
+    assert (root / "images/providers/LICENSE").exists()
+    assert (root / "images/providers/README.md").exists()
+
+
 @pytest.fixture(autouse=True)
 def ai_settings(settings):
     settings.DEBUG = True
