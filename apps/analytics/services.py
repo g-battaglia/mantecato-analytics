@@ -168,14 +168,21 @@ def _attach_scope_visitors(
         row[target_key] = counts.get(str(row.get(value_key) or ""))
 
 
-def resolve_websites_for_user(user_id: str, is_admin: bool) -> list[dict[str, Any]]:
+def resolve_websites_for_user(
+    user_id: str, is_admin: bool, website_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Return the websites the principal may access, alphabetically sorted."""
     from apps.core.models import Website
 
     qs = Website.objects.filter(is_deleted=False)
     if not is_admin:
         qs = qs.filter(user_id=user_id)
-    return [{"id": str(w.id), "name": w.name, "domain": w.domain} for w in qs.order_by("name")]
+    if website_ids is not None:
+        qs = qs.filter(id__in=website_ids)
+    return [
+        {**w, "id": str(w["id"])}
+        for w in qs.order_by("name").values("id", "name", "domain")
+    ]
 
 
 def get_overview_data(

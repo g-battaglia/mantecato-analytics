@@ -7,7 +7,12 @@
 > inventory ready to hand to an authority, see
 > [data-processing-record.md](data-processing-record.md).
 
-Mantecato is **cookieless** and stores **no persistent per-person identifier**.
+The **tracked-site collector** is cookieless. Operator login/consent uses signed
+session and CSRF cookies separately. Optional [AI connections](AI-CONNECTIONS.md)
+are disabled by default and can share requested aggregates with an explicitly
+chosen external assistant; they do not change tracker collection or formulas.
+
+Mantecato's tracker is **cookieless** and stores **no persistent per-person identifier**.
 It measures aggregate web traffic and produces **exact** daily counts of
 visitors, visits and bounce rate without cookies, browser storage, fingerprint
 persistence, or cross-site/cross-month tracking.
@@ -36,7 +41,7 @@ Separately, small per-visit integer counters track **active on-page time**
 (engagement) for accurate visit duration and the "engaged bounce" rate. No
 per-event timing log or scroll map is kept — only the aggregate seconds.
 
-## What is **never** stored
+## What the tracked-site collector **never** stores
 
 - ❌ Cookies or any browser storage (localStorage/sessionStorage/IndexedDB)
 - ❌ IP addresses (used transiently, then discarded — see below)
@@ -87,7 +92,8 @@ metrics remain exact and **filterable** at read time. After a finished window is
 fully rolled up, its salt is discarded and its digest cannot be recomputed from
 an IP/User-Agent. Salt destruction is not automatic at midnight: it depends on
 a successful offline job. Neither HTTP requests nor deployment/web startup runs
-rollup or retention. Schedule and monitor daily `rollup_visitors`.
+rollup or retention. Schedule and monitor daily `run_daily_maintenance`, which includes visitor rollup
+and independent AI credential/audit cleanup.
 
 **Imported data:** the Umami importer hashes each event's `session_id` into the
 same `visitor_key`, so imported pageviews carry visitor attribution; the import
@@ -128,7 +134,7 @@ This ceiling applies to every cookieless analytics tool.
 - Run a separate daily Railway/Render/system cron:
 
   ```bash
-  python manage.py rollup_visitors --max-runtime 900 --sql-timeout-ms 60000
+  python manage.py run_daily_maintenance --rollup-runtime 900 --ai-runtime 120 --sql-timeout-ms 60000
   ```
 
   Monitor job success, finished-period backlog and pending expired digests.
@@ -209,6 +215,26 @@ confirm before making a consent-free claim, especially for Italy.
   not sell/share or use the data for cross-context advertising, and keep GPC
   honoured.
 
+## Optional AI data sharing
+
+Consent authorizes later read-only aggregate requests for explicitly selected
+sites, never automatic access to future sites. It does not upload the database,
+but requested paths, titles, groups and event names can contain personal data.
+The chosen client/provider receives results and may retain them; check the actual
+account's training, sharing, retention and legal terms. Revocation stops future
+reads/refresh but cannot erase already received copies. No universal provider
+retention, training exclusion or DPA promise applies.
+
+AI authentication stores opaque credential digests, explicit site/scopes,
+expiry and a password-auth fingerprint. Consent evidence is a version and
+canonical-text hash. Metadata-only activity records operation, site UUID,
+connection/owner, timestamp and outcome, never prompts, arguments/results,
+raw credentials or IP addresses. Audit is retained up to 90 days through the
+separate cleanup job; expiry/revocation checks do not depend on that job.
+Personal tokens appear once with no-store/history protection, never in setup
+prompts or browser storage. Operator cookies are not visitor-tracking cookies.
+See [AI connections](AI-CONNECTIONS.md) before activating external sharing.
+
 ## Operator responsibilities
 
 1. Publish a privacy notice describing the above (template below).
@@ -216,7 +242,7 @@ confirm before making a consent-free claim, especially for Italy.
    transient IP/User-Agent processing and the monthly digest (a time-limited
    identifier). The window, IP truncation and retention are fixed, so there is
    nothing to tune — just document them.
-3. Schedule `rollup_visitors` daily for the strict retention guarantee.
+3. Schedule `run_daily_maintenance` daily for the strict retention guarantee.
 4. Keep tracker fetch credentials at `omit`; if the collector is reverse-proxied
    under the tracked site's origin, strip inbound `Cookie` headers before the
    request reaches Mantecato.

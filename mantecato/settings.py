@@ -162,6 +162,7 @@ INSTALLED_APPS = [
     "apps.settings_app",
     "apps.api",
     "apps.tracker",
+    "apps.ai_connections",
 ]
 
 # Middleware stack order matters: security and compression first, then session,
@@ -179,6 +180,7 @@ if not DEBUG:
 MIDDLEWARE += [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "apps.ai_connections.middleware.PublicOAuthCorsMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -196,6 +198,15 @@ MIDDLEWARE += [
 SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 # Detailed per-request summaries are opt-in; individual slow/error logs remain.
 QUERY_SUMMARY_LOG = _env_bool("QUERY_SUMMARY_LOG", default=False)
+
+# Remote AI access is opt-in; legacy API keys and stdio clients are independent.
+AI_CONNECTIONS_ENABLED = _env_bool("AI_CONNECTIONS_ENABLED", default=False)
+MANTECATO_PUBLIC_URL = os.environ.get("MANTECATO_PUBLIC_URL", "").rstrip("/")
+AI_MAX_ACTIVE_CONNECTIONS = 20
+AI_MAX_REQUEST_BYTES = 32_768
+AI_MAX_RESPONSE_BYTES = 524_288
+AI_AUDIT_RETENTION_DAYS = 90
+AI_MCP_ALLOWED_ORIGINS = _env_list("AI_MCP_ALLOWED_ORIGINS")
 
 # Cookieless unique-visitor counting has a FIXED, NON-CONFIGURABLE privacy posture
 # so it cannot be misconfigured into needing a consent banner or wrong counts:
@@ -321,7 +332,9 @@ DATABASES = {
 # 5-second connect timeout to fail fast on unreachable hosts.
 DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 5
 # Keep connections alive for 10 minutes to reduce per-request overhead.
-DATABASES["default"]["CONN_MAX_AGE"] = 600
+# ASGI requests use bounded, short-lived ORM connections. WSGI operators may
+# explicitly opt back into reuse; remote MCP always closes its own connections.
+DATABASES["default"]["CONN_MAX_AGE"] = _env_int("CONN_MAX_AGE", default=0)
 
 # ============================================================================
 # 6. Authentication and session settings

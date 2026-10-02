@@ -16,6 +16,7 @@ COPY mantecato ./mantecato
 COPY manage.py ./manage.py
 COPY static ./static
 COPY templates ./templates
+COPY packages/tracker/dist ./packages/tracker/dist
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install . \
@@ -26,4 +27,4 @@ USER mantecato
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn mantecato.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60} --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn mantecato.asgi:application --worker-class asgi --worker-connections ${GUNICORN_WORKER_CONNECTIONS:-16} --keep-alive 0 --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60} --access-logfile - --access-logformat '%(m)s %(s)s %(D)s' --error-logfile -"]

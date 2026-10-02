@@ -14,7 +14,8 @@ What the config does:
 - **Pre-deploy** — `migrate` runs once, before the new version receives traffic. The umami hook
   (`importumamienv`) and the optional admin bootstrap (`createuser`) run here too.
   Visitor maintenance is deliberately absent: provision the separate daily job in section E.
-- **Start** — gunicorn serves `mantecato.wsgi:application` on Railway's injected `$PORT`.
+- **Start** — Gunicorn 26 serves `mantecato.asgi:application` with native lifespan, 16
+  connections per worker and keep-alive disabled on Railway's injected `$PORT`.
 - **Health check** — Railway probes `/health/`, which runs `SELECT 1` against PostgreSQL.
 
 > **Heads up — config as code only covers one service.** Unlike `render.yaml`, a Railway
@@ -46,10 +47,15 @@ which are resolved when the template is deployed.
 | `DJANGO_SETTINGS_MODULE` | `mantecato.settings` | ✅ | Explicit, so gunicorn/wsgi resolve settings reliably. |
 | `ALLOWED_HOSTS` | `${{RAILWAY_PUBLIC_DOMAIN}}` | ✅ | Railway public domain (no scheme). Comma-separated list supported. |
 | `CSRF_TRUSTED_ORIGINS` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` | ✅ | **Must** include the `https://` scheme — otherwise login POSTs fail with CSRF 403. |
-| `USE_SECURE_PROXY_SSL_HEADER` | `True` | ✅ | Railway terminates TLS upstream. Without this, `SECURE_SSL_REDIRECT` causes an HTTPS redirect loop. |
+| `USE_SECURE_PROXY_SSL_HEADER` | `True` | ✅ | Railway terminates TLS upstream. Without this, `SECURE_SSL_REDIRECT` causes an HTTPS redirect loop. Does not set the native MCP ASGI scheme. |
+| `FORWARDED_ALLOW_IPS` | *(verified proxy IPs/CIDRs)* | AI | Environment allowlist read by Gunicorn and the MCP scheme adapter; absent means loopback only. Verify the TLS proxy trust boundary before enabling MCP. |
 | `RAILPACK_PYTHON_VERSION` | `3.12` | ⚙️ | Pins the Python version. Railpack otherwise defaults to 3.13.x. |
 | `GUNICORN_WORKERS` | `2` | – | Worker processes (tune to your plan's RAM). |
 | `GUNICORN_TIMEOUT` | `120` | – | Worker timeout in seconds. |
+| `GUNICORN_WORKER_CONNECTIONS` | `16` | – | Native ASGI HTTP connection bound per worker. |
+| `CONN_MAX_AGE` | `0` | – | Required under ASGI; no persistent Django DB connections. |
+| `AI_CONNECTIONS_ENABLED` | `False` | – | Keep disabled until operational AI rollout checks pass. |
+| `MANTECATO_PUBLIC_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` | – | Canonical public origin for remote MCP/OAuth. |
 | `TIME_ZONE` | `UTC` | – | e.g. `Europe/Rome`. |
 | `LANGUAGE_CODE` | `en-us` | – | UI language. |
 | `INIT_ADMIN_USER` | `admin` | – | Username of the first admin. |
@@ -145,7 +151,7 @@ the web release migrates once before the matching job revision is used.
 The manifest runs:
 
 ```bash
-uv run python manage.py rollup_visitors --max-runtime 900 --sql-timeout-ms 60000
+uv run python manage.py run_daily_maintenance --rollup-runtime 900 --ai-runtime 120 --sql-timeout-ms 60000
 ```
 
 Schedule: `15 2 * * *`, **02:15 UTC daily**, not local time. The job expires only
@@ -153,6 +159,10 @@ digests older than 396 days, then aggregates/deletes state for finished periods.
 The current calendar month remains live. All pageview/event rows remain stored.
 Per-site/period commits make interrupted runs resumable without adding counts twice.
 Salts are deleted only after all day/scope state for their period has been finalized.
+
+AI cleanup runs independently even if visitor rollup is busy or fails. It deletes
+expired authentication records and audit older than 90 days in bounded batches;
+JSON reports separate outcomes. It never changes analytics definitions or tracking.
 
 The job exits and closes DB connections. `restartPolicyType=NEVER` avoids restart
 loops. Railway skips a scheduled run if the preceding run is still active, so
@@ -179,3 +189,34 @@ incomplete work in the job, never increase the web timeout to run it in requests
 For Render, containers or direct hosting, configure the same command in an external
 daily cron with private DB access; web startup does not provide a fallback scheduler.
 See [performance/recovery](PERFORMANCE.md) for rollout checks and benchmark limits.
+
+## F. Optional remote AI connections
+
+Keep `AI_CONNECTIONS_ENABLED=False` initially. The matching additive migrations
+create authentication/audit tables only. Before activation, restore-test backups,
+verify daily cleanup, HTTPS, host/CSRF validation and rollback. Gunicorn must see
+an HTTPS MCP scope through the public proxy: configure the `FORWARDED_ALLOW_IPS`
+environment variable with the actual trusted proxy addresses, consistently with
+Django's proxy SSL header. Gunicorn 26 ASGI does not translate forwarded scheme
+headers itself; Mantecato's MCP-only adapter does so for allowlisted peers only,
+without changing collector/Django requests or client IPs. Do not accept arbitrary
+forwarding headers on a directly exposed backend.
+Gunicorn and the adapter read this directly from service Variables; `railway.toml`
+does not provision those variables. Render's blueprint exposes it as an
+operator-supplied value instead of hardcoding an unverified proxy network.
+
+TLS terminates at the platform proxy, so its connection to Gunicorn may be HTTP.
+Unless that peer is trusted, the adapter ignores `X-Forwarded-Proto: https` and
+MCP sees `scope.scheme=http`. MCP then intentionally returns **404
+`ai_access_unavailable`**, even if Django login/health work with
+`USE_SECURE_PROXY_SSL_HEADER=True`. This is a conditional misconfiguration risk,
+not proof that either platform's existing deployment is broken. See the
+[public-proxy activation check](AI-CONNECTIONS.md#public-proxy-activation-check);
+keep the feature off until it passes. Do not use `FORWARDED_ALLOW_IPS=*` as an
+unconditional workaround.
+
+The manifest uses keep-alive 0 following isolated native-worker compatibility
+tests. Test the chosen proxy and representative load rather than assuming a
+production SLA. `/mcp` is stateless JSON-only Streamable HTTP, not legacy stdio.
+Provider connections and cron creation require explicit operator actions; no
+account-specific interoperability is implied. See [AI connections](AI-CONNECTIONS.md).

@@ -1,0 +1,455 @@
+"""OAuth, tenant boundaries and secret lifecycle on isolated PostgreSQL."""
+
+import json
+from datetime import timedelta
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
+from django.db import transaction
+from django.test import Client
+from django.utils import timezone
+
+from apps.ai_connections.models import AIActivity, AIConnection, OAuthClient, OAuthCredential
+from apps.ai_connections.policy import (
+    NOTICE_HASH,
+    NOTICE_VERSION,
+    AccessDenied,
+    create_connection,
+    issue,
+    reduce_owned,
+    resource,
+    revoke_owned,
+    verify,
+)
+from apps.ai_connections.tools import execute
+from apps.core.models import MantecatoUser, Website, WebsiteEvent
+
+pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def ai_settings(settings):
+    settings.DEBUG = True
+    settings.AI_CONNECTIONS_ENABLED = True
+    settings.MANTECATO_PUBLIC_URL = "https://analytics.example.test"
+    settings.SECURE_SSL_REDIRECT = False
+    from apps.ai_connections.policy import _rate
+
+    _rate.clear()
+
+
+@pytest.fixture
+def account():
+    user = MantecatoUser.objects.create_user(username="owner", password="synthetic-password")
+    site = Website.objects.create(user_id=user.pk, name="Example", domain="https://example.test")
+    return user, site
+
+
+@pytest.fixture
+def browser(account):
+    c = Client()
+    c.force_login(account[0])
+    return c
+
+
+def personal(account, selected_scopes=None):
+    user, site = account
+    with transaction.atomic():
+        client = OAuthClient.objects.create(
+            client_id="fixture-client", name="Synthetic client", redirect_uris=[]
+        )
+        conn = create_connection(
+            user,
+            client,
+            "personal",
+            [str(site.pk)],
+            selected_scopes or ["sites:read", "analytics:read"],
+            timedelta(days=30),
+        )
+        raw = issue(
+            "personal", {"resource": resource(), "scopes": conn.scopes}, timedelta(days=30), conn
+        )
+    return conn, raw
+
+
+def start_flow(browser):
+    result = browser.post(
+        "/oauth/register/",
+        json.dumps(
+            {
+                "client_name": "Synthetic client",
+                "redirect_uris": ["https://client.example.test/callback"],
+                "token_endpoint_auth_method": "none",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert result.status_code == 201, result.content
+    client_id = result.json()["client_id"]
+    verifier = "v" * 64
+    response = browser.get(
+        "/oauth/authorize/",
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "https://client.example.test/callback",
+            "resource": resource(),
+            "scope": "sites:read analytics:read",
+            "state": "synthetic-state",
+            "code_challenge_method": "S256",
+            "code_challenge": create_s256_code_challenge(verifier),
+        },
+    )
+    assert response.status_code == 302, response.content
+    request_id = parse_qs(urlsplit(response["Location"]).query)["request_id"][0]
+    return client_id, verifier, request_id
+
+
+def approve(browser, account, request_id):
+    response = browser.post(
+        "/settings/ai-connections/consent/",
+        {
+            "request_id": request_id,
+            "notice_hash": NOTICE_HASH,
+            "notice_version": NOTICE_VERSION,
+            "approve": "yes",
+            "acknowledged": "yes",
+            "sites": [str(account[1].pk)],
+            "scopes": ["sites:read", "analytics:read"],
+        },
+    )
+    assert response.status_code == 302, response.content
+    params = parse_qs(urlsplit(response["Location"]).query)
+    assert params["state"] == ["synthetic-state"]
+    assert params["iss"] == ["https://analytics.example.test"]
+    return params["code"][0]
+
+
+def exchange(browser, client_id, verifier, code):
+    return browser.post(
+        "/oauth/token/",
+        {
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "code_verifier": verifier,
+            "redirect_uri": "https://client.example.test/callback",
+            "resource": resource(),
+        },
+    )
+
+
+def test_real_oauth_code_refresh_and_no_plaintext_storage(browser, account):
+    client_id, verifier, request_id = start_flow(browser)
+    response = browser.get("/settings/ai-connections/consent/", {"request_id": request_id})
+    assert response.status_code == 200 and b"Read-only permissions" in response.content
+    code = approve(browser, account, request_id)
+    response = exchange(browser, client_id, verifier, code)
+    assert response.status_code == 200, response.content
+    tokens = response.json()
+    assert verify(tokens["access_token"])[1].verified_at is None
+    refreshed = browser.post(
+        "/oauth/token/",
+        {
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": tokens["refresh_token"],
+            "resource": resource(),
+        },
+    )
+    assert refreshed.status_code == 200, refreshed.content
+    assert refreshed.json()["refresh_token"] != tokens["refresh_token"]
+    stored = str(list(OAuthCredential.objects.values()))
+    for raw in [
+        code,
+        tokens["access_token"],
+        tokens["refresh_token"],
+        refreshed.json()["access_token"],
+    ]:
+        assert raw not in stored
+    replay = browser.post(
+        "/oauth/token/",
+        {
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": tokens["refresh_token"],
+            "resource": resource(),
+        },
+    )
+    assert replay.status_code == 400
+    assert AIConnection.objects.get().revoked_at is not None
+    with pytest.raises(AccessDenied):
+        verify(refreshed.json()["access_token"])
+
+
+def test_bad_pkce_does_not_consume_valid_code(browser, account):
+    client_id, verifier, request_id = start_flow(browser)
+    code = approve(browser, account, request_id)
+    assert exchange(browser, client_id, "x" * 64, code).status_code == 400
+    assert exchange(browser, client_id, verifier, code).status_code == 200
+    assert exchange(browser, client_id, verifier, code).status_code == 400
+    assert AIConnection.objects.get().revoked_at
+
+
+@pytest.mark.parametrize("change", ["resource", "scope", "client_id", "redirect_uri"])
+def test_invalid_authorization_never_redirects(browser, change):
+    result = browser.post(
+        "/oauth/register/",
+        json.dumps(
+            {"client_name": "Test", "redirect_uris": ["https://client.example.test/callback"]}
+        ),
+        content_type="application/json",
+    )
+    values = {
+        "response_type": "code",
+        "client_id": result.json()["client_id"],
+        "redirect_uri": "https://client.example.test/callback",
+        "resource": resource(),
+        "state": "ok",
+        "scope": "sites:read",
+        "code_challenge_method": "S256",
+        "code_challenge": create_s256_code_challenge("v" * 64),
+    }
+    values[change] = "https://attacker.example.test/" if change != "scope" else "admin"
+    response = browser.get("/oauth/authorize/", values)
+    assert response.status_code == 400
+    assert not AIConnection.objects.exists()
+
+
+def test_consent_is_browser_bound_one_time_and_explicit(browser, account):
+    _, _, request_id = start_flow(browser)
+    other = Client()
+    other.force_login(account[0])
+    assert (
+        other.get("/settings/ai-connections/consent/", {"request_id": request_id}).status_code
+        == 400
+    )
+    assert (
+        browser.post(
+            "/settings/ai-connections/consent/",
+            {
+                "request_id": request_id,
+                "approve": "yes",
+                "notice_hash": NOTICE_HASH,
+                "notice_version": NOTICE_VERSION,
+            },
+        ).status_code
+        == 400
+    )
+    assert not AIConnection.objects.exists()
+    approve(browser, account, request_id)
+    assert (
+        browser.get("/settings/ai-connections/consent/", {"request_id": request_id}).status_code
+        == 400
+    )
+
+
+def test_personal_token_show_once_and_csrf(browser, account):
+    response = browser.post(
+        "/settings/ai-connections/tokens/",
+        {
+            "name": "Desktop",
+            "days": "30",
+            "sites": [str(account[1].pk)],
+            "scopes": ["sites:read"],
+            "acknowledged": "yes",
+            "notice_version": NOTICE_VERSION,
+            "notice_hash": NOTICE_HASH,
+        },
+    )
+    assert response.status_code == 200
+    assert response["Cache-Control"] == "no-store"
+    raw = response.context["new_token"]["token"]
+    assert raw.encode() in response.content
+    assert b'hx-history="false"' in response.content
+    assert raw.encode() not in browser.get("/settings/ai-connections/").content
+    strict = Client(enforce_csrf_checks=True)
+    strict.force_login(account[0])
+    assert strict.post("/settings/ai-connections/tokens/", {"name": "bad"}).status_code == 403
+    assert browser.get("/api/sites/", HTTP_AUTHORIZATION="Bearer " + raw).status_code == 401
+
+
+def test_site_boundary_admin_and_no_implicit_future_sites(account):
+    user, site = account
+    user.role = "admin"
+    user.save(update_fields=["role"])
+    conn, raw = personal(account)
+    other = Website.objects.create(name="Unapproved")
+    assert [w["id"] for w in execute(raw, "list_sites")["websites"]] == [str(site.pk)]
+    with pytest.raises(AccessDenied):
+        execute(
+            raw,
+            "query_metrics",
+            {
+                "website_id": str(other.pk),
+                "operation": "totals",
+                "metrics": ["pageviews"],
+                "range": "24h",
+            },
+        )
+    assert AIActivity.objects.filter(outcome="permission_denied").exists()
+    user.role = "user"
+    user.save(update_fields=["role"])
+    site.user_id = None
+    site.save(update_fields=["user_id"])
+    assert execute(raw, "list_sites")["websites"] == []
+
+
+def test_queries_match_rest_contract_and_audit_contains_no_values(account):
+    _, site = account
+    conn, raw = personal(account)
+    WebsiteEvent.objects.create(
+        website_id=site.pk,
+        url_path="/synthetic-private-path",
+        created_at=timezone.now() - timedelta(hours=1),
+    )
+    body = {
+        "website_id": str(site.pk),
+        "operation": "totals",
+        "metrics": ["pageviews"],
+        "start": (timezone.now() - timedelta(days=1)).isoformat(),
+        "end": (timezone.now() - timedelta(seconds=1)).isoformat(),
+    }
+    from apps.api.v1.contracts import parse_query
+    from apps.api.v1.services import run_query
+
+    assert execute(raw, "query_metrics", body) == run_query(parse_query(body))
+    assert AIActivity.objects.get().action == "query_metrics"
+    assert "synthetic-private-path" not in str(list(AIActivity.objects.values()))
+    assert raw not in str(list(AIActivity.objects.values()))
+    conn.refresh_from_db()
+    assert conn.verified_at is not None
+
+
+@pytest.mark.parametrize("mutation", ["password", "deleted", "expiry", "revoke", "resource"])
+def test_credentials_fail_closed_after_account_or_grant_change(account, mutation):
+    conn, raw = personal(account)
+    if mutation == "password":
+        account[0].set_password("changed-password")
+        account[0].save(update_fields=["password"])
+    elif mutation == "deleted":
+        account[0].deleted_at = timezone.now()
+        account[0].save(update_fields=["deleted_at"])
+    elif mutation == "expiry":
+        conn.expires_at = timezone.now() - timedelta(seconds=1)
+        conn.save(update_fields=["expires_at"])
+    elif mutation == "revoke":
+        revoke_owned(account[0], conn.pk)
+    else:
+        row = OAuthCredential.objects.get()
+        row.payload["resource"] = "https://other.example.test/mcp"
+        row.save(update_fields=["payload"])
+    with pytest.raises(AccessDenied):
+        verify(raw)
+
+
+def test_reduction_cannot_expand_and_applies_immediately(account):
+    conn, raw = personal(account)
+    other = Website.objects.create(user_id=account[0].pk, name="Other")
+    with pytest.raises(AccessDenied):
+        reduce_owned(account[0], conn.pk, [str(other.pk)], ["sites:read"])
+    reduce_owned(account[0], conn.pk, [str(account[1].pk)], ["sites:read"])
+    with pytest.raises(AccessDenied):
+        execute(raw, "query_metrics", {})
+    conn.refresh_from_db()
+    assert conn.authorized_scopes == ["analytics:read", "sites:read"]
+    assert AIActivity.objects.filter(outcome="permission_denied").exists()
+
+
+def test_revocation_during_query_does_not_return_results(account):
+    conn, raw = personal(account)
+
+    def revoke_while_reading(spec):
+        revoke_owned(account[0], conn.pk)
+        return {"totals": {"pageviews": 123}}
+
+    with (
+        patch("apps.ai_connections.tools.run_query", side_effect=revoke_while_reading),
+        pytest.raises(AccessDenied),
+    ):
+        execute(
+            raw,
+            "query_metrics",
+            {
+                "website_id": str(account[1].pk),
+                "range": "24h",
+                "metrics": ["pageviews"],
+                "operation": "totals",
+            },
+        )
+
+
+def test_activity_is_lazy_paginated_and_escaped(browser, account):
+    conn, _ = personal(account)
+    conn.client.name = '<img src=x onerror="alert(1)">'
+    conn.client.save(update_fields=["name"])
+    for _ in range(13):
+        AIActivity.objects.create(
+            connection=conn, user=account[0], action="list_sites", outcome="success"
+        )
+    with patch(
+        "apps.ai_connections.views.paginate",
+        wraps=__import__("apps.ai_connections.views", fromlist=["paginate"]).paginate,
+    ) as paginate:
+        response = browser.get("/settings/ai-connections/")
+        assert not paginate.called
+    response = browser.get("/settings/ai-connections/", {"tab": "activity"})
+    assert len(response.context["operations"]) == 10 and response.context["next_cursor"]
+    assert b"&lt;img" in response.content and b"<img src=x" not in response.content
+    second = browser.get(
+        "/settings/ai-connections/", {"tab": "activity", "cursor": response.context["next_cursor"]}
+    )
+    assert len(second.context["operations"]) == 3
+
+
+def test_flag_off_still_allows_management_but_denies_new_tokens(browser, account, settings):
+    conn, raw = personal(account)
+    settings.AI_CONNECTIONS_ENABLED = False
+    assert browser.get("/settings/ai-connections/").status_code == 200
+    assert browser.post(f"/settings/ai-connections/{conn.pk}/revoke/").status_code == 302
+    assert browser.post("/settings/ai-connections/tokens/", {}).status_code == 400
+    with pytest.raises(AccessDenied):
+        verify(raw)
+
+
+def test_authenticated_reads_and_settings_have_bounded_query_counts(browser, account):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    conn, raw = personal(account)
+    execute(raw, "get_connection_status")
+    with CaptureQueriesContext(connection) as queries:
+        verify(raw)
+    assert len(queries) == 1
+    with CaptureQueriesContext(connection) as queries:
+        browser.get("/settings/ai-connections/")
+    assert len(queries) <= 4
+    with CaptureQueriesContext(connection) as queries:
+        execute(raw, "get_connection_status")
+    assert len(queries) <= 10
+
+
+def test_remote_tool_input_contracts_match_independent_stdio(account):
+    import asyncio
+
+    from mantecato_mcp.server import mcp
+
+    from apps.ai_connections.transport import create_transport
+
+    remote, _transport = create_transport()
+    independent = asyncio.run(mcp.list_tools())
+    remote_tools = {tool.name: tool for tool in remote._tool_manager.list_tools()}
+    for tool in independent:
+        assert remote_tools[tool.name].parameters == tool.inputSchema
+
+
+def test_consent_started_by_another_account_is_rejected(browser, account):
+    _, _, request_id = start_flow(browser)
+    other = MantecatoUser.objects.create_user(username="other", password="synthetic-password")
+    browser.force_login(other)
+    assert (
+        browser.get("/settings/ai-connections/consent/", {"request_id": request_id}).status_code
+        == 400
+    )

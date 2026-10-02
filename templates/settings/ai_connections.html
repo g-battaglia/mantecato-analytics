@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load i18n static tz %}
+{% block title %}{% trans "AI connections" %}{% endblock %}
+{% block page_title %}{% trans "AI connections" %}{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/ai-connections.css' %}">{% endblock %}
+{% block content %}{% localtime off %}
+<section id="ai-content" class="ai-panel" hx-history="false">
+  <header class="ai-heading">
+    <div><h2>{% trans "AI connections" %}</h2><p>{% trans "Choose which sites your assistants can read. No write or admin access." %}</p></div>
+    <p class="ai-summary">{{ counts.total }} {% trans "total" %}<br><span>{{ counts.verified }} {% trans "verified" %}, {{ counts.authorized }} {% trans "not verified yet" %}, {{ counts.inactive }} {% trans "inactive" %}</span></p>
+  </header>
+  <nav class="ai-tabs" aria-label="{% trans 'AI connection sections' %}">
+    <a href="{% url 'ai_connections' %}?tab=connect" hx-get="{% url 'ai_connections' %}?tab=connect" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'connect' %}aria-current="page"{% endif %}>{% trans "Add connector" %}</a>
+    <a href="{% url 'ai_connections' %}?tab=connections" hx-get="{% url 'ai_connections' %}?tab=connections" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'connections' %}aria-current="page"{% endif %}>{% trans "Connections" %}</a>
+    <a href="{% url 'ai_connections' %}?tab=activity" hx-get="{% url 'ai_connections' %}?tab=activity" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true" {% if tab == 'activity' %}aria-current="page"{% endif %}>{% trans "Activity" %}</a>
+  </nav>
+  {% if action_error %}<p role="alert" class="ai-error">{% trans "Could not create the token. Check the selected sites, permissions and expiry, then try again." %} <code>{{ action_error }}</code></p>{% endif %}
+  {% if new_token %}
+  <section class="ai-secret ai-box" aria-label="{% trans 'New personal token' %}">
+    <h3>{% trans "Copy your token now" %}</h3><p>{% trans "It is shown only once. Keep it in protected client settings, never in an AI conversation." %}</p>
+    <label for="ai-new-token">{{ new_token.name }} — {% trans "expires" %} {{ new_token.expires_at|date:"Y-m-d H:i" }} UTC</label>
+    <div class="ai-copy-row"><input id="ai-new-token" type="password" value="{{ new_token.token }}" readonly autocomplete="off" data-ai-secret><button type="button" data-ai-copy="ai-new-token">{% trans "Copy token" %}</button><button type="button" data-ai-reveal="ai-new-token">{% trans "Show / hide" %}</button></div>
+  </section>
+  {% endif %}
+  {% if not enabled %}<p class="ai-box" role="status">{% trans "Remote AI connections are disabled or the public endpoint is not configured. Existing access can still be reviewed and revoked below." %}</p>{% endif %}
+  {% if tab == 'connect' %}
+  <h3>{% trans "Add a connector" %}</h3>
+  <p>{% trans "Start in your assistant, then sign in here and approve the sites it may read." %}</p>
+  <div class="ai-providers">
+    {% for provider in providers %}<a class="ai-provider" href="#ai-guide-{{ provider.id }}" data-ai-provider="{{ provider.id }}"><span aria-hidden="true">{{ provider.symbol }}</span>{{ provider.name }}</a>{% endfor %}
+  </div>
+  {% for provider in providers %}
+  <details class="ai-guide" id="ai-guide-{{ provider.id }}">
+    <summary>{{ provider.name }} — {% trans "Setup instructions" %}</summary>
+    <p>{{ provider.description }}</p>
+    {% if provider.id == 'claude' and claude_url %}<a class="ai-button ai-primary" href="{{ claude_url }}" target="_blank" rel="noopener noreferrer">{% trans "Open Claude setup" %}</a>{% endif %}
+    <ol>{% for step in provider.steps %}<li>{{ step }}</li>{% endfor %}<li>{% trans "Sign in to Mantecato, choose sites and approve read-only access." %}</li><li>{% trans "Return to your assistant and verify with tools/list or get_connection_status. Do not read statistics during setup." %}</li></ol>
+    <p>{{ provider.eligibility }}</p><a href="{{ provider.guide }}" target="_blank" rel="noopener noreferrer">{% trans "Official documentation" %}</a>
+  </details>
+  {% endfor %}
+  <p class="ai-note">{% trans "Availability depends on your account, plan, region and workspace. These instructions are not proof of a live connection or provider endorsement." %}</p>
+  <details class="ai-guide" open>
+    <summary>{% trans "Manual setup" %}</summary>
+    <label for="ai-endpoint">{% trans "MCP server address" %}</label>
+    <div class="ai-copy-row"><input id="ai-endpoint" value="{{ endpoint }}" readonly placeholder="{% trans 'Public HTTPS endpoint required' %}"><button type="button" data-ai-copy="ai-endpoint" {% if not endpoint %}disabled{% endif %}>{% trans "Copy URL" %}</button></div>
+    <p>{% trans "Remote Streamable HTTP with OAuth and S256 PKCE. For clients without OAuth, use a personal token in Authorization: Bearer <token>. This is a Mantecato token, not a model API key." %}</p>
+    <p>{% trans "Local addresses cannot be reached by cloud assistants. For desktop/local clients the existing mantecato-mcp stdio package remains available with a separate legacy API key." %} <a href="{% url 'api_key_list' %}">{% trans "Legacy API keys" %}</a></p>
+  </details>
+  <details class="ai-guide"><summary>{% trans "Set up with an agent" %}</summary>
+    <label for="ai-prompt">{% trans "Setup prompt — contains no credentials" %}</label><textarea id="ai-prompt" readonly rows="8">{{ agent_prompt }}</textarea><button type="button" data-ai-copy="ai-prompt">{% trans "Copy prompt" %}</button>
+  </details>
+  <details class="ai-guide"><summary>{% trans "Create a personal token" %}</summary>
+    <p>{% trans "For a client that accepts Bearer authentication. Read-only, site-specific, shown once, and expires without refresh." %}</p>
+    <form method="post" action="{% url 'ai_personal_token' %}" autocomplete="off">
+      {% csrf_token %}<input type="hidden" name="notice_hash" value="{{ notice_hash }}"><input type="hidden" name="notice_version" value="{{ notice_version }}">
+      <fieldset {% if not enabled %}disabled{% endif %}>
+        <label for="ai-token-name">{% trans "Connection name" %}</label><input id="ai-token-name" name="name" maxlength="120" required>
+        <label for="ai-days">{% trans "Expires in days (1–90)" %}</label><input id="ai-days" name="days" type="number" min="1" max="90" value="30" required>
+        <fieldset class="ai-choices"><legend>{% trans "Sites — choose explicitly" %}</legend>{% for site in websites %}<label><input type="checkbox" name="sites" value="{{ site.id }}">{{ site.name }}</label>{% empty %}<p>{% trans "You have no accessible sites. Add a site before creating a connection." %}</p>{% endfor %}</fieldset>
+        <fieldset class="ai-choices"><legend>{% trans "Read-only permissions" %}</legend>{% for code,label in scope_choices %}<label><input type="checkbox" name="scopes" value="{{ code }}" checked>{{ label }}</label>{% endfor %}</fieldset>
+        <p class="ai-note">{{ notice }}</p><p>{% trans "Check your provider's data-sharing, training and retention settings." %}</p>
+        <label class="ai-check"><input type="checkbox" name="acknowledged" value="yes" required>{% trans "I authorize this client to read the selected sites. Revocation cannot recall results already received by the client." %}</label>
+        <button class="ai-primary" type="submit">{% trans "Create read-only token" %}</button>
+      </fieldset>
+    </form>
+  </details>
+  <p class="ai-note">{% trans "Connecting does not upload the database. Approval allows future automatic requests. The external service may retain the results it requests." %}</p>
+  {% elif tab == 'connections' %}
+  <div class="ai-heading"><h3>{% trans "Connected services and access" %}</h3><a href="{% url 'ai_connections' %}?tab=connect">{% trans "Add connector" %}</a></div>
+  {% for connection in connections %}
+  <article class="ai-box">
+    <div class="ai-heading"><div><h4>{{ connection.name }}</h4><p>{{ connection.state_label }} — {{ connection.method }}</p></div><span class="ai-status ai-state-{{ connection.state }}">{{ connection.state_label }}</span></div>
+    <p>{% trans "Approved sites:" %} {% for site in connection.sites %}{{ site.name }}{% if not forloop.last %}, {% endif %}{% empty %}{% trans "None" %}{% endfor %}</p>
+    <p class="ai-note">{% trans "Last used:" %} {% if connection.last_used_at %}{{ connection.last_used_at|date:"Y-m-d H:i" }} UTC{% else %}{% trans "Not used yet" %}{% endif %} · {% trans "Expires:" %} {{ connection.expires_at|date:"Y-m-d H:i" }} UTC</p>
+    {% if connection.active %}<details data-ai-access><summary>{% trans "Manage access" %}</summary>
+      <p>{% trans "Only remove access here. More sites or permissions require a new connection and explicit approval." %}</p>
+      <form method="post" action="{% url 'ai_reduce' connection.id %}">{% csrf_token %}
+        <fieldset class="ai-choices"><legend>{% trans "Sites" %}</legend>{% for site in connection.sites %}<label><input name="sites" type="checkbox" value="{{ site.id }}" checked>{{ site.name }}</label>{% endfor %}</fieldset>
+        <fieldset class="ai-choices"><legend>{% trans "Permissions" %}</legend>{% for code,label in connection.scopes %}<label><input name="scopes" type="checkbox" value="{{ code }}" checked>{{ label }}</label>{% endfor %}</fieldset>
+        <button type="submit">{% trans "Save reduced access" %}</button>
+      </form>
+      <details class="ai-revoke"><summary>{% trans "Revoke connection" %}</summary><p>{% trans "Stops future access and refresh. Previously received results cannot be recalled." %}</p><form method="post" action="{% url 'ai_revoke' connection.id %}">{% csrf_token %}<button type="submit" class="ai-danger">{% trans "Confirm revocation" %}</button></form></details>
+    </details>{% endif %}
+  </article>
+  {% empty %}<div class="ai-empty"><h3>{% trans "No connections on this page" %}</h3><p>{% trans "Add a connector and approve a site to get started." %}</p></div>{% endfor %}
+  {% elif tab == 'activity' %}
+  <h3>{% trans "Recent activity" %}</h3><p>{% trans "Requests and access changes, kept up to 90 days. No prompts, analytics values, tokens or IP addresses." %}</p>
+  <div class="ai-activity">{% for operation in operations %}<article><div><h4>{{ operation.action }}</h4><p>{{ operation.name }}</p></div><div><span {% if operation.code != 'success' %}class="ai-error"{% endif %}>{{ operation.outcome }}</span>{% if operation.code != 'success' %}<small>{{ operation.code }}</small>{% endif %}<time>{{ operation.time|date:"Y-m-d H:i" }} UTC</time></div></article>{% empty %}<p class="ai-empty">{% trans "No recent activity. A connection must be used before requests appear here." %}</p>{% endfor %}</div>
+  {% endif %}
+  {% if tab != 'connect' %}<nav class="ai-pagination" aria-label="{% trans 'Pagination' %}"><a href="{% url 'ai_connections' %}?tab={{ tab }}">{% trans "First page" %}</a>{% if next_cursor %}<a href="{% url 'ai_connections' %}?tab={{ tab }}&amp;cursor={{ next_cursor|urlencode }}" hx-get="{% url 'ai_connections' %}?tab={{ tab }}&amp;cursor={{ next_cursor|urlencode }}" hx-select="#ai-content" hx-target="#ai-content" hx-swap="outerHTML" hx-push-url="true">{% trans "Next" %}</a>{% endif %}</nav>{% endif %}
+  <p data-ai-copy-status role="status" aria-live="polite" data-success="{% trans 'Copied.' %}" data-failure="{% trans 'Copy unavailable. Select the text and copy manually.' %}"></p>
+</section>{% endlocaltime %}
+{% endblock %}
+{% block extra_scripts %}<script src="{% static 'js/ai-connections.js' %}" defer></script>{% endblock %}

@@ -1,0 +1,13 @@
+{% load i18n static %}
+<!doctype html><html lang="{{ LANGUAGE_CODE|default:'en' }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% trans "Approve AI connection" %} — Mantecato</title><link rel="stylesheet" href="{% static 'css/theme.css' %}"><link rel="stylesheet" href="{% static 'css/ai-connections.css' %}"></head>
+<body class="ai-consent"><main>
+<p>Mantecato</p><h1>{% trans "Approve read-only access" %}</h1>
+<p><strong>{{ client_name }}</strong> {% trans "is requesting access." %}</p><p>{% trans "Declared client name; verify the callback host before approving:" %} <strong>{{ client_host }}</strong></p>
+<p>{% trans "Approval allows future automatic requests; it does not upload your database." %}</p><p class="ai-note">{{ notice }}</p>
+<form method="post" action="{% url 'ai_consent' %}">{% csrf_token %}<input type="hidden" name="request_id" value="{{ request_id }}"><input type="hidden" name="notice_hash" value="{{ notice_hash }}"><input type="hidden" name="notice_version" value="{{ notice_version }}">
+<fieldset class="ai-choices"><legend>{% trans "Choose sites explicitly" %}</legend>{% for site in sites %}<label><input type="checkbox" name="sites" value="{{ site.id }}">{{ site.name }}</label>{% empty %}<p>{% trans "No accessible sites. Do not approve this request." %}</p>{% endfor %}</fieldset>
+<fieldset class="ai-choices"><legend>{% trans "Read-only permissions" %}</legend>{% for code,label in requested_scopes %}<label><input type="checkbox" name="scopes" value="{{ code }}" checked>{{ label }}</label>{% endfor %}</fieldset>
+<label class="ai-check"><input type="checkbox" name="acknowledged" value="yes">{% trans "I authorize this client to read the selected sites and understand that the recipient may retain results." %}</label>
+<button type="submit" name="approve" value="yes" class="ai-primary">{% trans "Approve selected access" %}</button><button type="submit" name="approve" value="no">{% trans "Deny" %}</button>
+</form><p>{% trans "No write or admin access. To expand access later, authorize a new connection." %}</p>
+</main></body></html>

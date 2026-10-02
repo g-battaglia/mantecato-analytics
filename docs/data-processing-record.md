@@ -8,7 +8,10 @@
 >
 > **Roles (GDPR Art. 4 / 24/28):** Mantecato is self-hosted. The site operator
 > running the instance is the **data controller**; Mantecato is the software, not a
-> third-party processor — no data leaves the operator's own infrastructure.
+> third-party processor. Default collector operation does not export analytics;
+> optional operator-authorized AI connections can disclose requested aggregates
+> to an external client/provider. Review recipient terms, roles and transfers
+> separately; there is no blanket no-sharing/no-transfer promise after activation.
 > **This is engineering-for-compliance documentation, not legal advice.**
 
 ## 1. Fixed privacy posture (not configurable)
@@ -82,20 +85,38 @@ startup never run maintenance; successful daily scheduling must be monitored.
 | `content_groups` | `["topic:guides","format:tutorial"]` | **No only for static, topic-only page labels** | Optional labels declared by the site owner on the tracker tag (`data-groups`), ≤ 12 labels of ≤ 96 chars. Mantecato normalises but does not inspect or redact their meaning; visitor-derived values or personal data must not be sent |
 | `visitor_key` | 64-hex HMAC | **Pseudonymous** while the month's salt lives; **anonymous** once NULLed (≤13 months) | The only per-person field; a salted dedup digest, not an IP/UA, not reversible without the salt |
 
-### 4.2 Supporting tables
+### 4.2 Supporting analytics tables
 - `visitor_salt` — the per-month random salt; **deleted** at month end.
 - `visitor_day_state` / `visitor_scope_state` — ephemeral counters; deleted at rollup.
 - `visitor_daily` / `visitor_period` — **permanent anonymous aggregates** (integer
   counts of unique visitors, visits, bounces, pageviews, seconds). No per-person field.
 
-## 5. What is explicitly NOT collected
+### 4.3 Optional AI authentication and activity
+
+These are operator-account records, not visitor identifiers. Four additive models
+store declared client identity/validated callbacks; original and reduced site/scopes,
+account reference, expiry/use/verification/revocation and canonical consent notice
+version/hash; domain/type-separated credential digests and grant metadata; and
+operation/site UUID/time/outcome audit. Raw tokens/codes, prompts, analytics inputs
+or results and IP addresses are not recorded. Operator consent/login uses signed
+session/CSRF cookies separately from the cookie-free collector.
+
+Audit expires after at most 90 days through offline cleanup. Expired credentials,
+requests, soft-deleted accounts' grants and unused clients are cleaned in bounded
+batches. Grant enforcement checks expiry, current owner/admin access, scope,
+password changes and soft deletion on each read. See [AI connections](AI-CONNECTIONS.md).
+
+## 5. What the default collector explicitly does NOT collect
 
 No cookies or any device storage; no IP address stored; no full User-Agent stored;
 no `session_id`/`visit_id`; no persistent or cross-day/cross-site identifier; no
 cross-site or cross-device tracking; no fingerprinting; no precise geolocation
 (country only); no full referrer URL, UTM parameters or click IDs; no event payload
 / form contents / custom properties; no name, email, account or device IDs; no data
-sale or sharing; no third-party processors; no international transfer (self-hosted).
+sale or sharing by the default collector. Optional AI sharing and operator-added
+integrations require a separate recipient/transfer assessment. Paths, titles and
+labels may contain personal data supplied by the site; Mantecato cannot guarantee
+anonymity of arbitrary text. Do not send personal or visitor-derived labels.
 
 ## 6. Legal basis (summary — details in privacy.md)
 
@@ -118,6 +139,7 @@ sale or sharing; no third-party processors; no international transfer (self-host
   and permanent. The monthly salt is destroyed after offline finalization leaves
   no site's state for that period. Run `manage.py rollup_visitors` in a separate
   daily job and monitor success/backlog; deployment is not a retention scheduler.
+  `run_daily_maintenance` runs visitor maintenance and AI cleanup independently.
 - **Data-subject rights:** because no stored field identifies a person (the digest is
   pseudonymous only while the month's salt exists, then anonymous), there is normally
   no data to access/erase/rectify per-person; document this position. Honour GPC/opt-out.
@@ -130,4 +152,5 @@ sale or sharing; no third-party processors; no international transfer (self-host
 1. Provide this record + [privacy.md](privacy.md).
 2. Show the published privacy notice (template in privacy.md) and the LIA/DPIA.
 3. Confirm `rollup_visitors` runs daily (retention) and GPC is honoured.
-4. Confirm no third parties, no sale/share, no advertising integration were added.
+4. Record any optional AI recipients or other integrations and assess their data
+   sharing, processing terms and transfers; never assume self-hosting prevents them.
