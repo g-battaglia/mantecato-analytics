@@ -9,7 +9,10 @@ No release version/tag or publication date is assigned by this document.
 Connect an external AI assistant to aggregate analytics without giving it admin
 access. The new **Settings → AI connections** workbench brings provider setup,
 explicit permission approval, connection management and recent activity into
-one place. Remote AI access is **opt-in and disabled by default**.
+one place. Remote MCP/OAuth is available when a valid canonical public URL is
+configured; no global enable flag is required. Without configuration, remote
+access is unavailable and collection continues normally. Each client still needs
+explicit site-scoped approval.
 
 Provider-specific guides cover Claude, ChatGPT, Gemini, Grok and generic remote
 MCP clients. Availability depends on the provider's account, plan, region and
@@ -107,15 +110,18 @@ the tracker heartbeat.
 
 Before upgrade, restore-test a backup and review rollback. Apply migrations once
 and use the documented ASGI runtime settings; `CONN_MAX_AGE` is forced to zero
-under ASGI. Keep `AI_CONNECTIONS_ENABLED=False` until daily cleanup, restrictive
-hosts/CSRF, proxy trust, representative resource-capped staging and rollback are
-verified. Configure the **environment variable** `FORWARDED_ALLOW_IPS` with the
+under ASGI. Before configuring the public URL, verify daily cleanup, restrictive
+hosts/CSRF, proxy trust, representative resource-capped staging and rollback.
+On ASGI, an already-configured valid public URL makes MCP/OAuth available on
+upgrade; existing valid grants remain usable without a separate enable flag.
+Configure the **environment variable** `FORWARDED_ALLOW_IPS` with the
 actual trusted proxy IPs/CIDRs; do not guess a platform range or blindly use `*`.
 Django's `USE_SECURE_PROXY_SSL_HEADER` alone does not configure MCP HTTPS.
 
 During an authorized staging/activation check, an unauthenticated POST through
 the canonical public HTTPS `/mcp` endpoint must return a 401 challenge, not
-`404 ai_access_unavailable`. Feature-off 404 is intentional. A health/login check
+`404 ai_access_unavailable`. An absent/invalid public URL intentionally returns
+404 without affecting the rest of the application. A health/login check
 alone does not validate the MCP path. Verify provider account availability and
 real interoperability separately.
 
@@ -131,6 +137,6 @@ scoped accessibility checks are not a production SLA or whole-product certificat
 
 Keep these notes as a draft until PR review is resolved and an operator approves
 the release revision, version/tag, backup/rollback and staging evidence. A code
-release must not imply automatic production activation, cron provisioning or
-provider-account certification. Publish the matching announcement only after the
+release must clearly state that a configured public URL makes MCP/OAuth
+available; it does not provision cron, approve clients or certify provider accounts. Publish the matching announcement only after the
 release is actually available.

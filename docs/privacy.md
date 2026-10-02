@@ -9,8 +9,9 @@
 
 The **tracked-site collector** is cookieless. Operator login/consent uses signed
 session and CSRF cookies separately. Optional [AI connections](AI-CONNECTIONS.md)
-are disabled by default and can share requested aggregates with an explicitly
-chosen external assistant; they do not change tracker collection or formulas.
+are available when the server's public URL is configured and require explicit
+site-scoped approval before sharing requested aggregates with an external
+assistant; they do not change tracker collection or formulas.
 
 Mantecato's tracker is **cookieless** and stores **no persistent per-person identifier**.
 It measures aggregate web traffic and produces **exact** daily counts of

@@ -57,7 +57,6 @@ def test_provider_marks_are_local_small_and_passive():
 @pytest.fixture(autouse=True)
 def ai_settings(settings):
     settings.DEBUG = True
-    settings.AI_CONNECTIONS_ENABLED = True
     settings.MANTECATO_PUBLIC_URL = "https://analytics.example.test"
     settings.SECURE_SSL_REDIRECT = False
     from apps.ai_connections.policy import _rate
@@ -271,6 +270,10 @@ def test_consent_is_browser_bound_one_time_and_explicit(browser, account):
 
 @pytest.mark.parametrize("days", ["30", "never", None])
 def test_personal_token_show_once_and_csrf(browser, account, days):
+    setup = browser.get("/settings/ai-connections/")
+    assert setup.context["configured"]
+    assert setup.context["endpoint"] == "https://analytics.example.test/mcp"
+    assert b'<option value="never">Never expires</option>' in setup.content
     response = browser.post(
         "/settings/ai-connections/tokens/",
         {
@@ -796,16 +799,47 @@ def test_activity_is_lazy_paginated_and_escaped(browser, account):
 
 
 @pytest.mark.parametrize("lifetime", [timedelta(days=30), None], ids=["finite", "no-expiry"])
-def test_flag_off_still_allows_management_but_denies_new_tokens(
-    browser, account, settings, lifetime
+@pytest.mark.parametrize("origin", ["", "not-a-url", "https://analytics.example.test/path"])
+def test_unconfigured_origin_allows_management_but_denies_new_tokens(
+    browser, account, settings, lifetime, origin
 ):
     conn, raw = personal(account, lifetime=lifetime)
-    settings.AI_CONNECTIONS_ENABLED = False
-    assert browser.get("/settings/ai-connections/").status_code == 200
-    assert browser.post(f"/settings/ai-connections/{conn.pk}/revoke/").status_code == 302
-    assert browser.post("/settings/ai-connections/tokens/", {}).status_code == 400
-    with pytest.raises(AccessDenied):
+    settings.MANTECATO_PUBLIC_URL = origin
+    page = browser.get("/settings/ai-connections/")
+    assert page.status_code == 200
+    assert not page.context["configured"] and page.context["endpoint"] == ""
+    assert b"MANTECATO_PUBLIC_URL" in page.content
+    setup = browser.get("/settings/ai-connections/?tab=connect")
+    assert b"<fieldset disabled>" in setup.content
+    assert raw.encode() not in page.content
+    assert (
+        browser.post(
+            f"/settings/ai-connections/{conn.pk}/reduce/",
+            {"sites": [str(account[1].pk)], "scopes": ["sites:read"]},
+        ).status_code
+        == 302
+    )
+    response = browser.post("/settings/ai-connections/tokens/", {})
+    assert response.status_code == 400
+    assert response.context["action_error"] == "public_endpoint_required"
+    assert AIConnection.objects.count() == 1
+    with pytest.raises(AccessDenied, match="public_endpoint_required"):
         verify(raw)
+    assert browser.post(f"/settings/ai-connections/{conn.pk}/revoke/").status_code == 302
+    assert not OAuthCredential.objects.filter(connection=conn).exists()
+
+
+@pytest.mark.parametrize("lifetime", [timedelta(days=30), None], ids=["finite", "no-expiry"])
+def test_same_origin_restores_existing_credentials_without_extending_expiry(
+    account, settings, lifetime
+):
+    conn, raw = personal(account, lifetime=lifetime)
+    original_expiry = conn.expires_at
+    settings.MANTECATO_PUBLIC_URL = ""
+    with pytest.raises(AccessDenied, match="public_endpoint_required"):
+        verify(raw)
+    settings.MANTECATO_PUBLIC_URL = "https://analytics.example.test"
+    assert verify(raw)[1].expires_at == original_expiry
 
 
 def test_authenticated_reads_and_settings_have_bounded_query_counts(browser, account):

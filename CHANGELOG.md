@@ -9,7 +9,7 @@ AI connections publication drafts: [release notes](docs/releases/ai-connections-
 and [GitHub announcement](docs/releases/ai-connections-announcement.md). These are not a published release.
 
 ### Added
-- **Opt-in AI connections** — Settings → AI connections provides browser consent,
+- **Scoped AI connections** — Settings → AI connections provides browser consent,
   explicitly selected sites/read scopes, rotating OAuth credentials, show-once
   personal tokens, access reduction/revocation and metadata-only activity.
 - **Optional no-expiry personal AI tokens** — explicit “Never expires” choice,
@@ -46,10 +46,13 @@ and [GitHub announcement](docs/releases/ai-connections-announcement.md). These a
   the tracker and dropped on ingest, now lands as a single group.
 
 ### Changed
+- AI connections need no global enable flag: a valid canonical public URL makes
+  remote MCP/OAuth available. An absent/invalid URL leaves it unavailable without
+  affecting collection; each client still needs explicit site-scoped consent.
 - Web manifests use native Gunicorn 26 ASGI with bounded connections, keep-alive
   disabled, explicit HTTP/1 close signalling and per-request ORM cleanup. Remote
-  AI access remains disabled by default; legacy WSGI hosting remains available
-  without remote MCP.
+  AI access requires a configured public origin; legacy WSGI hosting remains
+  available without remote MCP.
 - HTTPS scheme adaptation for MCP is restricted to explicitly trusted proxy
   IPs/CIDRs from `FORWARDED_ALLOW_IPS`; Django proxy configuration is separate.
 - Visitor maintenance is offline only: no collector/web-startup rollup or digest

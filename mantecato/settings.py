@@ -199,8 +199,7 @@ SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 # Detailed per-request summaries are opt-in; individual slow/error logs remain.
 QUERY_SUMMARY_LOG = _env_bool("QUERY_SUMMARY_LOG", default=False)
 
-# Remote AI access is opt-in; legacy API keys and stdio clients are independent.
-AI_CONNECTIONS_ENABLED = _env_bool("AI_CONNECTIONS_ENABLED", default=False)
+# Remote AI access needs a canonical public origin; legacy API/stdio are independent.
 MANTECATO_PUBLIC_URL = os.environ.get("MANTECATO_PUBLIC_URL", "").rstrip("/")
 AI_MAX_ACTIVE_CONNECTIONS = 20
 AI_MAX_REQUEST_BYTES = 32_768

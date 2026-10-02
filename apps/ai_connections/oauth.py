@@ -40,7 +40,6 @@ from apps.ai_connections.policy import (
     live_connection,
     lookup,
     public_origin,
-    require_enabled,
     resource,
     revoke_locked,
     scopes,
@@ -62,7 +61,7 @@ def error(code, status=400):
 
 
 def public_request(request):
-    require_enabled()
+    public_origin()
     if not settings.DEBUG and not request.is_secure():
         raise AccessDenied("insecure_transport")
     if (
@@ -218,7 +217,6 @@ def server():
 @require_GET
 def authorization_metadata(request):
     try:
-        require_enabled()
         origin = public_origin()
         return no_store(
             JsonResponse(
@@ -245,7 +243,6 @@ def authorization_metadata(request):
 @require_GET
 def resource_metadata(request):
     try:
-        require_enabled()
         return no_store(
             JsonResponse(
                 {
@@ -359,7 +356,7 @@ def consent(request):
     if request.method not in ("GET", "POST"):
         return error("invalid_request", 405)
     try:
-        require_enabled()
+        public_origin()
         if request.method == "GET":
             row, raw = pending(request)
             client = OAuthClient.objects.get(pk=row.payload["client_id"])

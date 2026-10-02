@@ -3,7 +3,11 @@
 Settings → AI connections links external assistants to aggregate analytics. It
 is not a chat interface: Mantecato does not call models or store provider API keys.
 The Django/HTMX page provides setup instructions, scoped connections and activity.
-Remote access is **disabled by default**.
+Remote MCP/OAuth is available when a valid canonical public URL is configured;
+there is no global enable flag. Without a configured URL, remote access is
+unavailable and the rest of the application continues normally. Configuring the
+server does not approve any client: every connection requires explicit sites,
+read scopes and consent.
 
 ## Operator setup
 
@@ -26,11 +30,12 @@ races; Django request thread contexts also close ORM sockets on cancellation.
 Local concurrent-load regressions exercise both paths.
 Legacy `mantecato.wsgi:application` remains available **without remote MCP**.
 
-Before enabling access, establish a restore-tested backup, rollback path, daily
-cleanup, restrictive host validation and correct HTTPS/proxy trust. Configure:
+Before configuring the public URL, establish a restore-tested backup, rollback
+path, daily cleanup, restrictive host validation and correct HTTPS/proxy trust.
+A valid public URL makes MCP/OAuth available immediately on ASGI, including for
+existing valid credentials on upgrade. Leave it blank when unused. Configure:
 
 ```dotenv
-AI_CONNECTIONS_ENABLED=False
 MANTECATO_PUBLIC_URL=https://analytics.example.com
 ALLOWED_HOSTS=analytics.example.com
 CSRF_TRUSTED_ORIGINS=https://analytics.example.com
@@ -65,14 +70,16 @@ forwarded-header mode. Unknown proxy topology can put clients in a shared bucket
 configure the real hop count and network trust, or enforce suitable limits at
 the trusted edge. This does not change tracker IP extraction or persist audit IPs.
 
-The switch blocks new grants and MCP reads, but leaves existing inventory and
-revocation available. Changing the canonical origin or `SECRET_KEY` invalidates
-AI credentials and requires reconnection. Password changes and user soft deletion
+An absent/invalid public URL blocks new grants and MCP reads, but leaves existing
+inventory, access reduction and revocation available. For an operational shutdown,
+unset the URL and restart workers; credentials are not deleted and can become
+usable again if the same origin is restored. Changing the canonical origin or
+`SECRET_KEY` invalidates AI credentials and requires reconnection. Password changes and user soft deletion
 also invalidate them. Legacy REST keys retain their existing semantics.
 
-Only after operational checks should an operator set `AI_CONNECTIONS_ENABLED=True`
-and restart the web workers. Shipping a manifest does not deploy, activate a
-cron, connect a provider account, or establish interoperability.
+After operational checks, configure `MANTECATO_PUBLIC_URL` and restart the web
+workers. No other enable setting is required. Shipping a manifest does not deploy,
+activate a cron, connect a provider account, or establish interoperability.
 
 ### Public-proxy activation check
 
@@ -82,7 +89,7 @@ platform address range. `*` is appropriate only if network controls ensure that
 scheme headers. It is not a safe default for a directly reachable backend.
 
 In an authorized staging/activation check, after the other operational gates pass,
-start workers with `AI_CONNECTIONS_ENABLED=True` and the intended public origin.
+start workers with the intended canonical public origin configured.
 Then send an **unauthenticated** request through the real public HTTPS endpoint:
 
 ```bash
@@ -92,11 +99,12 @@ curl --max-time 10 --include --request POST https://analytics.example.com/mcp
 Expect **401** with a `WWW-Authenticate` challenge pointing to the canonical
 HTTPS protected-resource metadata URL. This verifies routing and scheme detection,
 not OAuth completion or provider interoperability. **404 `ai_access_unavailable`**
-can mean disabled/misconfigured AI access or an untrusted proxy reporting HTTP;
-with the flag off, 404 is intentional and cannot prove HTTPS detection. A working
+can mean an absent/invalid public URL or an untrusted proxy reporting HTTP;
+with no configured origin, 404 is intentional and cannot prove HTTPS detection. A working
 login or health endpoint does not prove the MCP path is configured correctly.
-If the check fails, keep/revert the feature off and correct proxy trust; do not
-remove the HTTPS guard. Local native-worker tests cover trusted, untrusted and
+If the check fails, correct proxy trust before approving external clients; unset
+the public URL and restart workers if access must be suspended. Do not remove
+the HTTPS guard. Local native-worker tests cover trusted, untrusted and
 missing forwarded headers, but do not certify Railway or Render networking.
 
 ## Connect an assistant
@@ -145,7 +153,8 @@ by default. Filter personal tokens and OAuth connectors; each entry shows its
 name, method, approved sites, creation, last use, expiry (including Never expires)
 and state. **Revoke token** is directly visible, outside the access editor, with
 an inline confirmation; expired/account-invalidated entries can also be revoked.
-Metadata remains listable when AI access is disabled; secrets cannot be recovered.
+Metadata remains listable when the public URL is unconfigured; secrets cannot
+be recovered.
 New tokens appear immediately in the inventory alongside their show-once panel.
 Existing finite tokens keep their original expiry; create a newly approved token
 with Never expires rather than silently extending an existing grant.
@@ -254,9 +263,9 @@ trials or representative constrained-resource staging evidence.
 Before public rollout, measure HTTP percentiles, CPU/RSS, database connections,
 locks and temporary I/O under concurrent MCP, ingestion and maintenance on the
 intended resource limits. Restore-test the backup and monitor the first 24 hours.
-For rollback disable AI access first, preserve the additive tables, and restore
-the previous runtime/revision if needed. Do not drop authentication tables or
+For rollback unset the public URL and restart workers first, preserve the additive
+tables, and restore the previous runtime/revision if needed. Do not drop authentication tables or
 alter analytics retention as an emergency workaround. Older AI-enabled revisions
-that assume non-null expiry are not compatible with no-expiry rows: disable AI
-and use a null-aware revision, or explicitly revoke those grants before reverting
-to such code. Do not silently assign them a placeholder expiry.
+that assume non-null expiry are not compatible with no-expiry rows: keep remote
+access unconfigured and use a null-aware revision, or explicitly revoke those
+grants before reverting to such code. Do not silently assign them a placeholder expiry.

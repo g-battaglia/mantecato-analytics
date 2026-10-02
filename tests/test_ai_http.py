@@ -110,7 +110,6 @@ def http_server(tmp_path, request):
         DATABASE_URL=database_url,
         TEST_DATABASE_URL=database_url,
         DEBUG="True",
-        AI_CONNECTIONS_ENABLED="True",
         MANTECATO_PUBLIC_URL=origin,
         SECURE_SSL_REDIRECT="False",
         ALLOWED_HOSTS="127.0.0.1",
@@ -210,6 +209,46 @@ def test_production_mcp_requires_https_from_trusted_proxy(
         )
     else:
         assert response.json()["error"] == "ai_access_unavailable"
+
+
+@pytest.mark.parametrize(
+    "http_server",
+    [
+        {"MANTECATO_PUBLIC_URL": ""},
+        {"MANTECATO_PUBLIC_URL": "https://analytics.example.test/path"},
+    ],
+    indirect=True,
+    ids=["no-public-url", "invalid-public-url"],
+)
+def test_unconfigured_ai_keeps_web_runtime_healthy_without_new_grants(http_server):
+    origin, cookie, _, _ = http_server
+    with httpx.Client(base_url=origin, timeout=10) as client:
+        assert client.get("/health/").status_code == 200
+        assert client.get("/login/").status_code == 200
+        assert client.get("/api/script").status_code == 200
+        assert client.options("/api/send").status_code == 204
+        response = client.post("/mcp")
+        assert response.status_code == 404
+        assert response.json()["error"] == "ai_access_unavailable"
+        assert response.headers["cache-control"] == "no-store"
+        for path in (
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-protected-resource/mcp",
+        ):
+            response = client.get(path)
+            assert response.status_code == 404
+            assert response.json()["error"] == "public_endpoint_required"
+        for path in ("/oauth/register/", "/oauth/token/"):
+            response = client.post(path)
+            assert response.status_code == 400
+            assert response.json()["error"] == "public_endpoint_required"
+        client.cookies.set("sessionid", cookie)
+        response = client.get("/settings/ai-connections/")
+        assert response.status_code == 200
+        assert "MANTECATO_PUBLIC_URL" in response.text
+        assert "<fieldset disabled>" in response.text
+        response = client.post("/settings/ai-connections/tokens/", follow_redirects=False)
+        assert response.status_code == 403  # Missing CSRF remains rejected even unconfigured.
 
 
 def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):

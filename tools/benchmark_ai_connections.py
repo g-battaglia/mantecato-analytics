@@ -128,14 +128,12 @@ def main():
         env = {
             **os.environ,
             "DEBUG": "True",
-            "AI_CONNECTIONS_ENABLED": "True" if mode == "mixed" else "False",
-            "MANTECATO_PUBLIC_URL": origin,
+            "MANTECATO_PUBLIC_URL": origin if mode == "mixed" else "",
             "CONN_MAX_AGE": "0",
             "SECURE_SSL_REDIRECT": "False",
         }
         if mode == "mixed":
             settings.DEBUG = True
-            settings.AI_CONNECTIONS_ENABLED = True
             settings.MANTECATO_PUBLIC_URL = origin
             with transaction.atomic():
                 client = OAuthClient.objects.create(

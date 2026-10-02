@@ -29,8 +29,6 @@ services:
         generateValue: true
       - key: DEBUG
         value: "False"
-      - key: AI_CONNECTIONS_ENABLED
-        value: "False"
       - key: CONN_MAX_AGE
         value: "0"
       - key: MANTECATO_PUBLIC_URL

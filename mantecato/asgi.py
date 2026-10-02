@@ -24,16 +24,17 @@ def create_application():
     from apps.ai_connections.proxy import TrustedProxyScheme
 
     proxy_scheme = TrustedProxyScheme.from_environment()
+    from apps.ai_connections.policy import AccessDenied, public_origin
+
     remote = None
-    if settings.AI_CONNECTIONS_ENABLED:
-        from apps.ai_connections.policy import AccessDenied
+    try:
+        public_origin()
         from apps.ai_connections.transport import create_transport
 
-        try:
-            _, remote = create_transport()
-        except AccessDenied:
-            # Misconfigured AI access must never stop collection/health.
-            remote = None
+        _, remote = create_transport()
+    except AccessDenied:
+        # Unconfigured AI access must never stop collection/health or load the SDK.
+        pass
 
     async def application(scope, receive, send):
         if scope["type"] == "http" and scope.get("http_version", "1.1") in ("1.0", "1.1"):
@@ -67,7 +68,7 @@ def create_application():
                 return
             scope = proxy_scheme(scope)
             insecure = not settings.DEBUG and scope.get("scheme") != "https"
-            if remote is None or not settings.AI_CONNECTIONS_ENABLED or insecure:
+            if remote is None or insecure:
                 response = JsonResponse({"error": "ai_access_unavailable"}, status=404)
                 await send(
                     {

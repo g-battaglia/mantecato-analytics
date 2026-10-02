@@ -54,8 +54,7 @@ which are resolved when the template is deployed.
 | `GUNICORN_TIMEOUT` | `120` | – | Worker timeout in seconds. |
 | `GUNICORN_WORKER_CONNECTIONS` | `16` | – | Native ASGI HTTP connection bound per worker. |
 | `CONN_MAX_AGE` | `0` | – | Required under ASGI; no persistent Django DB connections. |
-| `AI_CONNECTIONS_ENABLED` | `False` | – | Keep disabled until operational AI rollout checks pass. |
-| `MANTECATO_PUBLIC_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` | – | Canonical public origin for remote MCP/OAuth. |
+| `MANTECATO_PUBLIC_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` | AI | Canonical public origin; configuring it makes remote MCP/OAuth available. Leave unset when unused. |
 | `TIME_ZONE` | `UTC` | – | e.g. `Europe/Rome`. |
 | `LANGUAGE_CODE` | `en-us` | – | UI language. |
 | `INIT_ADMIN_USER` | `admin` | – | Username of the first admin. |
@@ -192,9 +191,10 @@ See [performance/recovery](PERFORMANCE.md) for rollout checks and benchmark limi
 
 ## F. Optional remote AI connections
 
-Keep `AI_CONNECTIONS_ENABLED=False` initially. The matching additive migrations
-create authentication/audit tables only. Before activation, restore-test backups,
-verify daily cleanup, HTTPS, host/CSRF validation and rollback. Gunicorn must see
+Remote MCP/OAuth is available when a valid `MANTECATO_PUBLIC_URL` is configured;
+there is no separate enable flag. Leave the URL unset when unused. The matching
+additive migrations create authentication/audit tables only. Before configuration,
+restore-test backups, verify daily cleanup, HTTPS, host/CSRF validation and rollback. Gunicorn must see
 an HTTPS MCP scope through the public proxy: configure the `FORWARDED_ALLOW_IPS`
 environment variable with the actual trusted proxy addresses, consistently with
 Django's proxy SSL header. Gunicorn 26 ASGI does not translate forwarded scheme
@@ -212,7 +212,7 @@ MCP sees `scope.scheme=http`. MCP then intentionally returns **404
 `USE_SECURE_PROXY_SSL_HEADER=True`. This is a conditional misconfiguration risk,
 not proof that either platform's existing deployment is broken. See the
 [public-proxy activation check](AI-CONNECTIONS.md#public-proxy-activation-check);
-keep the feature off until it passes. Do not use `FORWARDED_ALLOW_IPS=*` as an
+do not approve external client access until it passes. Do not use `FORWARDED_ALLOW_IPS=*` as an
 unconditional workaround.
 
 The manifest uses keep-alive 0 following isolated native-worker compatibility

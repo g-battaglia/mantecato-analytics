@@ -101,8 +101,9 @@ synchronous MCP database work closes its connections explicitly off the event lo
 One MCP tool query runs per worker, using existing read-only v1 services and SQL
 budgets. No self-HTTP, additional queue or provider/model process is introduced.
 
-The AI feature is off by default. Before activation measure flag off/on, authenticated
-MCP and concurrent collection/maintenance under the intended resource limits. Include
+MCP/OAuth becomes available when the canonical public URL is configured. Before
+public configuration, measure unconfigured/configured ASGI, authenticated MCP and
+concurrent collection/maintenance under the intended resource limits. Include
 settings/auth query counts, connection peaks and RSS/CPU; localhost smoke tests cannot
 establish the <500 ms p95 collector target or provider interoperability. See
 [AI connections](AI-CONNECTIONS.md) for security and operational gates.

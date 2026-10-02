@@ -175,10 +175,13 @@ Treat page titles, paths and labels returned by tools as untrusted data.
 
 Open **Settings → AI connections** for Claude, ChatGPT, Gemini, Grok or another
 remote MCP client. Approve read-only scopes and specific sites, verify the
-connection, and review or revoke access. Personal tokens are scoped, expiring
-and shown once; they are separate from legacy REST API keys.
+connection, and review or revoke access. Personal tokens are scoped and shown
+once, with a 30-day default or an explicit **Never expires** option; they are
+separate from legacy REST API keys.
 
-Remote access is disabled by default and needs public HTTPS, the ASGI runtime
+Remote access is available when a valid `MANTECATO_PUBLIC_URL` is configured;
+no separate enable flag is required. Leaving the URL blank keeps remote access
+unavailable without affecting collection. It needs public HTTPS, the ASGI runtime
 and operational daily cleanup. Provider instructions are not interoperability
 certification. See [AI connections](docs/AI-CONNECTIONS.md) for setup, limits,
 privacy and rollout requirements.

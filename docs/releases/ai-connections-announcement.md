@@ -31,9 +31,11 @@ Setup guides are included for Claude, ChatGPT, Gemini, Grok and other remote MCP
 clients. Provider availability varies by account and workspace; these guides do
 not imply endorsement or certified interoperability with every account.
 
-AI access is **off by default**. Operators must verify HTTPS/proxy trust, backups,
-daily cleanup, staging and rollback before enabling it. Your assistant may retain
-the results it reads, so check its data-sharing and retention settings before
+AI connections are available when the server's public URL is configured, with
+no separate enable flag. No configured URL means no remote access. Operators must
+verify HTTPS/proxy trust, backups, daily cleanup, staging and rollback before
+configuration, and each client needs explicit site-scoped approval. Your assistant
+may retain the results it reads, so check its data-sharing and retention settings before
 connecting. Revocation stops future access; it cannot recall existing copies.
 
 Read the [setup and security guide](../AI-CONNECTIONS.md) and

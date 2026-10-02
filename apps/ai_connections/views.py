@@ -28,8 +28,8 @@ from apps.ai_connections.policy import (
     create_connection,
     fingerprint,
     issue,
+    public_origin,
     reduce_owned,
-    require_enabled,
     resource,
     revoke_owned,
 )
@@ -106,7 +106,7 @@ def page_context(request, new_token=None):
         endpoint = resource()
     except AccessDenied:
         endpoint = ""
-    enabled = settings.AI_CONNECTIONS_ENABLED and bool(endpoint)
+    configured = bool(endpoint)
     # Form responses must not inherit a cursor/filter that can hide a newly
     # committed token or turn its one-time delivery into a false failure.
     browse = request.method == "GET" and not new_token
@@ -187,10 +187,10 @@ def page_context(request, new_token=None):
         "websites": websites,
         "selected_website": "",
         "scope_choices": list(SCOPES.items()),
-        "enabled": enabled,
+        "configured": configured,
         "endpoint": endpoint,
         "local_endpoint": urlsplit(endpoint).hostname in ("localhost", "127.0.0.1", "::1"),
-        "claude_url": claude_url(endpoint) if enabled else "",
+        "claude_url": claude_url(endpoint) if configured else "",
         "providers": PROVIDERS,
         "agent_prompt": agent_prompt(endpoint),
         "new_token": new_token,
@@ -213,7 +213,7 @@ def index(request):
 @require_POST
 def create_personal_token(request):
     try:
-        require_enabled()
+        public_origin()
         if (
             request.POST.get("acknowledged") != "yes"
             or request.POST.get("notice_hash") != NOTICE_HASH

@@ -35,7 +35,6 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def security_grant(settings):
     settings.DEBUG = True
-    settings.AI_CONNECTIONS_ENABLED = True
     settings.MANTECATO_PUBLIC_URL = "https://analytics.example.test"
     from apps.ai_connections.policy import _rate
 

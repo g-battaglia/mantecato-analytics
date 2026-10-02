@@ -79,12 +79,6 @@ def resource():
     return public_origin() + "/mcp"
 
 
-def require_enabled():
-    if not settings.AI_CONNECTIONS_ENABLED:
-        raise AccessDenied("feature_disabled")
-    public_origin()
-
-
 def digest(raw, kind):
     return hmac.new(
         settings.SECRET_KEY.encode(), ("ai:" + kind + ":" + raw).encode(), hashlib.sha256
@@ -233,9 +227,8 @@ def lookup(raw, kind):
     return OAuthCredential.objects.filter(digest=digest(raw, kind), kind=kind).first()
 
 
-def live_connection(connection_id, lock=False, enabled=True):
-    if enabled:
-        require_enabled()
+def live_connection(connection_id, lock=False):
+    public_origin()
     q = AIConnection.objects.select_related("user", "client")
     if lock:
         q = q.select_for_update(of=("self",))
@@ -256,7 +249,7 @@ def validate_connection(conn):
 
 
 def verify(raw):
-    require_enabled()
+    public_origin()
     if not isinstance(raw, str) or len(raw) > 256 or not raw.startswith("mai_"):
         raise AccessDenied("authentication_required")
     credential = (

@@ -26,7 +26,7 @@
     <div class="ai-copy-row"><input id="ai-new-token" type="password" value="{{ new_token.token }}" readonly autocomplete="off" data-ai-secret><button type="button" data-ai-copy="ai-new-token">{% trans "Copy token" %}</button><button type="button" data-ai-reveal="ai-new-token">{% trans "Show / hide" %}</button></div>
   </section>
   {% endif %}
-  {% if not enabled %}<p class="ai-alert" role="status">{% trans "Remote AI connections are disabled or the public endpoint is not configured. Existing access can still be reviewed and revoked below." %}</p>{% endif %}
+  {% if not configured %}<p class="ai-alert" role="status">{% trans "This server's public HTTPS address is not configured correctly. Ask the administrator to set MANTECATO_PUBLIC_URL. Existing access can still be reviewed and revoked below." %}</p>{% endif %}
   {% if tab == 'connect' %}
   <div class="ai-section-heading"><h3>{% trans "Choose your assistant" %}</h3><p>{% trans "Select a provider to see how to connect." %}</p></div>
   <nav class="ai-providers" aria-label="{% trans 'Choose your assistant' %}">
@@ -79,7 +79,7 @@
         <p>{% trans "Read-only, site-specific and shown once. This is a Mantecato access token, not a model API key." %}</p>
         <form method="post" action="{% url 'ai_personal_token' %}" autocomplete="off">
           {% csrf_token %}<input type="hidden" name="notice_hash" value="{{ notice_hash }}"><input type="hidden" name="notice_version" value="{{ notice_version }}">
-          <fieldset {% if not enabled %}disabled{% endif %}>
+          <fieldset {% if not configured %}disabled{% endif %}>
             <div class="ai-form-row"><div><label for="ai-token-name">{% trans "Token name" %}</label><input id="ai-token-name" name="name" maxlength="120" placeholder="{% trans 'e.g. My desktop assistant' %}" required></div><div><label for="ai-days">{% trans "Expiration" %}</label><select id="ai-days" name="days" required><option value="1">{% trans "1 day" %}</option><option value="7">{% trans "7 days" %}</option><option value="30" selected>{% trans "30 days" %}</option><option value="90">{% trans "90 days" %}</option><option value="never">{% trans "Never expires" %}</option></select></div></div>
             <p class="ai-note ai-expiry-note">{% trans "Without expiry, the token stays valid until revoked or invalidated by an account/server change. Keep it secure and revoke it when no longer needed." %}</p>
             <fieldset class="ai-choices"><legend>{% trans "Sites — choose explicitly" %}</legend>{% for site in websites %}<label><input type="checkbox" name="sites" value="{{ site.id }}">{{ site.name }}</label>{% empty %}<p>{% trans "You have no accessible sites. Add a site before creating a connection." %}</p>{% endfor %}</fieldset>

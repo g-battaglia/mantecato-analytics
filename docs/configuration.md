@@ -17,8 +17,7 @@ tracked-site collector policy.
 | `QUERY_SUMMARY_LOG` | `False`; detailed production request SQL summaries are opt-in |
 | `CONN_MAX_AGE` | `0`; persistent Django connections must remain disabled under ASGI |
 | `GUNICORN_WORKER_CONNECTIONS` | `16` in the shipped ASGI manifests |
-| `AI_CONNECTIONS_ENABLED` | `False`; enables new grants and remote MCP reads |
-| `MANTECATO_PUBLIC_URL` | Canonical HTTPS origin, e.g. `https://analytics.example.com` |
+| `MANTECATO_PUBLIC_URL` | Canonical HTTPS origin, e.g. `https://analytics.example.com`; makes remote MCP/OAuth available when valid; leave blank when unused |
 | `AI_MCP_ALLOWED_ORIGINS` | Optional additional exact browser origins, comma-separated |
 | `FORWARDED_ALLOW_IPS` | Environment IP/CIDR allowlist read by Gunicorn and the MCP-only HTTPS scheme adapter; default loopback only |
 
