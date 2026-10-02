@@ -53,8 +53,8 @@ and [GitHub announcement](docs/releases/ai-connections-announcement.md). These a
   disabled, explicit HTTP/1 close signalling and per-request ORM cleanup. Remote
   AI access requires a configured public origin; legacy WSGI hosting remains
   available without remote MCP.
-- HTTPS scheme adaptation for MCP is restricted to explicitly trusted proxy
-  IPs/CIDRs from `FORWARDED_ALLOW_IPS`; Django proxy configuration is separate.
+- MCP shares Django's HTTPS detection through `USE_SECURE_PROXY_SSL_HEADER`,
+  removing the separate proxy-IP allowlist and custom scheme adapter.
 - Visitor maintenance is offline only: no collector/web-startup rollup or digest
   expiry. An operational daily scheduler is required; analytics formulas,
   monthly deduplication, 396-day digest retention and tracker behavior are unchanged.

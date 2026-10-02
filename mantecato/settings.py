@@ -421,7 +421,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool(
 SECURE_HSTS_PRELOAD = _env_bool("SECURE_HSTS_PRELOAD", default=False)
 
 # For deployments behind a reverse proxy that terminates SSL (e.g. nginx,
-# Cloudflare), trust the X-Forwarded-Proto header to detect HTTPS.
+# Cloudflare), trust the X-Forwarded-Proto header to detect HTTPS for Django and MCP.
 if _env_bool("USE_SECURE_PROXY_SSL_HEADER", default=False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 

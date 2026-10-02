@@ -25,7 +25,6 @@ from apps.ai_connections.policy import (
     validate_redirect,
     verify,
 )
-from apps.ai_connections.proxy import TrustedProxyScheme
 from apps.ai_connections.tools import execute
 from apps.core.models import MantecatoUser, Website
 
@@ -125,61 +124,6 @@ def test_registration_rejects_empty_reserved_redirect_parameter(security_grant):
 )
 def test_valid_redirects(uri):
     assert validate_redirect(uri) == uri
-
-
-@pytest.mark.parametrize(
-    "allowed,peer",
-    [
-        ("127.0.0.1", "127.0.0.1"),
-        ("192.0.2.0/24", "192.0.2.10"),
-        ("::1", "::1"),
-        ("*", "192.0.2.10"),
-    ],
-)
-def test_proxy_scheme_trusts_only_explicit_peers_without_rewriting_identity(allowed, peer):
-    scope = {
-        "type": "http",
-        "scheme": "http",
-        "client": (peer, 1234),
-        "headers": [(b"x-forwarded-proto", b"https"), (b"x-forwarded-for", b"203.0.113.1")],
-    }
-    adapted = TrustedProxyScheme(allowed)(scope)
-    assert adapted == {**scope, "scheme": "https"}
-    assert scope["scheme"] == "http"
-    assert adapted["client"] == scope["client"]
-
-
-@pytest.mark.parametrize(
-    "values",
-    [[], [b"http"], [b"https,http"], [b"https", b"http"], [b"https", b"https"], [b"HTTPS"]],
-)
-def test_proxy_scheme_rejects_ambiguous_or_missing_proto(values):
-    scope = {
-        "type": "http",
-        "scheme": "http",
-        "client": ("127.0.0.1", 1234),
-        "headers": [(b"x-forwarded-proto", value) for value in values],
-    }
-    assert TrustedProxyScheme("127.0.0.1")(scope) is scope
-
-
-@pytest.mark.parametrize("allowed", ["", "192.0.2.10", "not-an-address", "*,invalid"])
-def test_proxy_scheme_fails_closed_for_untrusted_or_invalid_configuration(allowed):
-    scope = {
-        "type": "http",
-        "scheme": "http",
-        "client": ("127.0.0.1", 1234),
-        "headers": [(b"x-forwarded-proto", b"https")],
-    }
-    assert TrustedProxyScheme(allowed)(scope) is scope
-
-
-def test_proxy_scheme_preserves_direct_tls_and_requires_an_ip_peer():
-    adapter = TrustedProxyScheme("*")
-    scope = {"type": "http", "scheme": "https", "client": ("127.0.0.1", 1234)}
-    assert adapter(scope) is scope
-    scope = {"type": "http", "scheme": "http", "headers": [(b"x-forwarded-proto", b"https")]}
-    assert adapter(scope) is scope
 
 
 @pytest.mark.parametrize(

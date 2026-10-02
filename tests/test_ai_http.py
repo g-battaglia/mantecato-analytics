@@ -114,7 +114,7 @@ def http_server(tmp_path, request):
         SECURE_SSL_REDIRECT="False",
         ALLOWED_HOSTS="127.0.0.1",
         CONN_MAX_AGE="0",
-        FORWARDED_ALLOW_IPS="127.0.0.1,::1",
+        USE_SECURE_PROXY_SSL_HEADER="False",
     )
     env.update(getattr(request, "param", {}))
     log = (tmp_path / "http.log").open("w+")
@@ -186,14 +186,15 @@ PROXY_ENV = {
 @pytest.mark.parametrize(
     "http_server,forwarded_proto,expected_status",
     [
-        ({**PROXY_ENV, "FORWARDED_ALLOW_IPS": "127.0.0.1"}, "https", 401),
-        ({**PROXY_ENV, "FORWARDED_ALLOW_IPS": "192.0.2.10"}, "https", 404),
-        ({**PROXY_ENV, "FORWARDED_ALLOW_IPS": "127.0.0.1"}, None, 404),
+        ({**PROXY_ENV, "USE_SECURE_PROXY_SSL_HEADER": "True"}, "https", 401),
+        (PROXY_ENV, "https", 404),
+        ({**PROXY_ENV, "USE_SECURE_PROXY_SSL_HEADER": "True"}, None, 404),
+        ({**PROXY_ENV, "USE_SECURE_PROXY_SSL_HEADER": "True"}, "http", 404),
     ],
     indirect=["http_server"],
-    ids=["trusted-tls-proxy", "untrusted-forwarded-header", "missing-forwarded-header"],
+    ids=["django-proxy-https", "proxy-disabled", "missing-header", "plain-http"],
 )
-def test_production_mcp_requires_https_from_trusted_proxy(
+def test_production_mcp_uses_django_proxy_configuration(
     http_server, forwarded_proto, expected_status
 ):
     origin, _, _, _ = http_server

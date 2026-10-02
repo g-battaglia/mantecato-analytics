@@ -33,11 +33,8 @@ preDeployCommand = "uv run python manage.py migrate --noinput && uv run python m
 # Railway inietta $PORT; gunicorn deve ascoltare su 0.0.0.0:$PORT.
 # Native Gunicorn 26 ASGI/lifespan, bounded connections; keep-alive disabled
 # after isolated SDK/Django HTTP tests found stalls with persistent sockets.
-# For upstream TLS, set FORWARDED_ALLOW_IPS in service Variables to verified
-# proxy IPs/CIDRs. Gunicorn and the MCP-only scheme adapter read this env value
-# (default: loopback only). Native ASGI does not translate forwarded TLS itself;
-# Django's USE_SECURE_PROXY_SSL_HEADER does not set the MCP ASGI scheme.
-# Keep AI disabled until /mcp is verified through the public HTTPS proxy.
+# For Railway TLS termination, set USE_SECURE_PROXY_SSL_HEADER=True in service
+# Variables. Django and remote MCP share this HTTPS configuration.
 startCommand = "uv run gunicorn mantecato.asgi:application --worker-class asgi --worker-connections ${GUNICORN_WORKER_CONNECTIONS:-16} --keep-alive 0 --bind 0.0.0.0:$PORT --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --access-logfile - --access-logformat '%(m)s %(s)s %(D)s' --error-logfile -"
 # /health/ esegue SELECT 1 sul DB: timeout generoso per il primo boot del Postgres.
 healthcheckPath = "/health/"

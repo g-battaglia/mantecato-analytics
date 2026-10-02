@@ -85,9 +85,8 @@ budgets and no redirects or proxy use.
 
 Native Gunicorn 26 ASGI is configured with bounded connections, keep-alive off,
 explicit HTTP/1 connection-closure signalling and ORM cleanup on request
-finalization/cancellation. An MCP-only HTTPS scheme adapter accepts a single exact
-forwarded HTTPS value only from environment-allowlisted proxy IPs/CIDRs; it does
-not rewrite Host/client IP or change collector/Django paths.
+finalization/cancellation. MCP uses Django's HTTPS detection and proxy header
+configuration; Host/client IP and collector/Django scopes are preserved.
 
 Further concurrency regressions cover skipped locked cleanup rows and revocation
 racing with family deletion: cleanup reports incomplete `busy` outcomes while
@@ -114,9 +113,9 @@ under ASGI. Before configuring the public URL, verify daily cleanup, restrictive
 hosts/CSRF, proxy trust, representative resource-capped staging and rollback.
 On ASGI, an already-configured valid public URL makes MCP/OAuth available on
 upgrade; existing valid grants remain usable without a separate enable flag.
-Configure the **environment variable** `FORWARDED_ALLOW_IPS` with the
-actual trusted proxy IPs/CIDRs; do not guess a platform range or blindly use `*`.
-Django's `USE_SECURE_PROXY_SSL_HEADER` alone does not configure MCP HTTPS.
+Set `USE_SECURE_PROXY_SSL_HEADER=True` behind a trusted reverse proxy that sets
+`X-Forwarded-Proto`. This setting is shared by Django, OAuth and MCP; a separate
+MCP proxy-IP allowlist is no longer required.
 
 During an authorized staging/activation check, an unauthenticated POST through
 the canonical public HTTPS `/mcp` endpoint must return a 401 challenge, not

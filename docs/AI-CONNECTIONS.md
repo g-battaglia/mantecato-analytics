@@ -41,26 +41,20 @@ ALLOWED_HOSTS=analytics.example.com
 CSRF_TRUSTED_ORIGINS=https://analytics.example.com
 CONN_MAX_AGE=0
 GUNICORN_WORKER_CONNECTIONS=16
+# When HTTPS terminates at the reverse proxy:
+USE_SECURE_PROXY_SSL_HEADER=True
 ```
 
 Use a canonical origin without a path, query, fragment or credentials. Only HTTPS
 is accepted, except DEBUG loopback tests. The endpoint is exactly
 `https://analytics.example.com/mcp`, **without a trailing slash**. The
-MCP boundary must see `scope.scheme=https` in production. Gunicorn 26's native
-ASGI parser reports socket TLS and does **not** translate forwarded scheme
-headers, even with its proxy allowlist configured. A narrow **MCP-only** adapter
-reads `FORWARDED_ALLOW_IPS` from the environment and accepts one exact
-`X-Forwarded-Proto: https` header only from a trusted IP/CIDR. It never rewrites
-Host/client IP or changes collector/Django requests; missing, duplicate or chained
-values fail closed. Direct socket HTTPS is preserved.
-
-Set the **environment variable**, not only a Gunicorn CLI override, to the actual
-trusted proxy addresses when TLS terminates upstream. Default is `127.0.0.1,::1`,
-not arbitrary platform proxy peers. Configure Django's proxy SSL header
-consistently: `USE_SECURE_PROXY_SSL_HEADER=True` applies only inside Django and
-cannot change the MCP ASGI scope. Never trust arbitrary forwarding
-headers on an internet-accessible backend. Test `/mcp` through the public proxy
-before activation; incorrect scheme/host configuration denies access.
+MCP boundary requires HTTPS in production. MCP uses Django's request scheme
+resolution, so dashboard, OAuth and MCP share `USE_SECURE_PROXY_SSL_HEADER`.
+Set it to `True` when a reverse proxy terminates HTTPS and sets
+`X-Forwarded-Proto`; leave it disabled for direct connections. Enable proxy header
+trust only when the proxy sanitizes that header and controls backend ingress.
+There is no separate MCP proxy-IP list. Scheme normalization applies only to the
+MCP scope; Host, client IP and collector/Django scopes are preserved.
 
 OAuth rate limits are bounded, per-worker best-effort limits, not global quotas.
 Their keys hash the client IP resolved by the hardened existing resolver when
@@ -83,11 +77,6 @@ activate a cron, connect a provider account, or establish interoperability.
 
 ### Public-proxy activation check
 
-Use verified TLS proxy IPs or CIDRs for `FORWARDED_ALLOW_IPS`, not a guessed
-platform address range. `*` is appropriate only if network controls ensure that
-**only trusted proxies** can reach Gunicorn and those proxies sanitize secure
-scheme headers. It is not a safe default for a directly reachable backend.
-
 In an authorized staging/activation check, after the other operational gates pass,
 start workers with the intended canonical public origin configured.
 Then send an **unauthenticated** request through the real public HTTPS endpoint:
@@ -99,13 +88,13 @@ curl --max-time 10 --include --request POST https://analytics.example.com/mcp
 Expect **401** with a `WWW-Authenticate` challenge pointing to the canonical
 HTTPS protected-resource metadata URL. This verifies routing and scheme detection,
 not OAuth completion or provider interoperability. **404 `ai_access_unavailable`**
-can mean an absent/invalid public URL or an untrusted proxy reporting HTTP;
+can mean an absent/invalid public URL or an HTTP request without configured proxy
+HTTPS detection;
 with no configured origin, 404 is intentional and cannot prove HTTPS detection. A working
 login or health endpoint does not prove the MCP path is configured correctly.
-If the check fails, correct proxy trust before approving external clients; unset
-the public URL and restart workers if access must be suspended. Do not remove
-the HTTPS guard. Local native-worker tests cover trusted, untrusted and
-missing forwarded headers, but do not certify Railway or Render networking.
+If the check fails, check the public URL and `USE_SECURE_PROXY_SSL_HEADER`.
+Local native-worker tests cover enabled/disabled proxy headers and plain HTTP;
+real provider interoperability requires a successful authenticated MCP operation.
 
 ## Connect an assistant
 

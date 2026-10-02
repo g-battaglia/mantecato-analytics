@@ -44,7 +44,6 @@ def test_env_example_documents_production_vars() -> None:
     assert "ALLOWED_HOSTS=" in env_example
     assert "CSRF_TRUSTED_ORIGINS=" in env_example
     assert "USE_SECURE_PROXY_SSL_HEADER=" in env_example
-    assert "FORWARDED_ALLOW_IPS=127.0.0.1,::1" in env_example
     assert "UMAMI_DATABASE_URL=" in env_example
     assert "UMAMI_IMPORT_ON_DEPLOY=" in env_example
 
@@ -58,17 +57,6 @@ def test_render_blueprint_is_portable_and_private() -> None:
     assert "preDeployCommand:" not in blueprint
     assert "UMAMI_DATABASE_URL" in blueprint
     assert 'value: "Europe/Rome"' in blueprint
-
-
-def test_asgi_proxy_trust_is_operator_supplied_not_unconditionally_open() -> None:
-    blueprint = (ROOT / "render.yaml").read_text()
-    assert "- key: FORWARDED_ALLOW_IPS\n        sync: false" in blueprint
-    railway = (ROOT / "railway.toml").read_text()
-    assert "FORWARDED_ALLOW_IPS" in railway
-    for text in (blueprint, railway, (ROOT / ".env.example").read_text()):
-        assert "FORWARDED_ALLOW_IPS=*" not in text
-        assert '--forwarded-allow-ips "*"' not in text
-        assert "--forwarded-allow-ips '*'" not in text
 
 
 def test_production_database_url_ignores_test_database_url() -> None:

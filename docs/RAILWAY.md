@@ -47,8 +47,7 @@ which are resolved when the template is deployed.
 | `DJANGO_SETTINGS_MODULE` | `mantecato.settings` | ✅ | Explicit, so gunicorn/wsgi resolve settings reliably. |
 | `ALLOWED_HOSTS` | `${{RAILWAY_PUBLIC_DOMAIN}}` | ✅ | Railway public domain (no scheme). Comma-separated list supported. |
 | `CSRF_TRUSTED_ORIGINS` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` | ✅ | **Must** include the `https://` scheme — otherwise login POSTs fail with CSRF 403. |
-| `USE_SECURE_PROXY_SSL_HEADER` | `True` | ✅ | Railway terminates TLS upstream. Without this, `SECURE_SSL_REDIRECT` causes an HTTPS redirect loop. Does not set the native MCP ASGI scheme. |
-| `FORWARDED_ALLOW_IPS` | *(verified proxy IPs/CIDRs)* | AI | Environment allowlist read by Gunicorn and the MCP scheme adapter; absent means loopback only. Verify the TLS proxy trust boundary before enabling MCP. |
+| `USE_SECURE_PROXY_SSL_HEADER` | `True` | ✅ | Recognizes Railway's HTTPS proxy header for Django, OAuth and remote MCP. |
 | `RAILPACK_PYTHON_VERSION` | `3.12` | ⚙️ | Pins the Python version. Railpack otherwise defaults to 3.13.x. |
 | `GUNICORN_WORKERS` | `2` | – | Worker processes (tune to your plan's RAM). |
 | `GUNICORN_TIMEOUT` | `120` | – | Worker timeout in seconds. |
@@ -194,26 +193,16 @@ See [performance/recovery](PERFORMANCE.md) for rollout checks and benchmark limi
 Remote MCP/OAuth is available when a valid `MANTECATO_PUBLIC_URL` is configured;
 there is no separate enable flag. Leave the URL unset when unused. The matching
 additive migrations create authentication/audit tables only. Before configuration,
-restore-test backups, verify daily cleanup, HTTPS, host/CSRF validation and rollback. Gunicorn must see
-an HTTPS MCP scope through the public proxy: configure the `FORWARDED_ALLOW_IPS`
-environment variable with the actual trusted proxy addresses, consistently with
-Django's proxy SSL header. Gunicorn 26 ASGI does not translate forwarded scheme
-headers itself; Mantecato's MCP-only adapter does so for allowlisted peers only,
-without changing collector/Django requests or client IPs. Do not accept arbitrary
-forwarding headers on a directly exposed backend.
-Gunicorn and the adapter read this directly from service Variables; `railway.toml`
-does not provision those variables. Render's blueprint exposes it as an
-operator-supplied value instead of hardcoding an unverified proxy network.
+restore-test backups, verify daily cleanup, HTTPS, host/CSRF validation and rollback.
+Railway terminates TLS upstream, so set `USE_SECURE_PROXY_SSL_HEADER=True` in the
+web service Variables. Dashboard, OAuth and MCP then use the same HTTPS detection;
+there is no separate MCP proxy-IP allowlist. `railway.toml` does not provision
+service Variables.
 
-TLS terminates at the platform proxy, so its connection to Gunicorn may be HTTP.
-Unless that peer is trusted, the adapter ignores `X-Forwarded-Proto: https` and
-MCP sees `scope.scheme=http`. MCP then intentionally returns **404
-`ai_access_unavailable`**, even if Django login/health work with
-`USE_SECURE_PROXY_SSL_HEADER=True`. This is a conditional misconfiguration risk,
-not proof that either platform's existing deployment is broken. See the
-[public-proxy activation check](AI-CONNECTIONS.md#public-proxy-activation-check);
-do not approve external client access until it passes. Do not use `FORWARDED_ALLOW_IPS=*` as an
-unconditional workaround.
+After restart, an unauthenticated POST to the public `/mcp` endpoint should return
+401 with the OAuth resource challenge. A 404 `ai_access_unavailable` indicates a
+missing/invalid public URL or an HTTP request without proxy HTTPS detection. See
+the [public-proxy activation check](AI-CONNECTIONS.md#public-proxy-activation-check).
 
 The manifest uses keep-alive 0 following isolated native-worker compatibility
 tests. Test the chosen proxy and representative load rather than assuming a

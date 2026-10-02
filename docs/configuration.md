@@ -19,15 +19,14 @@ tracked-site collector policy.
 | `GUNICORN_WORKER_CONNECTIONS` | `16` in the shipped ASGI manifests |
 | `MANTECATO_PUBLIC_URL` | Canonical HTTPS origin, e.g. `https://analytics.example.com`; makes remote MCP/OAuth available when valid; leave blank when unused |
 | `AI_MCP_ALLOWED_ORIGINS` | Optional additional exact browser origins, comma-separated |
-| `FORWARDED_ALLOW_IPS` | Environment IP/CIDR allowlist read by Gunicorn and the MCP-only HTTPS scheme adapter; default loopback only |
+| `USE_SECURE_PROXY_SSL_HEADER` | `False`; enable behind a proxy that sets `X-Forwarded-Proto`; shared by Django, OAuth and remote MCP |
 
 MCP uses the official v1 SDK on Gunicorn 26's native ASGI worker. Deployment
 commands explicitly disable keep-alive after isolated compatibility tests found
 persistent-socket stalls. WSGI remains available for legacy deployments without
-remote MCP. Gunicorn 26 ASGI does not translate forwarded scheme headers; the
-MCP-only adapter honors a single HTTPS header from an environment-allowlisted
-peer. Django's proxy SSL setting is separate. Verify the real proxy boundary
-before enabling public access; never assume a wildcard trust setting is safe.
+remote MCP. MCP uses Django's HTTPS detection, including its configured proxy
+header. Enable proxy header trust only when a trusted reverse proxy controls
+backend ingress and sanitizes that header.
 [AI connections](AI-CONNECTIONS.md) documents audience, scopes,
 credential lifetimes, OAuth discovery, bounded concurrency and provider guides.
 The CLI and local stdio MCP package keep their existing API-key configuration.

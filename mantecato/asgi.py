@@ -1,10 +1,12 @@
 """Django and the official MCP SDK share one bounded ASGI web service."""
 
 import os
+from io import BytesIO
 
 from asgiref.sync import ThreadSensitiveContext, sync_to_async
 from django.conf import settings
 from django.core.asgi import get_asgi_application
+from django.core.handlers.asgi import ASGIRequest
 from django.db import connections
 from django.http import JsonResponse
 
@@ -21,9 +23,6 @@ def create_application():
         from django.contrib.staticfiles.handlers import ASGIStaticFilesHandler
 
         django_app = ASGIStaticFilesHandler(django_app)
-    from apps.ai_connections.proxy import TrustedProxyScheme
-
-    proxy_scheme = TrustedProxyScheme.from_environment()
     from apps.ai_connections.policy import AccessDenied, public_origin
 
     remote = None
@@ -66,7 +65,8 @@ def create_application():
             if scope["type"] == "websocket":
                 await send({"type": "websocket.close", "code": 1008})
                 return
-            scope = proxy_scheme(scope)
+            # Share Django's HTTPS/proxy configuration with the MCP transport.
+            scope = {**scope, "scheme": ASGIRequest(scope, BytesIO()).scheme}
             insecure = not settings.DEBUG and scope.get("scheme") != "https"
             if remote is None or insecure:
                 response = JsonResponse({"error": "ai_access_unavailable"}, status=404)

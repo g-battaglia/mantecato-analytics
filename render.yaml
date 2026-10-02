@@ -53,11 +53,6 @@ services:
         value: "False"
       - key: USE_SECURE_PROXY_SSL_HEADER
         value: "True"
-      # Native Gunicorn 26 ASGI needs the MCP-only scheme adapter for proxy TLS.
-      # Both read this env allowlist; it is separate from Django's proxy header.
-      # Supply verified proxy IPs/CIDRs; do not default to trusting every peer.
-      - key: FORWARDED_ALLOW_IPS
-        sync: false
       - key: PYTHON_VERSION
         value: "3.12.0"
       - key: TIME_ZONE
