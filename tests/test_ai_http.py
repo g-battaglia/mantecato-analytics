@@ -11,14 +11,14 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
-import httpx
+import httpx2 as httpx
 import pytest
 from django.db import connection
 from django.test import Client
 from mcp import ClientSession
 from mcp.client.auth import OAuthClientProvider
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.auth import OAuthClientMetadata
+from mcp.shared.auth import AuthorizationCodeResult, OAuthClientMetadata
 
 from apps.ai_connections.policy import NOTICE_HASH, NOTICE_VERSION
 from apps.core.models import MantecatoUser, Website
@@ -141,6 +141,8 @@ def http_server(tmp_path, request):
             "2",
             "--keep-alive",
             "0",
+            "--forwarded-allow-ips",
+            "",
             "--bind",
             f"127.0.0.1:{port}",
             "--access-logfile",
@@ -285,7 +287,11 @@ def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):
                 )
                 assert response.status_code == 302, response.text
                 query = parse_qs(urlsplit(response.headers["location"]).query)
-                callback = query["code"][0], query["state"][0]
+                callback = AuthorizationCodeResult(
+                    code=query["code"][0],
+                    state=query["state"][0],
+                    iss=query.get("iss", [None])[0],
+                )
 
             async def receive_callback():
                 return callback
@@ -304,28 +310,28 @@ def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):
             )
             async with (
                 httpx.AsyncClient(auth=auth, timeout=15) as client,
-                streamable_http_client(origin + "/mcp", http_client=client) as (read, write, _),
+                streamable_http_client(origin + "/mcp", http_client=client) as (read, write),
                 ClientSession(read, write) as session,
             ):
                 await session.initialize()
                 tools = await session.list_tools()
                 assert len(tools.tools) == 8
-                assert all(tool.annotations.readOnlyHint for tool in tools.tools)
+                assert all(tool.annotations.read_only_hint for tool in tools.tools)
                 status = await session.call_tool("get_connection_status", {})
-                assert not status.isError
+                assert not status.is_error
                 stats = await session.call_tool(
                     "query_metrics",
                     {"website_id": site_id, "metrics": ["pageviews"], "range": "24h"},
                 )
-                assert not stats.isError
+                assert not stats.is_error
                 for search in (None, "synthetic"):
                     values = await session.call_tool(
                         "list_dimension_values",
                         {"website_id": site_id, "dimension": "url_path", "search": search},
                     )
-                    assert not values.isError
+                    assert not values.is_error
                 denied = await session.call_tool("list_sites", {})
-                assert denied.isError  # User reduced the advertised scope at consent.
+                assert denied.is_error  # User reduced the advertised scope at consent.
             assert storage.tokens and storage.tokens.refresh_token
             for _ in range(5):
                 async with (
@@ -333,11 +339,11 @@ def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):
                         headers={"Authorization": "Bearer " + storage.tokens.access_token},
                         timeout=15,
                     ) as client,
-                    streamable_http_client(origin + "/mcp", http_client=client) as (read, write, _),
+                    streamable_http_client(origin + "/mcp", http_client=client) as (read, write),
                     ClientSession(read, write) as session,
                 ):
                     await session.initialize()
-                    assert not (await session.call_tool("get_connection_status", {})).isError
+                    assert not (await session.call_tool("get_connection_status", {})).is_error
             script_response = await browser.get(origin + "/api/script")
             assert script_response.status_code == 200
             assert script_response.headers["connection"] == "close"
@@ -368,7 +374,7 @@ def test_sdk_oauth_discovery_pkce_tools_and_legacy_smoke(http_server):
             log.flush()
             log.seek(0)
             output = log.read()
-            assert storage.tokens.access_token not in output and callback[0] not in output
+            assert storage.tokens.access_token not in output and callback.code not in output
 
     asyncio.run(scenario())
 
@@ -519,13 +525,13 @@ def test_no_expiry_personal_token_authenticates_official_sdk_and_can_be_revoked(
         async def scenario():
             async with (
                 httpx.AsyncClient(headers={"Authorization": "Bearer " + raw}, timeout=15) as client,
-                streamable_http_client(origin + "/mcp", http_client=client) as (read, write, _),
+                streamable_http_client(origin + "/mcp", http_client=client) as (read, write),
                 ClientSession(read, write) as session,
             ):
                 await session.initialize()
                 assert len((await session.list_tools()).tools) == 8
                 result = await session.call_tool("get_connection_status", {})
-                assert not result.isError
+                assert not result.is_error
                 assert json.loads(result.content[0].text)["expires_at"] is None
 
         asyncio.run(scenario())

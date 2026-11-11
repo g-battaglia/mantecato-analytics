@@ -44,12 +44,14 @@ from core.mantecato_core.visitor_counting import (  # noqa: E402
     record_engagement,
     rollup_finished_periods,
 )
+from mantecato.memory import MemorySampler  # noqa: E402
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--visitors", type=int, default=1000)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--database-pid", type=int, help="Optional dedicated local DB root PID")
     args = parser.parse_args()
     host = connection.settings_dict.get("OPTIONS", {}).get(
         "host", connection.settings_dict.get("HOST", "")
@@ -58,8 +60,8 @@ def main() -> None:
         host.startswith("/") and Path(host).is_dir()
     ):
         parser.error("Use an explicitly configured loopback or local socket PostgreSQL DB")
-    if args.visitors < 1:
-        parser.error("--visitors must be positive")
+    if args.visitors < 1 or (args.database_pid is not None and args.database_pid < 1):
+        parser.error("--visitors and --database-pid must be positive")
     name = str(connection.settings_dict.get("NAME", ""))
     if not (name.startswith("test_") or name.endswith("_test")):
         parser.error("Use a dedicated test database named test_* or *_test")
@@ -97,7 +99,8 @@ def main() -> None:
 
         usage_before = resource.getrusage(resource.RUSAGE_SELF)
         before = time.perf_counter()
-        with connection.execute_wrapper(execute):
+        roots = (os.getpid(),) + ((args.database_pid,) if args.database_pid else ())
+        with MemorySampler(lambda: roots) as memory, connection.execute_wrapper(execute):
             action()
         usage_after = resource.getrusage(resource.RUSAGE_SELF)
         results[name] = {
@@ -115,6 +118,8 @@ def main() -> None:
             "sql_ms": round(db_ms, 2),
             "queries": queries,
             "peak_rss_native": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+            "memory": {**memory.result, "includes_database": bool(args.database_pid)},
+            "rss_note": "ru_maxrss is process-lifetime high-water; RSS sums double-count sharing",
         }
 
     try:

@@ -9,6 +9,14 @@ AI connections publication drafts: [release notes](docs/releases/ai-connections-
 and [GitHub announcement](docs/releases/ai-connections-announcement.md). These are not a published release.
 
 ### Added
+- **RAM-first diagnostics** — stdlib-only process/cgroup reports and continuously
+  sampled benchmark memory, with explicit RSS/PSS/cache accounting limits.
+- **Opt-in bounded ASGI analytics** — disabled by default pending staging
+  validation. When enabled, a per-process FIFO semaphore admits work before ORM
+  thread allocation; collector bypasses it. Full navigations get retry HTML,
+  HTMX/API/MCP get JSON, and MCP rejections preserve CORS/referrer policy.
+  Widgets and builder previews queue in the browser; previews coalesce stale
+  pending state. Widgets and lazy panels expose explicit retry on failure.
 - **Scoped AI connections** — Settings → AI connections provides browser consent,
   explicitly selected sites/read scopes, rotating OAuth credentials, show-once
   personal tokens, access reduction/revocation and metadata-only activity.
@@ -46,10 +54,17 @@ and [GitHub announcement](docs/releases/ai-connections-announcement.md). These a
   the tracker and dropped on ingest, now lands as a single group.
 
 ### Changed
+- Refresh all Python/npm package lockfiles and migrate to Django 6.1, Gunicorn 27
+  and MCP SDK 2. Preserve Django-controlled proxy trust, OAuth policy and transport
+  limits. TypeScript moves to 6.0.3; 7 is excluded because tsup's declaration API
+  is incompatible. See `docs/DEPENDENCIES.md` for versions and verification.
+- Section visitor distincts aggregate in PostgreSQL instead of Python sets;
+  overview avoids unused live reads and shares country counts. Memory/latency
+  trade-offs and unverified production budgets are explicit in `docs/RAM-FIRST.md`.
 - AI connections need no global enable flag: a valid canonical public URL makes
   remote MCP/OAuth available. An absent/invalid URL leaves it unavailable without
   affecting collection; each client still needs explicit site-scoped consent.
-- Web manifests use native Gunicorn 26 ASGI with bounded connections, keep-alive
+- Web manifests use native Gunicorn 27 ASGI with bounded connections, keep-alive
   disabled, explicit HTTP/1 close signalling and per-request ORM cleanup. Remote
   AI access requires a configured public origin; legacy WSGI hosting remains
   available without remote MCP.

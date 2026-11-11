@@ -873,7 +873,7 @@ def test_remote_tool_input_contracts_match_independent_stdio(account):
     independent = asyncio.run(mcp.list_tools())
     remote_tools = {tool.name: tool for tool in remote._tool_manager.list_tools()}
     for tool in independent:
-        assert remote_tools[tool.name].parameters == tool.inputSchema
+        assert remote_tools[tool.name].parameters == tool.input_schema
 
 
 def test_consent_started_by_another_account_is_rejected(browser, account):

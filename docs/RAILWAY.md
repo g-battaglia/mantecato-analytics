@@ -14,7 +14,7 @@ What the config does:
 - **Pre-deploy** — `migrate` runs once, before the new version receives traffic. The umami hook
   (`importumamienv`) and the optional admin bootstrap (`createuser`) run here too.
   Visitor maintenance is deliberately absent: provision the separate daily job in section E.
-- **Start** — Gunicorn 26 serves `mantecato.asgi:application` with native lifespan, 16
+- **Start** — Gunicorn 27 serves `mantecato.asgi:application` with native lifespan, 16
   connections per worker and keep-alive disabled on Railway's injected `$PORT`.
 - **Health check** — Railway probes `/health/`, which runs `SELECT 1` against PostgreSQL.
 

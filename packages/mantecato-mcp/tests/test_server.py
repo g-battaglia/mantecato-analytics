@@ -79,4 +79,4 @@ async def test_real_stdio_client_discovers_read_only_tools() -> None:
         "traffic_quality",
         "list_dimension_values",
     } <= names
-    assert all(tool.annotations and tool.annotations.readOnlyHint for tool in result.tools)
+    assert all(tool.annotations and tool.annotations.read_only_hint for tool in result.tools)

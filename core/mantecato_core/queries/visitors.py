@@ -32,7 +32,6 @@ from core.mantecato_core.visitor_counting import (
     event_visitor_stats,
     has_only_bot_filter,
     periods_in_range,
-    section_for_path,
     utc_day,
 )
 
@@ -133,8 +132,6 @@ def read_scope_visitors(
     """
     if not scope_values:
         return {}
-    from collections import defaultdict
-
     from apps.core.models import VisitorPeriod
     from core.mantecato_core.queries.event_querysets import (
         custom_event_queryset,
@@ -152,15 +149,9 @@ def read_scope_visitors(
         visitor_key__isnull=False
     )
     if scope == "section":
-        from core.mantecato_core.queries.stats import _normalize_url
+        from core.mantecato_core.scope_reads import section_uniques
 
-        seen: dict[str, set[str]] = defaultdict(set)
-        for url_path, vkey in ev_qs.values_list("url_path", "visitor_key").iterator():
-            sec = _normalize_url(section_for_path(url_path or "/", depth=depth), "smart")
-            if sec in want:
-                seen[sec].add(vkey)
-        for sec, keys in seen.items():
-            out[sec] = len(keys)
+        out.update(section_uniques(ev_qs, list(want), depth=depth))
     elif scope == "group":
         from core.mantecato_core.scope_reads import group_uniques
 

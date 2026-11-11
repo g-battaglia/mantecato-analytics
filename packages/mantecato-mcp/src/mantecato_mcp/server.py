@@ -8,14 +8,15 @@ import json
 import sys
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 
 from mantecato_mcp import __version__
 from mantecato_mcp._http import get, post
 from mantecato_mcp.config import ConfigError, load_config
 
-mcp = FastMCP("Mantecato", instructions="Read-only aggregate analytics from a Mantecato API.")
-_READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True}
+mcp = MCPServer("Mantecato", instructions="Read-only aggregate analytics from a Mantecato API.")
+_READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True)
 
 
 @mcp.tool(annotations=_READ_ONLY)

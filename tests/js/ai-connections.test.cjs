@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 const script = fs.readFileSync('static/js/ai-connections.js', 'utf8');
 
-function fixture() {
+function fixture({ personalToken = false } = {}) {
   const dom = new JSDOM(`<section id="ai-content"><input id="token" type="password" value="synthetic-secret" data-ai-secret>
     <button data-ai-copy="token">Copy</button><button data-ai-reveal="token">Show</button>
     <p data-ai-copy-status data-success="Copied" data-failure="Select manually"></p>
@@ -14,9 +14,9 @@ function fixture() {
     <a data-ai-provider="chatgpt" href="#ai-guide-chatgpt"></a>
     <details id="ai-guide-claude" data-ai-guide="claude" open></details>
     <details id="ai-guide-chatgpt" data-ai-guide="chatgpt"></details>
-    <details data-ai-method id="token-method"></details><details data-ai-method id="agent-method"></details>
+    <details data-ai-method id="${personalToken ? 'ai-personal-token' : 'token-method'}"></details><details data-ai-method id="agent-method"></details>
     </section>`,
-    { runScripts: 'outside-only', url: 'https://analytics.example.test/settings/ai-connections/' });
+    { runScripts: 'outside-only', url: 'https://analytics.example.test/settings/ai-connections/' + (personalToken ? '?tab=connect#ai-personal-token' : '') });
   dom.window.eval(script);
   return dom;
 }
@@ -92,10 +92,10 @@ test('provider enhancement initializes again after an HTMX replacement', async (
 });
 
 test('personal-token deep links open the creation method on load and replacement', async () => {
-  const dom = fixture();
+  // Configure the actual initial document before executing the script. jsdom 31
+  // may already be DOM-ready; reconfigure() is not a real navigation/load event.
+  const dom = fixture({ personalToken: true });
   const doc = dom.window.document;
-  dom.reconfigure({url: 'https://analytics.example.test/settings/ai-connections/?tab=connect#ai-personal-token'});
-  doc.getElementById('token-method').id = 'ai-personal-token';
   await tick();
   assert.equal(doc.getElementById('ai-personal-token').open, true);
   doc.getElementById('ai-content').outerHTML = '<section id="ai-content"><details id="ai-personal-token" data-ai-method></details></section>';

@@ -102,6 +102,7 @@ class OverviewView(AnalyticsBase):
             self.filters,
             granularity=self.granularity,
             lazy_tabs=True,
+            include_live_details=False,
         )
         return {
             "stats": data["stats"],

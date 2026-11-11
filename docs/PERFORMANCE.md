@@ -1,5 +1,8 @@
 # Lightweight operation and recovery
 
+For the RAM-first diagnostics, bounded analytics admission, reproducible memory
+experiments and rollout gates, see [RAM-first operation](RAM-FIRST.md).
+
 Mantecato uses Django, PostgreSQL and one terminating daily maintenance job.
 No queue, Redis, Celery or additional web workers are needed for visitor rollup.
 This guide contains only generic operating instructions and synthetic benchmark
@@ -71,7 +74,18 @@ Dashboard session totals, landings and visit buckets return SQL aggregates rathe
 than event lists, visitor sets or large start-event `IN` lists. Content-group
 uniques are grouped in SQL. Hidden page/channel panels load on demand, queue
 concurrent selections instead of dropping them, and retain their results only
-within the current page. Realtime queries only its three
+within the current page. ASGI analytics admission before ORM thread allocation
+is experimental and **off by default** (ANALYTICS_MAX_CONCURRENT=0). Only enable
+it after resource-capped staging validates capacity and wait budgets. When enabled,
+its FIFO semaphore is per process, not a shared queue across Gunicorn workers.
+Dashboard, REST and MCP share it; collector, preflight, health and static bypass it.
+Saturation returns retryable 503 (HTML for full browser navigations, JSON for
+HTMX/API/MCP), never a successful collector ACK. MCP rejections preserve CORS.
+Builder previews run serially and coalesce stale pending snapshots. Both custom
+widgets and lazy panels offer manual retry. WSGI does not use this gate.
+Section distincts aggregate in PostgreSQL instead of retaining Python visitor
+sets. The overview reuses country counts and skips two unused live datasets;
+legacy API consumers retain their live detail fields. Realtime queries only its three
 visible datasets, pauses in hidden tabs, drops overlapping polls and backs off
 on failures. Authorization and API-key revocation are not cached.
 
@@ -89,7 +103,7 @@ connections add four authentication/audit models only; no analytics schema chang
 
 ## Remote MCP runtime
 
-Gunicorn 26's native ASGI worker hosts Django and the official stateless MCP v1
+Gunicorn 27's native ASGI worker hosts Django and the official stateless MCP v2
 transport in one service. Keep-alive is disabled after isolated persistent-socket
 stalls. HTTP/1 responses also explicitly advertise `Connection: close`, avoiding
 client socket-reuse races under concurrent load. A reentrant per-request thread
@@ -171,7 +185,7 @@ uv run --with psutil python tools/benchmark_ai_connections.py --output /tmp/ai-h
 One illustrative local run with two workers, eight client HTTP connections and
 **current code/settings in every mode** (including `CONN_MAX_AGE=0`):
 
-| Runtime | Collector p95 | Script p95 | OPTIONS p95 | Maximum sampled worker RSS |
+| Runtime | Collector p95 | Script p95 | OPTIONS p95 | Worker RSS observed after workload |
 | --- | ---: | ---: | ---: | ---: |
 | WSGI, AI off | 327 ms | 326 ms | 326 ms | 73 MB |
 | ASGI, AI off | 291 ms | 287 ms | 288 ms | 75 MB |
@@ -181,7 +195,11 @@ These client-side burst measurements **include connection-pool queue waiting**;
 they are neither server-only latency nor a comparison with a particular deployed
 revision. All 240 synthetic collector POSTs persisted across the three modes.
 MCP p95 was 109 ms; after each mode web DB sockets returned to zero (only the
-benchmark observer remained). This verifies local compatibility and lifecycle,
+benchmark observer remained). The original script inspected worker RSS after
+workload completion: those values are **not** continuous peak measurements or
+totals for master, workers, job and database. The current script additionally
+samples memory throughout the run and labels process RSS sums (which double-count
+shared pages), Linux PSS where available, and the observer's cgroup separately. This verifies local compatibility and lifecycle,
 not peak resource guarantees. Repeat runs and representative resource-capped
 staging, database CPU/RAM, SQL EXPLAIN/temp I/O and 24-hour monitoring remain
 necessary before a public rollout. Do not infer a guaranteed <500 ms p95 SLA.

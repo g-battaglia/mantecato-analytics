@@ -169,7 +169,9 @@ def _attach_scope_visitors(
 
 
 def resolve_websites_for_user(
-    user_id: str, is_admin: bool, website_ids: list[str] | None = None,
+    user_id: str,
+    is_admin: bool,
+    website_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the websites the principal may access, alphabetically sorted."""
     from apps.core.models import Website
@@ -179,10 +181,7 @@ def resolve_websites_for_user(
         qs = qs.filter(user_id=user_id)
     if website_ids is not None:
         qs = qs.filter(id__in=website_ids)
-    return [
-        {**w, "id": str(w["id"])}
-        for w in qs.order_by("name").values("id", "name", "domain")
-    ]
+    return [{**w, "id": str(w["id"])} for w in qs.order_by("name").values("id", "name", "domain")]
 
 
 def get_overview_data(
@@ -192,6 +191,7 @@ def get_overview_data(
     *,
     granularity: str = "auto",
     lazy_tabs: bool = False,
+    include_live_details: bool = True,
 ) -> dict[str, Any]:
     """Execute visible dashboard queries; hidden tabs can defer their own work.
 
@@ -230,8 +230,14 @@ def get_overview_data(
 
     device_breakdown = get_device_metrics_multi(website_id, start, end, limit=10, filters=filters)
 
-    country_data = get_country_breakdown(website_id, start, end, limit=10, filters=filters)
+    # One small result serves both consumers. Country tables historically keep
+    # an empty country; the map excludes it. Fetch 51 to still supply 50 nonempty
+    # countries, and preserve each consumer's own limited-result denominator.
+    countries = get_country_breakdown(website_id, start, end, limit=51, filters=filters)
+    country_data = [dict(row) for row in countries[:10]]
     _add_percentage(country_data, "pageviews")
+    geo_data = [dict(row) for row in countries if row["country"]][:50]
+    _add_percentage(geo_data, "pageviews", target_key="percentage")
 
     top_pages = (
         [] if lazy_tabs else get_top_pages(website_id, start, end, limit=10, filters=filters)
@@ -268,14 +274,19 @@ def get_overview_data(
         "os_data": device_breakdown["os"],
         "device_data": device_breakdown["device"],
         "country": country_data,
-        "geo": get_geo_metrics(website_id, start, end, limit=50, filters=filters),
+        "geo": geo_data,
         "top_referrers": get_referrer_metrics(website_id, start, end, limit=10, filters=filters),
         "channels": []
         if lazy_tabs
         else get_channel_metrics(website_id, start, end, filters=filters),
         "realtime": get_active_pageviews(website_id, filters=filters),
-        "recent_events": get_recent_pageviews(website_id, filters=filters),
-        "current_pages": get_current_pages(website_id, filters=filters),
+        # Keep legacy API fields while skipping unused dashboard datasets.
+        "recent_events": get_recent_pageviews(website_id, filters=filters)
+        if include_live_details
+        else [],
+        "current_pages": get_current_pages(website_id, filters=filters)
+        if include_live_details
+        else [],
         "heatmap": get_traffic_heatmap(website_id, start, end, filters=filters),
         "date_range": date_range,
         "granularity": granularity,

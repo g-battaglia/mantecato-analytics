@@ -99,4 +99,5 @@ interface Tracker {
 }
 declare function createTracker(config: TrackerConfig): Tracker;
 
-export { type EventPayload, type TrackCallback, type Tracker, type TrackerConfig, type UmamiPayload, createTracker };
+export { createTracker };
+export type { EventPayload, TrackCallback, Tracker, TrackerConfig, UmamiPayload };

@@ -1,0 +1,7 @@
+{% load i18n %}
+<p class="py-4 text-center text-xs text-muted-foreground">
+  <span data-analytics-status role="status" data-loading="{% trans 'Loading…' %}"
+        data-error="{% trans 'Unable to load this panel.' %}">{% trans "Loading…" %}</span>
+  <button type="button" data-analytics-retry hidden
+          class="rounded border border-input px-2 py-1 hover:bg-muted">{% trans "Retry" %}</button>
+</p>

@@ -137,6 +137,13 @@ def test_maintenance_has_a_separate_cron_and_no_web_startup_hooks() -> None:
     assert "gunicorn" not in job["deploy"]["startCommand"]
 
 
+def test_gunicorn_does_not_override_djangos_proxy_trust_policy() -> None:
+    # Gunicorn 27 otherwise infers ASGI HTTPS from forwarded headers sent by
+    # loopback peers, even when Django's explicit proxy trust is disabled.
+    for name in ("railway.toml", "render.yaml", "Dockerfile.standalone"):
+        assert "--forwarded-allow-ips ''" in (ROOT / name).read_text()
+
+
 def test_access_logs_do_not_export_ip_user_agent_or_queries() -> None:
     for name in ("railway.toml", "render.yaml", "Dockerfile.standalone"):
         config = (ROOT / name).read_text()
