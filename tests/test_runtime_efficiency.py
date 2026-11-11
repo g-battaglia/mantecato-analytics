@@ -48,6 +48,15 @@ def test_realtime_poller_is_visibility_filtered_and_drops_overlaps():
     assert 'hx-sync="this:drop"' in html
 
 
+def test_dashboard_widgets_queue_client_side_and_offer_explicit_retry():
+    root = Path(__file__).resolve().parents[1] / "templates"
+    html = (root / "dashboards/dashboard_detail.html").read_text()
+    assert 'hx-sync="closest main:queue all"' in html
+    assert 'hx-trigger="load, analyticsretry"' in html
+    assert "data-analytics-retry hidden" in html
+    assert "js/analytics-fragments.js" in (root / "base.html").read_text()
+
+
 def test_lazy_panels_keep_filters_and_load_on_selection_only():
     root = Path(__file__).resolve().parents[1] / "templates"
     panels = (root / "analytics/_overview_tables.html").read_text()

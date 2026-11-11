@@ -7,6 +7,7 @@ Run on an empty socket PostgreSQL test DB after migrations:
 import argparse
 import asyncio
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -21,7 +22,7 @@ import django
 
 django.setup()
 
-import httpx  # noqa: E402
+import httpx2 as httpx  # noqa: E402
 from django.conf import settings  # noqa: E402
 from django.db import connection, transaction  # noqa: E402
 from django.utils import timezone  # noqa: E402
@@ -39,12 +40,32 @@ from apps.core.models import (  # noqa: E402
     Website,
     WebsiteEvent,
 )
+from mantecato.memory import MemorySampler  # noqa: E402
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--worker-connections", type=int, default=16)
+    parser.add_argument("--analytics-concurrency", type=int, default=1)
+    parser.add_argument("--cycles", type=int, default=1)
+    parser.add_argument("--sample-interval", type=float, default=0.25)
+    parser.add_argument("--database-pid", type=int, help="Optional dedicated local DB root PID")
     args = parser.parse_args()
+    if (
+        args.workers < 1
+        or args.worker_connections < 1
+        or args.cycles < 1
+        or args.analytics_concurrency < 0
+        or not 0.1 <= args.sample_interval <= 10
+        or (args.database_pid is not None and args.database_pid < 1)
+    ):
+        parser.error("Invalid worker, concurrency, cycle, sampling or PID argument")
+    # Synthetic DEBUG=True is needed for loopback MCP HTTP, but client debug
+    # traces add large logs and distort the memory experiment.
+    for name in ("httpx", "httpcore", "httpx2", "httpcore2", "asyncio"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     db = connection.settings_dict
     host = db.get("OPTIONS", {}).get("host") or db.get("HOST")
     if (
@@ -131,6 +152,7 @@ def main():
             "MANTECATO_PUBLIC_URL": origin if mode == "mixed" else "",
             "CONN_MAX_AGE": "0",
             "SECURE_SSL_REDIRECT": "False",
+            "ANALYTICS_MAX_CONCURRENT": str(args.analytics_concurrency),
         }
         if mode == "mixed":
             settings.DEBUG = True
@@ -165,11 +187,13 @@ def main():
                     "--worker-class",
                     worker,
                     "--workers",
-                    "2",
+                    str(args.workers),
                     "--worker-connections",
-                    "16",
+                    str(args.worker_connections),
                     "--keep-alive",
                     "0",
+                    "--forwarded-allow-ips",
+                    "",
                     "--graceful-timeout",
                     "2",
                     "--bind",
@@ -180,6 +204,17 @@ def main():
                 stderr=log,
             )
             job = None
+            # Include master, every worker and the terminating job throughout
+            # startup/workload/cleanup. DB attribution is opt-in and explicit.
+            sampler = MemorySampler(
+                lambda: (
+                    (process.pid,)
+                    + ((job.pid,) if job is not None else ())
+                    + ((args.database_pid,) if args.database_pid else ())
+                ),
+                interval=args.sample_interval,
+            )
+            sampler.__enter__()
             measurements = {path: [] for path in ("/api/send", "/api/script", "OPTIONS", "MCP")}
             try:
                 for _ in range(100):
@@ -260,14 +295,18 @@ def main():
                                             "range": "30d",
                                         },
                                     )
-                                    assert not result.isError
+                                    assert not result.is_error, result.content
                                     measurements["MCP"].append(
                                         (time.perf_counter() - before) * 1000
                                     )
 
-                        await asyncio.gather(
-                            asyncio.gather(*(request(i) for i in range(240))), tools()
-                        )
+                        for cycle in range(args.cycles):
+                            # Keep the original 20 tools total: repeated short
+                            # cycles must not bypass the real per-worker quota.
+                            await asyncio.gather(
+                                asyncio.gather(*(request(i) for i in range(240))),
+                                tools() if cycle == 0 else asyncio.sleep(0),
+                            )
 
                 async def scenario():
                     if not raw:
@@ -279,7 +318,6 @@ def main():
                         streamable_http_client(origin + "/mcp", http_client=client) as (
                             read,
                             write,
-                            _,
                         ),
                         ClientSession(read, write) as session,
                     ):
@@ -323,6 +361,15 @@ def main():
                         },
                     }
             finally:
+                sampler.__exit__(None, None, None)
+                results.setdefault(mode, {})["memory"] = sampler.result
+                results[mode]["memory"]["includes_database"] = bool(args.database_pid)
+                results[mode]["configuration"] = {
+                    "workers": args.workers,
+                    "worker_connections": args.worker_connections,
+                    "analytics_concurrency": args.analytics_concurrency,
+                    "cycles": args.cycles,
+                }
                 if job and job.poll() is None:
                     job.terminate()
                     job.wait(timeout=10)
@@ -339,7 +386,7 @@ def main():
         results["synthetic_pageviews"] = WebsiteEvent.objects.filter(
             website_id=site.pk, url_path="/synthetic-collector"
         ).count()
-        assert results["synthetic_pageviews"] == 240
+        assert results["synthetic_pageviews"] == 240 * args.cycles
         args.output.write_text(json.dumps(results, indent=2))
         print(json.dumps(results, indent=2))
     finally:

@@ -17,12 +17,17 @@ tracked-site collector policy.
 | `QUERY_SUMMARY_LOG` | `False`; detailed production request SQL summaries are opt-in |
 | `CONN_MAX_AGE` | `0`; persistent Django connections must remain disabled under ASGI |
 | `GUNICORN_WORKER_CONNECTIONS` | `16` in the shipped ASGI manifests |
+| `ANALYTICS_MAX_CONCURRENT` | `1` per ASGI process; `0` disables admission for controlled baselines |
+| `ANALYTICS_MAX_WAITING` | `4` bounded analytics waiters per ASGI process |
+| `ANALYTICS_WAIT_SECONDS` | `5`; overload returns retryable 503; collector bypasses the gate |
 | `MANTECATO_PUBLIC_URL` | Canonical HTTPS origin, e.g. `https://analytics.example.com`; makes remote MCP/OAuth available when valid; leave blank when unused |
 | `AI_MCP_ALLOWED_ORIGINS` | Optional additional exact browser origins, comma-separated |
 | `USE_SECURE_PROXY_SSL_HEADER` | `False`; enable behind a proxy that sets `X-Forwarded-Proto`; shared by Django, OAuth and remote MCP |
 
-MCP uses the official v1 SDK on Gunicorn 26's native ASGI worker. Deployment
-commands explicitly disable keep-alive after isolated compatibility tests found
+MCP uses the official v2 SDK on Gunicorn 27's native ASGI worker. Shipped commands
+set `--forwarded-allow-ips ''` so Gunicorn does not infer HTTPS independently of
+Django's proxy policy. Deployment commands also disable keep-alive after isolated
+compatibility tests found
 persistent-socket stalls. WSGI remains available for legacy deployments without
 remote MCP. MCP uses Django's HTTPS detection, including its configured proxy
 header. Enable proxy header trust only when a trusted reverse proxy controls

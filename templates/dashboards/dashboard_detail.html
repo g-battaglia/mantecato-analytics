@@ -31,11 +31,17 @@
     {% for w in widgets %}
     {% if w.id %}
     {% with span=w.grid.w|default:6 %}
+    {# Queue widgets in the browser, not in server ORM threads or DB sorts. #}
     <div style="grid-column: span {{ span }} / span {{ span }};"
+         data-analytics-fragment
          hx-get="{% url 'dashboard_widget' dashboard.id w.id %}?{{ request.GET.urlencode }}"
-         hx-trigger="load" hx-target="this" hx-swap="innerHTML">
-      <div class="flex h-32 items-center justify-center rounded-lg border border-border bg-card text-xs text-muted-foreground">
-        <span class="animate-pulse">{% trans "Loading…" %}</span>
+         hx-trigger="load, analyticsretry" hx-sync="closest main:queue all"
+         hx-target="this" hx-swap="innerHTML">
+      <div class="flex h-32 items-center justify-center gap-2 rounded-lg border border-border bg-card text-xs text-muted-foreground">
+        <span data-analytics-status data-loading="{% trans 'Loading…' %}"
+              data-error="{% trans 'Unable to load this widget.' %}" role="status">{% trans "Loading…" %}</span>
+        <button type="button" data-analytics-retry hidden
+                class="rounded border border-input px-2 py-1 hover:bg-muted">{% trans "Retry" %}</button>
       </div>
     </div>
     {% endwith %}

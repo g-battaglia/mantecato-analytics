@@ -31,11 +31,16 @@ watchPatterns = [
 # password di default (un deploy pubblico con credenziali note sarebbe critico).
 preDeployCommand = "uv run python manage.py migrate --noinput && uv run python manage.py importumamienv && if [ -n \"${INIT_ADMIN_PASS:-}\" ]; then uv run python manage.py createuser \"${INIT_ADMIN_USER:-admin}\" --role admin --password \"$INIT_ADMIN_PASS\" --password-is-default || true; fi"
 # Railway inietta $PORT; gunicorn deve ascoltare su 0.0.0.0:$PORT.
-# Native Gunicorn 26 ASGI/lifespan, bounded connections; keep-alive disabled
+# Native Gunicorn 27 ASGI/lifespan, bounded connections; keep-alive disabled
 # after isolated SDK/Django HTTP tests found stalls with persistent sockets.
+# RAM-first staging: compare GUNICORN_WORKERS=1 and connections 8/16 using
+# docs/RAM-FIRST.md. Keep production defaults until resource-capped validation;
+# changing the container's RAM limit alone does not reduce its working set.
+# Gunicorn 27 must not infer HTTPS from headers independently of Django.
+# Keep forwarded-allow-ips empty; Django owns the explicit proxy trust policy.
 # For Railway TLS termination, set USE_SECURE_PROXY_SSL_HEADER=True in service
 # Variables. Django and remote MCP share this HTTPS configuration.
-startCommand = "uv run gunicorn mantecato.asgi:application --worker-class asgi --worker-connections ${GUNICORN_WORKER_CONNECTIONS:-16} --keep-alive 0 --bind 0.0.0.0:$PORT --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --access-logfile - --access-logformat '%(m)s %(s)s %(D)s' --error-logfile -"
+startCommand = "uv run gunicorn mantecato.asgi:application --worker-class asgi --worker-connections ${GUNICORN_WORKER_CONNECTIONS:-16} --keep-alive 0 --forwarded-allow-ips '' --bind 0.0.0.0:$PORT --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --access-logfile - --access-logformat '%(m)s %(s)s %(D)s' --error-logfile -"
 # /health/ esegue SELECT 1 sul DB: timeout generoso per il primo boot del Postgres.
 healthcheckPath = "/health/"
 healthcheckTimeout = 300

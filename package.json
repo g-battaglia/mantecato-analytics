@@ -1,14 +1,20 @@
 {
+  "name": "mantecato",
   "private": true,
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
   "workspaces": [
     "packages/tracker",
     "packages/tracker-react"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
+    "typecheck": "tsc --noEmit -p packages/tracker/tsconfig.json && tsc --noEmit -p packages/tracker-react/tsconfig.json",
     "test": "node --test tests/js/*.test.cjs && npm run test --workspaces"
   },
   "devDependencies": {
-    "htmx.org": "^2.0.11"
+    "htmx.org": "^2.0.11",
+    "typescript": "^6.0.3"
   }
 }

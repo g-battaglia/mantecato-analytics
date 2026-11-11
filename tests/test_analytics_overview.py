@@ -211,7 +211,9 @@ class TestServiceOrchestration:
         with self._patched() as mocks:
             self._run()
         for name, mock in mocks.items():
-            assert mock.call_count == 1, f"{name} called {mock.call_count}x (expected 1)"
+            # The map reuses the country distribution rather than scanning twice.
+            expected = 0 if name == "get_geo_metrics" else 1
+            assert mock.call_count == expected, f"{name} called {mock.call_count}x"
 
 
 # ---------------------------------------------------------------------------

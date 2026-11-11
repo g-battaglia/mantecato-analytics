@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77.0"]
+requires = ["setuptools>=84.2.1,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,27 +10,29 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
-    "django>=6.0,<7.0",
-    "psycopg[binary]>=3.2",
-    "dj-database-url>=2.3",
-    "bcrypt>=4.2",
-    "python-dotenv>=1.0",
-    "whitenoise>=6.8",
-    "gunicorn>=26.0,<27.0",
-    "mcp>=1.30,<2.0",
-    "authlib>=1.6,<2.0",
-    "httpcore>=1.0,<2.0",
-    "dnspython>=2.7,<3.0",
-    "rich>=13.0",
-    "ua-parser>=1.0",
-    "geoip2>=4.8",
+    "django>=6.1.3,<7.0",
+    "psycopg[binary]>=3.3.8,<4.0",
+    "dj-database-url>=3.1.2,<4.0",
+    "bcrypt>=5.0,<6.0",
+    "python-dotenv>=1.2.4,<2.0",
+    "whitenoise>=6.12,<7.0",
+    "gunicorn>=27.0,<28.0",
+    "mcp>=2.3,<3.0",
+    "authlib>=1.9.5,<2.0",
+    "httpcore>=1.0.9,<2.0",
+    "dnspython>=2.9.2,<3.0",
+    "rich>=15.0,<16.0",
+    "ua-parser>=1.0.2,<2.0",
+    "geoip2>=5.3,<6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "pytest-django>=4.9",
-    "ruff>=0.8",
+    "pytest>=9.2,<10.0",
+    "pytest-django>=4.14,<5.0",
+    "pytest-asyncio>=1.4.1.post1,<2.0",
+    "httpx2>=2.16,<3.0",
+    "ruff>=0.17.4,<0.18",
 ]
 
 [tool.setuptools.packages.find]
@@ -55,6 +57,7 @@ select = [
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "mantecato.settings"
+asyncio_default_fixture_loop_scope = "function"
 python_files = ["tests/*.py", "tests/**/*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

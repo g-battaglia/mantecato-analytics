@@ -13,16 +13,18 @@ read scopes and consent.
 
 Apply the additive `ai_connections` migrations with the normal web release. They
 create four authentication/audit models; analytics tables and formulas are unchanged.
-Run the official MCP v1 SDK and Django together with native Gunicorn 26 ASGI:
+Run the official MCP v2 SDK and Django together with native Gunicorn 27 ASGI:
 
 ```bash
 gunicorn mantecato.asgi:application --worker-class asgi \
-  --workers 2 --worker-connections 16 --keep-alive 0 \
+  --workers 2 --worker-connections 16 --keep-alive 0 --forwarded-allow-ips '' \
   --bind 127.0.0.1:8000 --access-logfile - \
   --access-logformat '%(m)s %(s)s %(D)s'
 ```
 
-The deployment manifests use this runtime. Isolated tests found persistent-socket
+The deployment manifests use this runtime. `--forwarded-allow-ips ''` prevents
+Gunicorn 27 from independently trusting proxy scheme headers; Django's explicit
+`USE_SECURE_PROXY_SSL_HEADER` policy remains the single source for HTTPS detection. Isolated tests found persistent-socket
 stalls in the native worker, so keep-alive is explicitly disabled. This is a
 measured local compatibility workaround, not a production performance guarantee.
 HTTP/1 responses explicitly announce connection closure to prevent socket reuse

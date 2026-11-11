@@ -10,6 +10,8 @@ from django.core.handlers.asgi import ASGIRequest
 from django.db import connections
 from django.http import JsonResponse
 
+from mantecato.admission import AnalyticsGate, is_analytics, unavailable
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mantecato.settings")
 
 
@@ -103,7 +105,23 @@ def create_application():
             finally:
                 await sync_to_async(connections.close_all, thread_sensitive=True)()
 
-    return application
+    # Admission happens outside ThreadSensitiveContext: queued analytics calls
+    # allocate neither an ORM thread nor a database connection. One gate covers
+    # dashboard, REST and MCP, while collector/health traffic always bypasses it.
+    limit = settings.ANALYTICS_MAX_CONCURRENT
+    if limit == 0:
+        return application
+    gate = AnalyticsGate(limit, settings.ANALYTICS_MAX_WAITING, settings.ANALYTICS_WAIT_SECONDS)
+
+    async def bounded_application(scope, receive, send):
+        if not is_analytics(scope):
+            return await application(scope, receive, send)
+        async with gate.slot() as admitted:
+            if admitted:
+                return await application(scope, receive, send)
+            return await unavailable(scope, send)
+
+    return bounded_application
 
 
 application = create_application()

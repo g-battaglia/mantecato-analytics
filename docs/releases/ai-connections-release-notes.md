@@ -55,7 +55,7 @@ successful authenticated MCP operation.
 
 ### Read-only remote MCP
 
-The exact endpoint `/mcp` uses the official MCP v1 SDK, stateless JSON-only
+The exact endpoint `/mcp` uses the official MCP v2 SDK, stateless JSON-only
 Streamable HTTP and existing bounded analytics services. Eight tools cover
 approved sites, analytics capabilities, connection verification, metrics, time
 series, comparisons, traffic-quality diagnostics and dimension discovery.
@@ -83,7 +83,7 @@ or URL-encoded. CIMD fetching validates all resolved addresses and pins public
 connections while preserving TLS/SNI identity, with bounded DNS/HTTP and JSON
 budgets and no redirects or proxy use.
 
-Native Gunicorn 26 ASGI is configured with bounded connections, keep-alive off,
+Native Gunicorn 27 ASGI is configured with bounded connections, keep-alive off,
 explicit HTTP/1 connection-closure signalling and ORM cleanup on request
 finalization/cancellation. MCP uses Django's HTTPS detection and proxy header
 configuration; Host/client IP and collector/Django scopes are preserved.

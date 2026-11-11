@@ -10,8 +10,8 @@ from django.db import close_old_connections, connections
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.middleware.cors import CORSMiddleware
@@ -50,7 +50,7 @@ class Verifier:
             return None
 
 
-class RemoteMCP(FastMCP):
+class RemoteMCP(MCPServer):
     async def list_tools(self):
         token = get_access_token()
         if token is None:
@@ -92,15 +92,7 @@ def create_transport():
             required_scopes=[],
             validate_token_resource=True,
         ),
-        streamable_http_path="/mcp",
-        stateless_http=True,
-        json_response=True,
-        max_request_body_size=settings.AI_MAX_REQUEST_BYTES,
         log_level="WARNING",
-        transport_security=TransportSecuritySettings(
-            allowed_hosts=[urlsplit(origin).netloc],
-            allowed_origins=allowed_origins,
-        ),
     )
     # Some SDK debug/error messages include request arguments. Our own audit
     # is deliberately metadata-only, so suppress SDK diagnostic payloads.
@@ -130,7 +122,10 @@ def create_transport():
             name=name,
             title=name.replace("_", " ").capitalize(),
             annotations=ToolAnnotations(
-                readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+                read_only_hint=True,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
             ),
             meta={"securitySchemes": [{"type": "oauth2", "scopes": [scope] if scope else []}]},
         )
@@ -269,7 +264,18 @@ def create_transport():
         body.update(dimension=dimension, search=search, limit=limit)
         return await call("list_dimension_values", body)
 
-    app = server.streamable_http_app()
+    # SDK v2 separates identity/auth from transport configuration. Preserve
+    # stateless JSON responses, the strict body cap and DNS/origin allowlists.
+    app = server.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        max_request_body_size=settings.AI_MAX_REQUEST_BYTES,
+        transport_security=TransportSecuritySettings(
+            allowed_hosts=[urlsplit(origin).netloc],
+            allowed_origins=allowed_origins,
+        ),
+    )
     return server, CORSMiddleware(
         app,
         allow_origins=allowed_origins,
