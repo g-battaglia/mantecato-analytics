@@ -13,14 +13,24 @@ better. Keep collection, remote MCP, exact metrics, privacy and durability intac
   one small result, retaining their separate empty-country and denominator rules.
   Legacy API live detail fields remain available.
 - A process-local **ASGI** analytics gate runs before ORM threads are allocated.
-  Dashboard, legacy/v1 analytics and MCP share the budget. Defaults:
-  `ANALYTICS_MAX_CONCURRENT=1`, `ANALYTICS_MAX_WAITING=4`,
-  `ANALYTICS_WAIT_SECONDS=5`. Saturation returns 503, `Retry-After: 1` and private
-  no-store headers. Collector, OPTIONS, health, static and auth bypass the gate.
-  Clients must treat analytics overload as a retryable failure, not empty data.
-  This is not a distributed quota; WSGI does not have this ASGI gate. Custom
-  dashboard widgets queue in the browser, with an explicit accessible retry
-  state for failed/overloaded fragments instead of an endless loading spinner.
+  It is **disabled by default** (`ANALYTICS_MAX_CONCURRENT=0`). Only opt in after
+  resource-capped staging validates collector latency and query/queue budgets.
+  When enabled, dashboard, legacy/v1 analytics and MCP share its per-process
+  FIFO semaphore; `ANALYTICS_MAX_WAITING=4` and `ANALYTICS_WAIT_SECONDS=5` are
+  starting experiments, not promoted capacity settings. Saturation returns 503,
+  Retry-After and private no-store headers: minimal retry HTML for full browser
+  navigations, JSON for HTMX/API/MCP. MCP overloads share the transport's origin
+  allowlist, expose Retry-After and retain no-referrer protection.
+  Collector, OPTIONS, health, static and auth bypass the gate. Unconfigured MCP
+  remains 404 instead of exposing admission state. WSGI has no ASGI gate.
+  This is **not** a distributed queue: Gunicorn can send a request to a busy
+  worker while another is idle. FIFO applies within a process only. A ~1.5s
+  section query can consume much of a 5s waiting budget, so test the intended
+  workload before choosing any production values.
+  Both dashboard widgets and builder previews queue in the browser. Preview
+  changes coalesce to one pending snapshot per widget; stale/deleted/replaced
+  widgets cannot render old responses. Failed widgets and lazy overview panels
+  expose accessible manual retry instead of an endless loading spinner.
 - Dependencies are refreshed, including **Django 6.1.3, Gunicorn 27.0.0 and MCP
   SDK 2.3.0**. The SDK migration preserves stateless JSON transport, body limits,
   origin/host allowlists, scopes and read-only tool annotations. Keep-alive and
@@ -99,11 +109,13 @@ separate Railway containers collect each service's counters simultaneously.
 
 ### Final-stack local results (not Railway validation)
 
+Recorded at commit `e475174`, before the admission/UX review fixes; these remain
+illustrative measurements, not validation of the current default (gate off).
 One serial macOS / PostgreSQL 18 run, Django 6.1.3 / Gunicorn 27.0.0 / MCP SDK
 2.3.0, five collector cycles per mode,
 240 total synthetic HTTP requests/cycle, eight client connections, 20 MCP tools
 and a terminating maintenance job in mixed mode. Both worker configurations use
-the same updated code and analytics admission limit. This comparison does not
+the same updated code and an explicitly enabled admission limit of 1. This comparison does not
 isolate every code change against the original release.
 
 | ASGI configuration | After-workload web RSS sum | Sampled peak web + job RSS sum | Collector p95 | Script p95 |
@@ -150,7 +162,9 @@ reduction. The SQL CPU/I/O trade-off is real and must stay visible.
    nightly work. Sample web/DB/job concurrently, including deployment overlap.
 2. Candidate variables in **staging only**: GUNICORN_WORKERS=1 and
    GUNICORN_WORKER_CONNECTIONS=8 or 16. Keep CONN_MAX_AGE=0, no pool and no preload
-   as baseline. Analytics gate values are per process and multiply with workers.
+   as baseline. Leave admission at its shipped default of 0 initially; then test
+   ANALYTICS_MAX_CONCURRENT=1 and waiting/timeout budgets explicitly. Gate values
+   are per process, with no work-stealing or shared fairness across workers.
 3. Investigate PostgreSQL's real settings, connections, autovacuum, temp I/O and
    nightly WAL/memory peaks. Bound sort/hash/maintenance and parallel concurrency
    before reducing the DB limit. Example starting experiments for a 512 MiB DB:
@@ -173,5 +187,6 @@ Aspirational budgets remain >=50–60% less web RAM and >=50% less total working
 memory, without collection regressions. **They are not established by these local
 results.** Do not lower Railway RAM limits, add cache/replicas, or claim success
 until the comparable whole-service measurements and correctness gates pass.
-Rollback: restore the prior code/runtime; ANALYTICS_MAX_CONCURRENT=0 permits a
-controlled admission baseline, but does not undo SQL or runtime changes.
+Rollback: restore ANALYTICS_MAX_CONCURRENT=0 to disable admission (the shipped
+baseline). This does not undo SQL/runtime changes; use the prior code/runtime for
+full rollback. Do not activate the gate automatically with the next deployment.

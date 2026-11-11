@@ -14,8 +14,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from starlette.middleware.cors import CORSMiddleware
 
+from apps.ai_connections.cors import mcp_allowed_origins, mcp_cors
 from apps.ai_connections.policy import AccessDenied, mark_verified, public_origin, resource, verify
 from apps.ai_connections.tools import TOOL_SCOPES, base_query, execute
 
@@ -64,14 +64,7 @@ class RemoteMCP(MCPServer):
 
 def create_transport():
     origin, endpoint = public_origin(), resource()
-    allowed_origins = [
-        origin,
-        "https://claude.ai",
-        "https://chatgpt.com",
-        "https://gemini.google.com",
-        "https://grok.com",
-    ]
-    allowed_origins += getattr(settings, "AI_MCP_ALLOWED_ORIGINS", [])
+    allowed_origins = mcp_allowed_origins(origin)
     server = RemoteMCP(
         "Mantecato",
         website_url=origin,
@@ -276,11 +269,4 @@ def create_transport():
             allowed_origins=allowed_origins,
         ),
     )
-    return server, CORSMiddleware(
-        app,
-        allow_origins=allowed_origins,
-        allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Mcp-Protocol-Version", "Mcp-Session-Id"],
-        expose_headers=["WWW-Authenticate", "Mcp-Session-Id"],
-        allow_credentials=False,
-    )
+    return server, mcp_cors(app, origin)

@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 const script = fs.readFileSync('static/js/analytics-fragments.js', 'utf8');
 
-function fixture() {
-  const dom = new JSDOM(`<div id="widget" data-analytics-fragment>
+function fixture(attribute = 'data-analytics-fragment') {
+  const dom = new JSDOM(`<div id="widget" ${attribute}>
     <span data-analytics-status data-loading="Loading" data-error="Try again" role="status">Loading</span>
     <button data-analytics-retry hidden><span>Retry</span></button></div><div id="other"></div>`,
     {runScripts: 'outside-only'});
@@ -21,8 +21,9 @@ function fixture() {
   return {dom, widget, button, status, calls, emit};
 }
 
-test('an overloaded or failed widget exposes manual retry instead of an endless spinner', () => {
-  const {dom, widget, button, status, calls, emit} = fixture();
+for (const attribute of ['data-analytics-fragment', 'data-lazy-panel']) {
+ test(`${attribute} exposes manual retry instead of an endless spinner`, () => {
+  const {dom, widget, button, status, calls, emit} = fixture(attribute);
   emit('htmx:beforeRequest');
   assert.equal(widget.getAttribute('aria-busy'), 'true');
   emit('htmx:afterRequest', false);
@@ -39,7 +40,8 @@ test('an overloaded or failed widget exposes manual retry instead of an endless 
   assert.equal(widget.getAttribute('aria-busy'), 'false');
   assert.equal(button.hidden, true);
   dom.window.close();
-});
+ });
+}
 
 test('unrelated requests never alter a widget or allocate retry timers', () => {
   const {dom, widget, button, emit} = fixture();

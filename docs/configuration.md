@@ -17,9 +17,9 @@ tracked-site collector policy.
 | `QUERY_SUMMARY_LOG` | `False`; detailed production request SQL summaries are opt-in |
 | `CONN_MAX_AGE` | `0`; persistent Django connections must remain disabled under ASGI |
 | `GUNICORN_WORKER_CONNECTIONS` | `16` in the shipped ASGI manifests |
-| `ANALYTICS_MAX_CONCURRENT` | `1` per ASGI process; `0` disables admission for controlled baselines |
+| `ANALYTICS_MAX_CONCURRENT` | `0` (off); opt in only after staging validation; FIFO is per ASGI process, not shared between workers |
 | `ANALYTICS_MAX_WAITING` | `4` bounded analytics waiters per ASGI process |
-| `ANALYTICS_WAIT_SECONDS` | `5`; overload returns retryable 503; collector bypasses the gate |
+| `ANALYTICS_WAIT_SECONDS` | `5` when enabled; validate against query latency; overload returns retryable 503 and collector bypasses the gate |
 | `MANTECATO_PUBLIC_URL` | Canonical HTTPS origin, e.g. `https://analytics.example.com`; makes remote MCP/OAuth available when valid; leave blank when unused |
 | `AI_MCP_ALLOWED_ORIGINS` | Optional additional exact browser origins, comma-separated |
 | `USE_SECURE_PROXY_SSL_HEADER` | `False`; enable behind a proxy that sets `X-Forwarded-Proto`; shared by Django, OAuth and remote MCP |

@@ -90,3 +90,62 @@ test('real HTMX queues Channels while Pages loads, then caches both panel result
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.deepEqual(requests, ['/pages', '/channels']);
 });
+
+test('real HTMX shows retry on lazy-panel 503 and caches a successful manual retry', async (t) => {
+  let requests = 0;
+  const server = http.createServer((req, res) => {
+    requests += 1;
+    if (requests === 1) {
+      res.writeHead(503, {'Content-Type': 'application/json', 'Retry-After': '1'});
+      res.end('{"error":"analytics_busy"}');
+    } else {
+      res.writeHead(200, {'Content-Type': 'text/html'});
+      res.end('<p>Loaded after retry</p>');
+    }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const dom = new JSDOM(`<main><div data-panel-group>
+    <button class="panel-tab" data-panel="pages-tab">Pages</button>
+    <div id="pages-tab" class="panel-content hidden" data-lazy-panel hx-get="/pages"
+      ${triggerAttributes('pages-tab')}>
+      <span data-analytics-status data-loading="Loading" data-error="Try again" role="status">Loading</span>
+      <button type="button" data-analytics-retry hidden>Retry</button>
+    </div></div></main>`, {
+    url: `http://127.0.0.1:${server.address().port}/`, runScripts: 'outside-only',
+  });
+  t.after(async () => {
+    dom.window.close();
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  });
+  const evaluate = dom.window.XPathExpression.prototype.evaluate;
+  dom.window.XPathExpression.prototype.evaluate = function (node, type, result) {
+    return evaluate.call(this, node, type ?? dom.window.XPathResult.ANY_TYPE, result);
+  };
+  dom.window.eval(htmx);
+  dom.window.eval(fs.readFileSync(path.join(root, 'static/js/analytics-fragments.js'), 'utf8'));
+  for (const [, script] of base.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+    if (script.includes('Panel tabs') || script.includes('htmx:afterRequest')) dom.window.eval(script);
+  }
+  dom.window.htmx.config.defaultSettleDelay = 0;
+  dom.window.htmx.process(dom.window.document.body);
+  const document = dom.window.document;
+  const panel = document.getElementById('pages-tab');
+  const button = panel.querySelector('[data-analytics-retry]');
+  document.querySelector('[data-panel="pages-tab"]').click();
+  await waitFor(() => !button.hidden);
+  assert.equal(requests, 1);
+  assert.equal(panel.dataset.loaded, undefined);
+  assert.equal(panel.querySelector('[role="status"]').textContent, 'Try again');
+  assert.equal(panel.getAttribute('aria-busy'), 'false');
+  button.click();
+  await waitFor(() => panel.dataset.loaded === 'true');
+  assert.equal(requests, 2);
+  assert.match(panel.textContent, /Loaded after retry/);
+  // A queued duplicate/retry after success is cancelled without marking the
+  // already-cached panel busy forever or issuing another network request.
+  dom.window.htmx.trigger(panel, 'analyticsretry');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(requests, 2);
+  assert.equal(panel.getAttribute('aria-busy'), 'false');
+});

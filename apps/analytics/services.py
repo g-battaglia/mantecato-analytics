@@ -169,7 +169,9 @@ def _attach_scope_visitors(
 
 
 def resolve_websites_for_user(
-    user_id: str, is_admin: bool, website_ids: list[str] | None = None,
+    user_id: str,
+    is_admin: bool,
+    website_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the websites the principal may access, alphabetically sorted."""
     from apps.core.models import Website
@@ -179,10 +181,7 @@ def resolve_websites_for_user(
         qs = qs.filter(user_id=user_id)
     if website_ids is not None:
         qs = qs.filter(id__in=website_ids)
-    return [
-        {**w, "id": str(w["id"])}
-        for w in qs.order_by("name").values("id", "name", "domain")
-    ]
+    return [{**w, "id": str(w["id"])} for w in qs.order_by("name").values("id", "name", "domain")]
 
 
 def get_overview_data(
@@ -283,9 +282,11 @@ def get_overview_data(
         "realtime": get_active_pageviews(website_id, filters=filters),
         # Keep legacy API fields while skipping unused dashboard datasets.
         "recent_events": get_recent_pageviews(website_id, filters=filters)
-        if include_live_details else [],
+        if include_live_details
+        else [],
         "current_pages": get_current_pages(website_id, filters=filters)
-        if include_live_details else [],
+        if include_live_details
+        else [],
         "heatmap": get_traffic_heatmap(website_id, start, end, filters=filters),
         "date_range": date_range,
         "granularity": granularity,

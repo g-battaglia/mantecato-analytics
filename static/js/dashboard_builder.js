@@ -96,37 +96,69 @@
     return null;
   }
 
-  var _previewSeq = {};
+  // Keep one fetch in flight and at most one pending snapshot per widget.
+  // A promise chain alone would accumulate closures on rapid filter changes.
+  var pendingPreviews = new Map();
+  var latestPreviews = new Map();
+  var previewRunning = false;
+
+  function currentPreview(job) {
+    return latestPreviews.get(job.id) === job && job.host.isConnected && findWidget(job.id);
+  }
+
+  async function drainPreviews() {
+    if (previewRunning) return;
+    previewRunning = true;
+    try {
+      while (pendingPreviews.size) {
+        var job = pendingPreviews.values().next().value;
+        pendingPreviews.delete(job.id);
+        if (!currentPreview(job)) {
+          if (latestPreviews.get(job.id) === job) latestPreviews.delete(job.id);
+          continue;
+        }
+        try {
+          var response = await fetch(PREVIEW_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
+            body: job.body,
+          });
+          // Session-expiry redirects must never inject the login page.
+          if (!response.ok || response.redirected) throw new Error("preview unavailable");
+          var html = await response.text();
+          // A changed filter, removed widget or replaced shell invalidates an
+          // older response, even when a JSON edit reuses the same widget ID.
+          if (!currentPreview(job)) continue;
+          job.host.innerHTML = html;
+          if (window.lucide) lucide.createIcons();
+          if (typeof window.htmx !== "undefined") window.htmx.process(job.host);
+          document.dispatchEvent(new CustomEvent("htmx:afterSwap", { detail: { target: job.host } }));
+        } catch (_) {
+          if (!currentPreview(job)) continue;
+          job.host.innerHTML = '<div class="p-4 text-xs text-destructive" role="status">Preview failed ' +
+            '<button type="button" data-act="retry" class="rounded border border-input px-2 py-1">Retry</button></div>';
+        } finally {
+          if (latestPreviews.get(job.id) === job) latestPreviews.delete(job.id);
+        }
+      }
+    } finally {
+      previewRunning = false;
+    }
+  }
+
   function preview(w) {
+    if (!w) return;
     var host = root.querySelector('[data-wid="' + w.id + '"] .wpreview');
     if (!host) return;
-    // Per-widget request sequencing: rapid changes (date range / filters) fire
-    // overlapping fetches — apply only the latest so a slow earlier response
-    // can't overwrite a newer one with stale content.
-    var seq = _previewSeq[w.id] = (_previewSeq[w.id] || 0) + 1;
-    fetch(PREVIEW_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
+    var job = {
+      id: w.id,
+      host: host,
       body: JSON.stringify({ widget: w, dashboardFilters: state.filters, dashboardDateRange: state.dateRange }),
-    })
-      .then(function (r) {
-        // A followed auth redirect (session expired) resolves 200 with the
-        // login page — treat redirected/non-OK as failure, don't inject it.
-        if (!r.ok || r.redirected) throw new Error("preview unavailable");
-        return r.text();
-      })
-      .then(function (html) {
-        if (_previewSeq[w.id] !== seq) return; // superseded by a newer request
-        host.innerHTML = html;
-        if (window.lucide) lucide.createIcons();
-        if (typeof window.htmx !== "undefined") window.htmx.process(host);
-        // Re-init any chart payloads that arrived in the preview.
-        document.dispatchEvent(new CustomEvent("htmx:afterSwap", { detail: { target: host } }));
-      })
-      .catch(function () {
-        if (_previewSeq[w.id] !== seq) return;
-        host.innerHTML = '<div class="p-4 text-xs text-destructive">Preview failed</div>';
-      });
+    };
+    latestPreviews.set(w.id, job);
+    // Overwrite stale queued state without moving this widget behind later ones.
+    pendingPreviews.set(w.id, job);
+    drainPreviews();
   }
 
   function syncPositions() {
@@ -274,7 +306,11 @@
     var id = shell.getAttribute("data-wid");
     if (btn.getAttribute("data-act") === "edit") {
       openDrawer(findWidget(id));
+    } else if (btn.getAttribute("data-act") === "retry") {
+      preview(findWidget(id));
     } else if (btn.getAttribute("data-act") === "del") {
+      pendingPreviews.delete(id);
+      latestPreviews.delete(id);
       var item = shell.closest(".grid-stack-item");
       if (item) grid.removeWidget(item);
       state.widgets = state.widgets.filter(function (w) { return w.id !== id; });
@@ -330,6 +366,8 @@
       state.widgets = (Array.isArray(parsed.widgets) ? parsed.widgets : [])
         .filter(function (w) { return w && typeof w === "object"; })
         .map(function (w) { return Object.assign({}, w, { id: w.id || uid() }); });
+      pendingPreviews.clear();
+      latestPreviews.clear();
       grid.removeAll();
       state.widgets.forEach(addGridItem);
       renderDashFilters();

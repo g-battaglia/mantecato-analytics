@@ -29,7 +29,7 @@ def create_application():
 
     remote = None
     try:
-        public_origin()
+        origin = public_origin()
         from apps.ai_connections.transport import create_transport
 
         _, remote = create_transport()
@@ -113,13 +113,26 @@ def create_application():
         return application
     gate = AnalyticsGate(limit, settings.ANALYTICS_MAX_WAITING, settings.ANALYTICS_WAIT_SECONDS)
 
+    async def rejection(scope, receive, send):
+        return await unavailable(scope, send)
+
+    mcp_rejection = rejection
+    if remote is not None:
+        from apps.ai_connections.cors import mcp_cors
+
+        # Use the same allowlist and exposed headers as the MCP transport. A
+        # browser must see the retryable 503, not an opaque CORS failure.
+        mcp_rejection = mcp_cors(rejection, origin)
+
     async def bounded_application(scope, receive, send):
-        if not is_analytics(scope):
+        if not is_analytics(scope) or (scope.get("path") == "/mcp" and remote is None):
             return await application(scope, receive, send)
         async with gate.slot() as admitted:
             if admitted:
                 return await application(scope, receive, send)
-            return await unavailable(scope, send)
+            if scope.get("path") == "/mcp":
+                return await mcp_rejection(scope, receive, send)
+            return await rejection(scope, receive, send)
 
     return bounded_application
 

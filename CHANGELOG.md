@@ -11,9 +11,12 @@ and [GitHub announcement](docs/releases/ai-connections-announcement.md). These a
 ### Added
 - **RAM-first diagnostics** — stdlib-only process/cgroup reports and continuously
   sampled benchmark memory, with explicit RSS/PSS/cache accounting limits.
-- **Bounded ASGI analytics** — one running/four waiting requests per process by
-  default, before ORM thread allocation; collector traffic bypasses the gate.
-  Widgets queue in the browser and expose an explicit retry state on failure.
+- **Opt-in bounded ASGI analytics** — disabled by default pending staging
+  validation. When enabled, a per-process FIFO semaphore admits work before ORM
+  thread allocation; collector bypasses it. Full navigations get retry HTML,
+  HTMX/API/MCP get JSON, and MCP rejections preserve CORS/referrer policy.
+  Widgets and builder previews queue in the browser; previews coalesce stale
+  pending state. Widgets and lazy panels expose explicit retry on failure.
 - **Scoped AI connections** — Settings → AI connections provides browser consent,
   explicitly selected sites/read scopes, rotating OAuth credentials, show-once
   personal tokens, access reduction/revocation and metadata-only activity.

@@ -199,10 +199,10 @@ SLOW_QUERY_THRESHOLD_MS = _env_int("SLOW_QUERY_THRESHOLD_MS", default=100)
 # Detailed per-request summaries are opt-in; individual slow/error logs remain.
 QUERY_SUMMARY_LOG = _env_bool("QUERY_SUMMARY_LOG", default=False)
 
-# RAM-first, per-process admission before ASGI allocates ORM threads. Zero
-# explicitly disables the gate for controlled baseline experiments. Collector,
-# health and static requests bypass it. These are not a global multi-replica cap.
-ANALYTICS_MAX_CONCURRENT = _env_int("ANALYTICS_MAX_CONCURRENT", default=1)
+# Experimental per-process admission before ASGI allocates ORM threads. Keep
+# disabled until resource-capped staging validates capacity and queue budgets.
+# Collector/health/static bypass it; this is NOT a global multi-worker cap.
+ANALYTICS_MAX_CONCURRENT = _env_int("ANALYTICS_MAX_CONCURRENT", default=0)
 ANALYTICS_MAX_WAITING = _env_int("ANALYTICS_MAX_WAITING", default=4)
 ANALYTICS_WAIT_SECONDS = _env_int("ANALYTICS_WAIT_SECONDS", default=5)
 

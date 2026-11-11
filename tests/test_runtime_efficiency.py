@@ -60,7 +60,11 @@ def test_dashboard_widgets_queue_client_side_and_offer_explicit_retry():
 def test_lazy_panels_keep_filters_and_load_on_selection_only():
     root = Path(__file__).resolve().parents[1] / "templates"
     panels = (root / "analytics/_overview_tables.html").read_text()
-    assert panels.count('hx-trigger="panelshown"') == 2
+    assert panels.count('hx-trigger="panelshown, analyticsretry"') == 2
+    assert panels.count("data-lazy-panel data-analytics-fragment") == 2
+    status = (root / "analytics/_fragment_status.html").read_text()
+    assert "data-analytics-retry hidden" in status
+    assert "data-analytics-status" in status
     assert panels.count('hx-sync="closest main:queue all"') == 2
     assert "{% view_query %}&amp;tab=pages" in panels
     assert "{% view_query %}&amp;tab=sources" in panels

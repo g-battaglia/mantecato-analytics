@@ -74,11 +74,15 @@ Dashboard session totals, landings and visit buckets return SQL aggregates rathe
 than event lists, visitor sets or large start-event `IN` lists. Content-group
 uniques are grouped in SQL. Hidden page/channel panels load on demand, queue
 concurrent selections instead of dropping them, and retain their results only
-within the current page. ASGI analytics requests now share a process-local
-admission limit before ORM threads are allocated (one running, four waiting,
-five-second wait by default). Dashboard, REST and MCP share it; collector,
-preflight, health and static routes bypass it. Saturation returns 503 with
-Retry-After, never a successful collector ACK. WSGI does not use this gate.
+within the current page. ASGI analytics admission before ORM thread allocation
+is experimental and **off by default** (ANALYTICS_MAX_CONCURRENT=0). Only enable
+it after resource-capped staging validates capacity and wait budgets. When enabled,
+its FIFO semaphore is per process, not a shared queue across Gunicorn workers.
+Dashboard, REST and MCP share it; collector, preflight, health and static bypass it.
+Saturation returns retryable 503 (HTML for full browser navigations, JSON for
+HTMX/API/MCP), never a successful collector ACK. MCP rejections preserve CORS.
+Builder previews run serially and coalesce stale pending snapshots. Both custom
+widgets and lazy panels offer manual retry. WSGI does not use this gate.
 Section distincts aggregate in PostgreSQL instead of retaining Python visitor
 sets. The overview reuses country counts and skips two unused live datasets;
 legacy API consumers retain their live detail fields. Realtime queries only its three
